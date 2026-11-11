@@ -1,8 +1,7 @@
 # Living Item (活物品)
 
 **Minecraft 1.21.1 + NeoForge 21.1.x**
-*最后更新: 2026-09-20*
-*状态: Alpha 测试阶段 - 活信标 Phase 4 完成（tooltip 重设计 + 9 柱面板）；v8.1 接口化重构 / 红电 v19.1 等更早变更见 [changelog](docs/archive/changelog.md)*
+*状态: Alpha 测试阶段；v8.1 接口化重构 / 红电 v19.1 等更早变更见 [changelog](docs/archive/changelog.md)*
 
 ---
 
@@ -91,7 +90,6 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 
 | 族 | 子系统（点击直达文档） |
 |----|----------------------|
-| 2026-11-01 | ♻️ **R3 领域互依赖清零（hopper↔ender/chest 10 条 → 0）** —— 传输核心不再认识具体领域：身份检查复用 `ContainerLikeItems`（现成谓词注册表）、末影箱路由决策走新扩展点 `TransferTargetPolicy`（living/transfer，形状对齐 SlotInteractions——Accessor 级末段分发，源侧偏好走 onProbingTarget 探测、REJECT 不触发）、路由 GC 收敛为 `ContainerTickHook` 写回单钩子（api 标记接口 `RouteRegistrar` 能力自查，漏斗/末影箱镜像双调用双删）；顺带删与通用路径逐行等价的活箱子拉取特支。基线 R3 三行清零（R1 不变）；测试 1293→1304；✅ 实机已验 2026-11-07：漏斗×末影箱路由（公共/专属/直连）+ 拆合堆叠频道切换 | `docs/tech/living-ender-chest-tech.md` §9 · `EnderRouteMaintenanceTest` |
 | **活物品功能（20）** | [活TNT](docs/tech/living-tnt-tech.md) · [活流体](docs/tech/living-fluid-tech.md) · [活熔炉](docs/tech/living-furnace-tech.md) · [活酿造台](docs/tech/living-brewing-stand-tech.md) · [活漏斗](docs/tech/living-hopper-tech.md) · [活箱子](docs/tech/living-chest-tech.md) · [活末影箱](docs/tech/living-ender-chest-tech.md) · [活水车](docs/tech/living-water-wheel-tech.md) · [活地图传送](docs/tech/living-map-ender-pearl-tech.md) · [活耕地](docs/tech/living-farmland-tech.md) · [活工具](docs/tech/living-tool-tech.md) · [活武器](docs/tech/living-weapon-tech.md) · [活红石](docs/tech/living-redstone-tech.md)（信号层含 [活铜](docs/tech/living-copper-tech.md)） · [活涂蜡铜块（红电发电）](docs/tech/living-power-tech.md) · [活打火石](docs/tech/living-flint-and-steel-tech.md) · [活信标](docs/tech/living-beacon-tech.md) · [活背包](docs/tech/living-backpack-tech.md) · [活海绵](docs/tech/living-sponge-tech.md) · [活活塞](docs/tech/living-piston-tech.md) · [活魂符 / 女仆背包联动](docs/tech/living-maid-tech.md) |
 | **容器基础设施（6）** | [容器七问总览](docs/system-design/container-overview.md) · [基础设施](docs/system-design/living-item-infrastructure.md) · [多方块容器身份解析](docs/system-design/container-identity.md) · [容器边界口径](docs/system-design/container-boundary.md) · [数据模型](docs/system-design/data-model.md) · [超大堆叠审计](docs/system-design/oversized-stack-audit.md) |
 | **红电 · 电力（2）** | [红电架构演进](docs/buffer/redstone-evolution-roadmap.md) · [红电不变量测试](docs/system-design/power-invariants.md) |
@@ -268,6 +266,15 @@ viewer 驱动 / 框架扫描 / 框架判定才回到 `LivingItemFunction`）。
 　反例：`// ⚠️ 必须带容量：某模组 27/45 是 9 列`（点名只为举例）
 
 ## 文档导航
+
+**冷启动默认路径（可按任务偏离）**
+
+默认从本文件 → `docs/glossary.md` → 目标子系统 `docs/tech/living-*-tech.md` §0 建立心智模型；
+改代码前在 `docs/decisions.md` 按领域确认口径未被取代（要改文档，先读 `docs/README.md` §1）。
+
+⚠️ **别沿路径硬推**：任务跨多个子系统、要改玩法规则、文档与代码看着不一致、
+或需要知道「为什么否决过某方案」时，改走 `AGENTS.md` 子系统索引 / `docs/README.md` §3.1。
+信息不足就停下来查证，不要继续推断。改完见本文件「提交前必跑」。
 
 文档按**层**组织（契约 / 实现 / 指南 / 参考 / 归档）—— 分层定义、体量约束与维护规约见
 [docs/README.md](docs/README.md)（**改文档前先读**）。

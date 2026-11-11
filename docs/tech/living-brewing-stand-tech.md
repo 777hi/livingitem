@@ -1,7 +1,5 @@
 # Living Brewing Stand (活酿造台) 技术文档
 
-> **文档版本**: 2026.11 v1
-> **最后更新**: 2026-11-11
 > **适用版本**: Minecraft 1.21.1 + NeoForge 21.1.x
 > **实现入口**: `living/domain/brewing/`
 

@@ -152,7 +152,7 @@ Tier 2 内建约定 → Tier 3 启发式兜底。**要指定列数才录规则�
 
 ⚠️ **已有工具承担的检查**（不在本表复制实现细节）：
 依赖方向与域耦合（`check_layers.py` R1/R3 + 棘轮基线）· Mixin 位置（R2）·
-注册入口唯一（R4）· 文档一致性（`doc_check.py` 15 项）· 改动传导（`gen_code_map.py --query`）·
+注册入口唯一（R4）· 文档一致性（`doc_check.py`）· 改动传导（`gen_code_map.py --query`）·
 写回与数量原语契约（`ContainerBoundaryContractTest` / `ContainerSlotOpsTest`）· 规则表 vs 类型表一致（单测）。
 **工具守住入口，不保证新增业务已经调用入口**；对外资源结算必须在 §2.2 补自己的验证。
 ⇒ **第一段接入完成后立刻跑 `python tools/check_layers.py`**（见 §4）。

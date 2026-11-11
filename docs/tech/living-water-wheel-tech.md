@@ -1,7 +1,5 @@
 # Living Water Wheel (活水车) 技术文档
 
-> **文档版本**: 2026.08 v12  
-> **最后更新**: 2026-08-26  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -48,7 +46,7 @@
 | 8 | **任意流体都能驱动**（不按流体类型过滤） | Create 水车本来就可以由岩浆驱动（2026-10-31 用户确认）；每个邻居按自己的流体建力场表，水与岩浆互不污染 |
 
 **能力清单**：✅ 力矩计算（4 方向）· ✅ CW / CCW · ✅ 叠加 / 抵消 · ✅ SU 容量随堆叠放大
-· ✅ 容器底部输出 · ✅ rpm 落盘（抗重载）· ✅ 物品栏 3D 渲染 · ✅ Tooltip
+· ✅ 容器底部输出 · ✅ 玩家脚底输出 · ✅ 实体容器脚底输出（2026-11-12，不设门，D-container-25）· ✅ rpm 落盘（抗重载）· ✅ 物品栏 3D 渲染 · ✅ Tooltip
 
 **验证入口**：⚠️ 本子系统**暂无独立测试类** ⇒ 以 **§附录「验证清单」** 为准；
 规则 6（跨存档稳定）由 `KineticBlockEntityMixin`（rpm 落盘）+ 游戏内手测守卫。
@@ -379,11 +377,14 @@ if (ctx.getAssociatedBlockEntities().isEmpty() && ctx.getInventory() != null) {
     return;
 }
 
-// 3. 物品形态（活背包）：开关开启时借宿主锚点（GameplayConfig.waterWheelUsesHostAnchor）
-```
+// 3. 实体容器（船 / 矿车 / 生物背包 / 掉落物）：AtEntity 是自己的位置 ⇒ 直接注入（不设门，D-container-25）
+// 4. 物品形态（活背包）：开关开启时借宿主锚点（GameplayConfig.waterWheelUsesHostAnchor，默认关）
 ```
 
-**判断条件**：当 `SimpleContainerContext` 的 `associatedBlockEntities` 为空且 `inventory` 不为空时，说明活物品在玩家背包中，使用 `player.blockPosition()` 作为应力输出位置。
+**判断条件**：无关联 BE 且 inventory 不为空 ⇒ 玩家脚底；无关联 BE 且 inventory 为空 ⇒
+锚点解析收在 `ContainerStressWriteback#selfOrBorrowedHostAnchor`（实体容器走自己的
+`ContainerAnchor.AtEntity`，物品形态借宿主锚点、受 `host_anchor.water_wheel` 门——
+口径 = 自己的位置直接用，借来的位置才要开关，见 D-container-25）。
 
 **自过期机制**：玩家移开脚后，`KineticBlockEntityMixin` 的 `refreshedThisTick` 标记不再被刷新，下一 tick 自动清理应力并同步客户端。
 

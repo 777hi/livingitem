@@ -2,8 +2,6 @@
 
 # 活物品 Tooltip 系统设计
 
-> **文档版本**: 2026.09 v1.3（v19.2 相位圆盘）
-> **最后更新**: 2026-09-08
 > **适用版本**: Minecraft 1.21.1 + NeoForge 21.1.x
 > **关联文档**: [living-power-tech.md](../tech/living-power-tech.md)（发电遥测语义）、[data-model.md](data-model.md)（DataComponent 体系）
 

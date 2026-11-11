@@ -442,13 +442,6 @@ addPinyin('新汉字', "xinhanzi", "xhz");
 
 ---
 
-**开发者**: AI Assistant  
-**最后更新**: 2026-07-16  
-**许可证**: 与主项目一致  
-**状态**: ✅ **生产就绪 - 推荐使用**
-
----
-
 ## 📚 相关文档
 
 - Feature-Enhancement-Report.md - 功能增强总览

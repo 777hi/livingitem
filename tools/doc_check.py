@@ -2,12 +2,12 @@
 Documentation system consistency checker.
 
 Verifies the invariants declared in docs/README.md §7 ("改完必查"):
-  1. Path reality      - every path mentioned in a doc (relative markdown links,
-                         and repo-relative docs/... / src/... mentions) exists
+  1. Path reality      - every path mentioned in a doc exists: relative markdown links,
+                         repo-relative docs/... / src/... mentions, and the pointer columns
+                         of decisions.md / glossary.md (resolved relative to docs/)
   2. Test green        - 最近一次**全量**测试快照 failures/errors 恒 0，且当前 XML 无失败
                          （快照由 tools/gen_test_summary.py 生成，局部 --tests 不覆盖它）
   3. Test tree         - the test file list in test-map.md matches src/test reality
-  4. Progress rolling  - RETIRED 2026-11-09：进展表取消，changelog 为唯一历史载体
   5. Entry size        - AGENTS.md stays under the entry budget (soft warning)
   6. Decisions         - decisions.md 的 supersedes 链双向一致
   7. Java symbols      - docs 提到的 Living*.java / *Mixin.java 必须存在
@@ -22,8 +22,12 @@ Verifies the invariants declared in docs/README.md §7 ("改完必查"):
  14. 事件处理器名单    - event-threading.md 的 @SubscribeEvent 名单区同上
  15. 容器形态覆盖      - 每个具体 *ContainerContext 必须在 container-data-lifecycle.md 出现
                          （仍是存在性判据：那张矩阵是跨类横切，只能人写 + 带判据）
+ 16. 日期字段禁入      - 活跃层 + buffer 的 md 不得含「最后更新」页眉字段（D-doc-09，
+                         archive 豁免）；字段不可复算必漂，负向检查防模仿回潮
+ 17. 版本字段禁入      - 活跃层 + buffer 不得含「文档版本」页眉字段（D-doc-10，零例外）；
+                         红电 vN 引擎修订指针保留（语义见 glossary「修订历史块」）
 
-Checks 1-3, 6-10 and 12-15 fail the run (exit 1); check 4 is retired (2026-11-09).
+Checks 1-3, 6-10 and 12-17 fail the run (exit 1).
 Checks 5 and 11 only warn: both are maintenance signals that need a human decision,
 not correctness errors.
 
@@ -48,6 +52,12 @@ RESULTS = os.path.join(ROOT, "build", "test-results", "test", "TEST-*.xml")
 # 与 tools/gen_test_summary.py 的 SNAPSHOT 保持一致：全量测试结果的独立落点。
 SNAPSHOT = os.path.join(ROOT, "build", "verification", "full-test-summary.json")
 BUFFER = os.path.join(ROOT, "docs", "buffer")
+# 全局索引指针列的 .md 名必须能从 docs/ 出发解析（相对路径口径）。
+# 值 = 数据行前缀；空串表示「表头 / 分隔行以外的所有表格行」。
+INDEX_POINTER_COLUMNS = {
+    os.path.join(ROOT, "docs", "decisions.md"): "| D-",
+    os.path.join(ROOT, "docs", "glossary.md"): "",
+}
 
 # chars（不是磁盘字节）：这是 AI 的**加载预算**，而 AI 按 token 消耗上下文，
 # 与文件在磁盘上占多少字节无关（中文 UTF-8 一个字符 3 字节，差 1.5 倍）。
@@ -133,6 +143,22 @@ def check_paths():
                 t = m.group(1)
                 if not os.path.exists(os.path.join(ROOT, t)):
                     bad.append((rel(f), t, "仓库路径"))
+
+        if f in INDEX_POINTER_COLUMNS:
+            row_prefix = INDEX_POINTER_COLUMNS[f]
+            for line in text.split("\n"):
+                if row_prefix:
+                    if not line.startswith(row_prefix):
+                        continue
+                elif (not line.startswith("|")
+                      or line.startswith("|---")
+                      or line.startswith("| 术语")):
+                    continue
+                cell = line.strip().strip("|").split("|")[-1]
+                for m in re.finditer(r"`([^`\s]+\.md)`", cell):
+                    t = m.group(1)
+                    if not os.path.exists(os.path.join(base, t)):
+                        bad.append((rel(f), t, "索引指针(相对 docs/)"))
 
     if bad:
         seen = set()
@@ -242,12 +268,6 @@ def check_test_tree():
         print(f"3. 测试树一致性    : OK（{len(real)} 个测试类）")
 
 
-# ---------------------------------------------------------------- 4. progress rolling (RETIRED)
-# 2026-11-09 (D-doc-07)：AGENTS.md 进展表取消，changelog 成为唯一历史载体。
-# 「两处维护」不再存在 ⇒ 条数 / 日期对齐 / 指针校验失去对象，按 §0 规约退出机制删除。
-# 编号保留为空位（main 里只打印一行 RETIRED），避免牵动 docs/README.md §7.1 的引用。
-
-
 # ---------------------------------------------------------------- 5. entry size
 
 def check_entry_size():
@@ -342,7 +362,8 @@ def check_decisions():
     for line in read(p).split("\n"):
         if not line.startswith("| D-"):
             continue
-        f = [c.strip() for c in line.strip().strip("|").split("|")]
+        # 表格里的 \| 是 markdown 转义竖线，不是列分隔符。
+        f = [c.strip() for c in re.split(r"(?<!\\)\|", line.strip().strip("|"))]
         if len(f) < 7:
             continue
         rows[f[0]] = (f[5], f[6])          # id -> (状态, 取代关系)
@@ -715,12 +736,71 @@ def check_container_form_coverage():
         print(f"15. 容器形态覆盖    : OK（{len(forms)} 类）")
 
 
+# ---------------------------------------------------------------- 16. 日期字段禁入
+
+# 行首（可带 "> " / * 强调前缀）的「最后更新」= 页眉日期字段；正文叙述里的提及不匹配。
+DATE_FIELD_LINE = re.compile(r"^\s*(?:>\s*)?\*{0,2}\s*最后更新")
+DATE_FIELD_ROOTS = ("tech", "system-design", "guides", "reference", "buffer")
+
+
+def check_no_date_fields():
+    """活跃层 + buffer 的 md 不得含「最后更新」页眉字段（2026-11-12 新增，D-doc-09）。
+
+    防的是模仿回潮：字段不可复算、必漂（实测 power-tech 头写 09-08，git 实际 11-08），
+    已按退出机制整体删除；但惯例靠模仿传播，零记忆 AI 会从 git 历史 / archive 的
+    旧页眉照抄回来 —— 负向检查是唯一的棘轮。archive 豁免：冻结地层保留日期。
+    """
+    paths = [ENTRY]
+    for sub in DATE_FIELD_ROOTS:
+        paths.extend(glob.glob(os.path.join(ROOT, "docs", sub, "**", "*.md"), recursive=True))
+    hits = []
+    for p in sorted(set(paths)):
+        for i, line in enumerate(read(p).splitlines(), 1):
+            if DATE_FIELD_LINE.match(line):
+                hits.append(f"{rel(p)}:{i}")
+    if hits:
+        failures.append("[日期字段] 「最后更新」已退出活跃层（D-doc-09），新鲜度查 git log —— 发现于: "
+                        + ", ".join(hits))
+        print(f"16. 日期字段禁入    : FAIL（{len(hits)} 处）")
+    else:
+        print("16. 日期字段禁入    : OK")
+
+
+# ---------------------------------------------------------------- 17. 版本字段禁入
+
+# 行首（可带 "> " / * 强调前缀）的「文档版本」= 页眉自编版本字段；正文叙述提及不匹配。
+VERSION_FIELD_LINE = re.compile(r"^\s*(?:>\s*)?\*{0,2}\s*文档版本")
+
+
+def check_no_version_fields():
+    """活跃层 + buffer 的 md 不得含「文档版本」页眉字段（2026-11-12 新增，D-doc-10）。
+
+    防的是模仿回潮：字段曾混装四种语义（文档自身版本 / 红电引擎修订指针 / 升格摘要 /
+    纯装饰递增），不可复算、必漂，且与红电 vN 同形引歧义（redstone 页眉 v20 vs 正文引擎
+    v19）。文档自身无版本；红电 vN = 红电系统.md 修订块条目索引（glossary「修订历史块」），
+    锚点行用「修订基线」标签 ⇒ 规则零例外。
+    """
+    paths = [ENTRY]
+    for sub in DATE_FIELD_ROOTS:
+        paths.extend(glob.glob(os.path.join(ROOT, "docs", sub, "**", "*.md"), recursive=True))
+    hits = []
+    for p in sorted(set(paths)):
+        for i, line in enumerate(read(p).splitlines(), 1):
+            if VERSION_FIELD_LINE.match(line):
+                hits.append(f"{rel(p)}:{i}")
+    if hits:
+        failures.append("[版本字段] 「文档版本」已退出活跃层（D-doc-10），引擎修订指针语义见 glossary「修订历史块」 —— 发现于: "
+                        + ", ".join(hits))
+        print(f"17. 版本字段禁入    : FAIL（{len(hits)} 处）")
+    else:
+        print("17. 版本字段禁入    : OK")
+
+
 def main():
     print("=== 文档系统一致性检查（docs/README.md §7）===\n")
     check_paths()
     check_test_green()
     check_test_tree()
-    print("4. 进展滚动        : RETIRED（2026-11-09，见 docs/README.md §4）")
     check_entry_size()
     check_decisions()
     check_java_symbols()
@@ -732,6 +812,8 @@ def main():
     check_shared_state_coverage()
     check_event_threading_coverage()
     check_container_form_coverage()
+    check_no_date_fields()
+    check_no_version_fields()
 
     print()
     for w in warnings:

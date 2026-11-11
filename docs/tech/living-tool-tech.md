@@ -1,7 +1,5 @@
 # Living Tool (活工具) 技术文档
 
-> **文档版本**: v0.1
-> **最后更新**: 2026-09-19
 > **适用版本**: Minecraft 1.21.1 + NeoForge 21.1.219
 > **状态**: **挖掘记忆回放 + 交互记忆回放 + 清除记忆已实现**（挖掘已通过实测）；掉落物形态 / 实体攻击 / 可视化待实现
 > **设计定案索引**: 本文 §7（代码注释中的 `L*` / `A3` 编号以此为准）
@@ -14,7 +12,7 @@
 3. [数据模型](#3-数据模型)
 4. [记忆录制](#4-记忆录制)
 5. [记忆回放](#5-记忆回放)
-6. [三宿主](#6-三宿主)
+6. [四宿主](#6-四宿主)
 7. [设计定案索引](#7-设计定案索引)
 8. [实现文件与注册点](#8-实现文件与注册点)
 9. [踩坑记录](#9-踩坑记录)
@@ -52,7 +50,7 @@
 | 6 | **只走官方入口**（NeoForge / 原版钩子） | 不识别具体模组 ⇒ 兼容是自然结果 |
 | 7 | **无记忆的活工具在容器里不做槽位影响**（明确不做） | 无记忆 ⇒ 没有可回放的行为，施加「槽位效果」无行为依据；辅助环只做世界侧交互。要槽位影响先有记忆语义（2026-09-18 定案） |
 
-**能力清单**：✅ 记忆录制 / 回放 · ✅ 三宿主（容器 / 背包 / 掉落物）· ✅ 挖掘 / 交互回放
+**能力清单**：✅ 记忆录制 / 回放 · ✅ 四宿主（方块容器 / 实体容器 / 玩家背包 / 掉落物）· ✅ 挖掘 / 交互回放
 · ✅ 射线微调（起点锚点 + 朝向跟随）· ✅ 辅助 / 自主模式 · ✅ 记忆清除 · ✅ 悬浮模型渲染 · ✅ Tooltip
 
 
@@ -145,7 +143,8 @@ public record RayMemory(Vec3 offset, @Nullable Block block) { }
 |---|---|
 | 方块容器 | **容器方块中心**（`L14=a`） |
 | 玩家背包 | **玩家眼睛**（`L3=a`，与录制端一致） |
-| 掉落物 | 实体位置（`L14=d`） |
+| 掉落物 | **碰撞箱中心**（`L14=d`，用 position() 会落在脚下方块里） |
+| 实体容器（船 / 矿车 / 生物背包） | **实体眼睛位置**（2026-11-12，自己的物理事实不设门，见 D-container-25） |
 
 记忆与宿主解耦 —— 存的是"这条线本身"，宿主换了就换个起点重放。
 
@@ -550,18 +549,19 @@ NeoForge 对此的防御是双层的：`FakePlayer.tick()` 与其连接器的 `t
 
 ---
 
-## 6. 三宿主
+## 6. 四宿主
 
 | 宿主 | 射线起点 | 客户端怎么知道 | 现状 |
 |---|---|---|---|
 | **方块容器** | 容器方块中心 | ✅ `K2` 的 S2C 包（2026-09-19 完成，见 §12） | ✅ 已实现 |
 | **玩家背包** | 玩家眼睛 | ✅ 本人已知 | ✅ 已实现 |
 | **掉落物** | **碰撞箱中心** | ✅ **免费**（`itemEntity.getItem()` 走实体同步） | ✅ **已实现**（2026-09-19，见 §11.4） |
+| **实体容器**（船 / 矿车 / 生物背包） | **实体眼睛位置**（2026-11-12，D-container-25） | ✅ `K2` 上报 `ofEntity(uuid, -1)`，客户端画实体中心（`HostOrigin`） | ✅ 已实现 |
 
-**三者共用同一条回放逻辑**：都走 `ContainerLivingItemHandler#processContext`，
+**四者共用同一条回放逻辑**：都走 `ContainerLivingItemHandler#processContext`，
 差异只在"射线起点"（`LivingToolFunction#resolveOrigin`）与"写回同步"。
 
-> ⚠️ **"三宿主"就是全部宿主，没有第四种** —— 活箱子**不是宿主**，放进活箱子里的活物品
+> ⚠️ **活箱子不是宿主** —— 放进活箱子里的活物品
 > **不会被 tick**（设计现状，非 bug）；复算判据见 [living-chest-tech.md](living-chest-tech.md) §3.3。
 
 | 宿主 | 扫描通道 | 上下文实现 | 写回同步 |
@@ -569,6 +569,7 @@ NeoForge 对此的防御是双层的：`FakePlayer.tick()` 与其连接器的 `t
 | 方块容器 | `processLevelContainers`（区块 → 方块实体） | `SimpleContainerContext` | `ClientboundContainerSetSlotPacket` |
 | 玩家背包 | `processContainer`（在线玩家） | `SimpleContainerContext` | 同上（`inventoryMenu`） |
 | 掉落物 | `processEntityContainers`（遍历实体） | `ItemEntityContainerContext` | `ClientboundSetEntityDataPacket` |
+| 实体容器 | `processEntityContainers`（遍历实体） | `EntityContainerContext` | 槽位同步（`syncSlotToClients`） |
 | —— | **客户端可见性** | —— | —— |
 | 方块容器 | ❌ 瞎（不开 GUI 拿不到）→ **`K2` 的 `LivingToolHostPacket`** | `LivingToolHostSync` → `LivingToolHostClientCache` | 见 §12 |
 

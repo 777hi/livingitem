@@ -4,6 +4,9 @@
 >
 > **口径以「实现层」文档为准**（`docs/tech/*`、`docs/system-design/*`）；本页只做索引与速记，
 > 与文档冲突时**改这里**，不要让两处各自漂移。
+>
+> **出处列体例**：`.md` 指针一律写从 `docs/` 出发的相对路径（由 `doc_check.py` 第 1 项校验）；
+> `同上` = 继承上一行出处，每表首行必为显式路径；`D-xxx` 是决策 ID，指向 `decisions.md`。
 
 ---
 
@@ -11,19 +14,19 @@
 
 | 术语 | 定义 | 出处 |
 |---|---|---|
-| **活物品**（Living Item） | 被「活化」的方块功能物品：放在容器里**自动 tick**，状态存 DataComponent，跟随物品跨容器迁移 | `AGENTS.md` 项目概述 |
+| **活物品**（Living Item） | 被「活化」的方块功能物品：放在容器里**自动 tick**，状态存 DataComponent，跟随物品跨容器迁移 | `../AGENTS.md` 项目概述 |
 | **活化 / 取消活化** | 把普通方块物品变成活物品（写 `IS_LIVING` 组件）／反向清除全部活物品数据 | `LivingItemManager.setLiving` / `clearLivingData` |
-| **活物品隔离** | 活物品**不被其它活物品**当普通物品处理（不传输、不熔炼、不作燃料）；唯一定义点 `SlotInteractions.isEligibleCargo` | `living-hopper-tech.md` §6.2.1 |
-| **数据组件**（DataComponent） | 1.21 的物品数据载体；活物品的一切状态都存这里（`networkSynchronized` 的会随物品同步到客户端） | `living-item-infrastructure.md` |
+| **活物品隔离** | 活物品**不被其它活物品**当普通物品处理（不传输、不熔炼、不作燃料）；唯一定义点 `SlotInteractions.isEligibleCargo` | `tech/living-hopper-tech.md` §6.2.1 |
+| **数据组件**（DataComponent） | 1.21 的物品数据载体；活物品的一切状态都存这里（`networkSynchronized` 的会随物品同步到客户端） | `system-design/living-item-infrastructure.md` |
 | **功能**（`LivingItemFunction`） | 活物品行为的实现：`canApply` + `tick(entries, ctx, tick, level)` + tooltip | 同上 |
 | **容器上下文**（`ContainerContext`） | 活物品 tick 时对所在容器的抽象读写入口（`getItem` / `setItem` / `syncSlotToClients`…） | 同上 |
-| **容器宿主**（host） | 容器依附的东西，四类：**方块** / **实体** / **掉落物** / **玩家背包**，各对应一个能力面（`ItemHandler.BLOCK` / `ENTITY` / `ITEM`） | `container-boundary.md` I-C1 |
-| **实体容器**（`EntityContainerContext`） | 装着物品的实体包装成的容器（箱子船 / 箱子矿车 / 漏斗矿车 / 带箱驴骡）；键 `entity_<uuid>`，`getBlockPos()` 恒 `null`，位置每 tick 现取 | `container-boundary.md` I-C5 · `D-container-10` |
-| **逻辑槽 / 物理槽** | **逻辑槽** = 对外口径，只数存储格（0 起连续）；**物理槽** = 宿主 handler 的真实编号，可能含**前置非存储槽**（马鞍）。二者靠 `toPhysicalSlot` / `toLogicalSlot` 一对互逆映射转换 | `container-boundary.md` I-C10 |
-| **数据宿主**（`getDataHosts()`） | 容器级持久附件挂在谁身上：方块容器 = BE（大箱两半各一），实体容器 = 实体本身 | `container-boundary.md` I-C9 |
+| **容器宿主**（host） | 容器依附的东西，四类：**方块** / **实体** / **掉落物** / **玩家背包**，各对应一个能力面（`ItemHandler.BLOCK` / `ENTITY` / `ITEM`） | `system-design/container-boundary.md` I-C1 |
+| **实体容器**（`EntityContainerContext`） | 装着物品的实体包装成的容器（箱子船 / 箱子矿车 / 漏斗矿车 / 带箱驴骡）；键 `entity_<uuid>`，`getBlockPos()` 恒 `null`，位置每 tick 现取 | `system-design/container-boundary.md` I-C5 · `D-container-10` |
+| **逻辑槽 / 物理槽** | **逻辑槽** = 对外口径，只数存储格（0 起连续）；**物理槽** = 宿主 handler 的真实编号，可能含**前置非存储槽**（马鞍）。二者靠 `toPhysicalSlot` / `toLogicalSlot` 一对互逆映射转换 | `system-design/container-boundary.md` I-C10 |
+| **数据宿主**（`getDataHosts()`） | 容器级持久附件挂在谁身上：方块容器 = BE（大箱两半各一），实体容器 = 实体本身 | `system-design/container-boundary.md` I-C9 |
 | **容器级数据**（`HasContainerData`） | 按**容器**算一次、被容器内多件活物品共享的数据（流体 / 红石 / 电力），带 priority 决定先后 | 同上 |
-| **稳态跳过** | 修订计数 + 外部输入签名 + 无在途定时器三者都不变时，复用上次结果、跳过整段重算 | `living-redstone-tech.md` §3.2 |
-| **软逻辑** | 用户定性：非必要功能 —— 能成就好，失败（含抛异常）**必须静默且不影响原版流程** | `living-farmland-tech.md` §3.5 |
+| **稳态跳过** | 修订计数 + 外部输入签名 + 无在途定时器三者都不变时，复用上次结果、跳过整段重算 | `tech/living-redstone-tech.md` §3.2 |
+| **软逻辑** | 用户定性：非必要功能 —— 能成就好，失败（含抛异常）**必须静默且不影响原版流程** | `tech/living-farmland-tech.md` §3.5 |
 
 ## 红电 / 电力层
 
@@ -31,12 +34,12 @@
 |---|---|---|
 | **红电** | 「活红石信号层 + 活涂蜡铜块发电层」的合称 | `system-design/红电系统.md` |
 | **活铜** | 红电**信号层**的铜块元件（普通铜块线缆 / 雕文二极管 / 切制立交桥 / 铜格栅加法器 / 铜灯信号记忆）；与「活红石」**同层并列**。⚠️ **涂蜡**铜块属**发电层**，不在其列 | `tech/living-copper-tech.md` |
-| **锈蚀级 / 氧化级** | 铜的 4 个氧化等级（未锈 / 暴露 / 风化 / 氧化）；在电力层里就是**共振声部** | `living-power-tech.md` §3.6 |
-| **跳变 / 能量事件** | 信号边的一次上升沿 = 一次能量事件；「跳变即能量事件」是记账基石 | `power-invariants.md` §2.A |
-| **相位** | 事件在周期内的位置：`offset = lastRisingTick mod period` | `living-power-tech.md` §3.2 |
+| **锈蚀级 / 氧化级** | 铜的 4 个氧化等级（未锈 / 暴露 / 风化 / 氧化）；在电力层里就是**共振声部** | `tech/living-power-tech.md` §3.6 |
+| **跳变 / 能量事件** | 信号边的一次上升沿 = 一次能量事件；「跳变即能量事件」是记账基石 | `system-design/power-invariants.md` §2.A |
+| **相位** | 事件在周期内的位置：`offset = lastRisingTick mod period` | `tech/living-power-tech.md` §3.2 |
 | **相位域**（`PhaseDomain`） | 按 **(周期 P, 偏移 offset)** 分组的事件集合；`n` = 域个数 | 同上 §3.3 |
 | **虚假周期域** | 信号中断恢复时，EMA 周期估计收敛路径上产生的中间域（正常现象，32~1200 tick 内自动清理） | `system-design/红电系统.md` §3.2 |
-| **`eff_δ_sum`** | 各偏移的 \|Δ\| 分别取 √ 后**求和**（标量，**不是**矢量相加） | `living-power-tech.md` §3.1 |
+| **`eff_δ_sum`** | 各偏移的 \|Δ\| 分别取 √ 后**求和**（标量，**不是**矢量相加） | `tech/living-power-tech.md` §3.1 |
 | **合因子** | `(eff_δ_sum)^(1+u)`；**不含 P** —— 与 P 相乘后得到频率中性的单次跳变能量 | 同上 |
 | **解锁度 `u`** | `调谐效率 × (n / 偏好周期)` ∈ [0,1]；相数越多越高（建造难度也越高） | 同上 |
 | **调谐效率** | `(1 + cos θ)/2`，θ 由「tick 误差 / 偏好周期」换算 —— 调得越准越高 | 同上 |
@@ -45,51 +48,51 @@
 | **RE / FE / mFE** | 红电能量单位 / 外部能量单位 / **毫 FE 定点制**（1 FE = 1000 mFE） | 同上 §1 |
 | **通道**（`ChannelState`） | 一次 BFS 得到的相位历史；同连通块多机共享（锚点算一次、其余 `copyFrom`） | 同上 §3.1 |
 | **拓扑键**（`TopoKey`） | 同氧化级连通块的标识，用于把发电机分组 | 同上 |
-| **预热** | 周期估计与显示窗口的建立期（此期间不保证有产出） | `power-invariants.md` §2.E |
-| **边模型 / 出边** | `EdgeGrid` 每槽 4 条**自己朝各方向发出的**边（v15 重构：共享边 → 每槽自有出边） | `living-redstone-tech.md` §3.2.1 |
-| **感应 / 耦合 / 绝缘** | 铜块网络的三种连接语义：全向感应 / 定向耦合（管径加权）/ 涂蜡绝缘 | `living-power-tech.md` §3.6 |
+| **预热** | 周期估计与显示窗口的建立期（此期间不保证有产出） | `system-design/power-invariants.md` §2.E |
+| **边模型 / 出边** | `EdgeGrid` 每槽 4 条**自己朝各方向发出的**边（v15 重构：共享边 → 每槽自有出边） | `tech/living-redstone-tech.md` §3.2.1 |
+| **感应 / 耦合 / 绝缘** | 铜块网络的三种连接语义：全向感应 / 定向耦合（管径加权）/ 涂蜡绝缘 | `tech/living-power-tech.md` §3.6 |
 
 ## 活工具 / 活武器
 
 | 术语 | 定义 | 出处 |
 |---|---|---|
-| **主动 / 被动模式** | 有记忆 = 主动（自主按记忆射线干活）；无记忆 = 被动（辅助：跟玩家出手） | `living-tool-tech.md` §2 |
-| **赋灵者** | 活工具/活武器 tooltip 的绑定主人行；UUID=绑定数据、名字=显示缓存（实时解析 → 缓存 → 短 UUID） | `living-weapon-tech.md` §8.1.1 / D-core-06 |
-| **受控 tick** | `driveWielderTick` 按 game tick 去重驱动 FakePlayer 真链（inventoryTick/冷却/药效衰减/装备属性刷新/蓄力推进全原生），物理钉住不进世界；攻击缩放例外 —— 节奏是 per-weapon 语义，由回放侧注入 | `living-tool-tech.md` §5.7 |
-| **射线微调** | 背包点小人配置：起点锚点（躯干中心/底部，脑袋=重置）+ 朝向跟随（绑定玩家 yRot）；仅玩家形态生效 | `living-tool-tech.md` §2.5 |
+| **主动 / 被动模式** | 有记忆 = 主动（自主按记忆射线干活）；无记忆 = 被动（辅助：跟玩家出手） | `tech/living-tool-tech.md` §2 |
+| **赋灵者** | 活工具/活武器 tooltip 的绑定主人行；UUID=绑定数据、名字=显示缓存（实时解析 → 缓存 → 短 UUID） | `tech/living-weapon-tech.md` §8.1.1 / D-core-06 |
+| **受控 tick** | `driveWielderTick` 按 game tick 去重驱动 FakePlayer 真链（inventoryTick/冷却/药效衰减/装备属性刷新/蓄力推进全原生），物理钉住不进世界；攻击缩放例外 —— 节奏是 per-weapon 语义，由回放侧注入 | `tech/living-tool-tech.md` §5.7 |
+| **射线微调** | 背包点小人配置：起点锚点（躯干中心/底部，脑袋=重置）+ 朝向跟随（绑定玩家 yRot）；仅玩家形态生效 | `tech/living-tool-tech.md` §2.5 |
 
 ## 活耕地
 
 | 术语 | 定义 | 出处 |
 |---|---|---|
-| **耕地槽 / 生长槽** | 双槽渲染的两个位置：耕地槽（物品自身槽位）显**种子图标**，生长槽（正上方一格）显**作物阶段大图** | `living-farmland-tech.md` §8.2 |
+| **耕地槽 / 生长槽** | 双槽渲染的两个位置：耕地槽（物品自身槽位）显**种子图标**，生长槽（正上方一格）显**作物阶段大图** | `tech/living-farmland-tech.md` §8.2 |
 | **round-robin 逐项产出** | 成熟后冻结战利品表，之后每 tick 不限速逐项搬进生长槽 | 同上 §6 |
 | **留种** | 冻结时把产出中的种子总量 −1（变相自动补种） | 同上 §6.1 |
 | **湿润传播** | 与容器内活水桶水流相邻的活耕地为「源 4 级」，沿相邻活耕地每跳 −1，≥1 即湿润 | 同上 §5.2 |
-| **口径** | 项目的**语义约定**（例：「手动要活化、自动要普通」）—— 属**设计决策**，不是实现细节 | `living-hopper-tech.md` §6.2.1 |
+| **口径** | 项目的**语义约定**（例：「手动要活化、自动要普通」）—— 属**设计决策**，不是实现细节 | `tech/living-hopper-tech.md` §6.2.1 |
 
 ## 传输 / 槽位交互
 
 | 术语 | 定义 | 出处 |
 |---|---|---|
-| **槽位交互**（`SlotInteraction`） | 「货物 × 目标槽」的**替代语义**（不插入、改做别的动作），如骨粉 → 活耕地 = 施肥 | `living-item-infrastructure.md` §9.7 |
-| **货物准入**（`isEligibleCargo`） | 活漏斗的货物规则：**活物品不作货物**（活箱子 / 活末影箱除外）；唯一定义点 | `living-hopper-tech.md` §6.2.1 |
-| **模拟优先** | 交互协议：`simulateExtract` 试算 → `interact` 生效 → 才真 `extract` 扣货 | `living-item-infrastructure.md` §9.7 |
-| **方向格** | 跨容器的 4 种情形：容器内 / 跨容器推送 / 跨容器拉取 / 邻居间直传 | `living-hopper-tech.md` §6.2.2 |
+| **槽位交互**（`SlotInteraction`） | 「货物 × 目标槽」的**替代语义**（不插入、改做别的动作），如骨粉 → 活耕地 = 施肥 | `system-design/living-item-infrastructure.md` §9.7 |
+| **货物准入**（`isEligibleCargo`） | 活漏斗的货物规则：**活物品不作货物**（活箱子 / 活末影箱除外）；唯一定义点 | `tech/living-hopper-tech.md` §6.2.1 |
+| **模拟优先** | 交互协议：`simulateExtract` 试算 → `interact` 生效 → 才真 `extract` 扣货 | `system-design/living-item-infrastructure.md` §9.7 |
+| **方向格** | 跨容器的 4 种情形：容器内 / 跨容器推送 / 跨容器拉取 / 邻居间直传 | `tech/living-hopper-tech.md` §6.2.2 |
 
 ## 渲染 / 图标
 
 | 术语 | 定义 | 出处 |
 |---|---|---|
-| **图标变体**（`Variant`） | `LivingIconSpec` 的声明式图标分支（按谓词匹配，如耕地 moist/dry） | `icon-system.md` §3 |
-| **装饰器**（`IItemDecorator`） | 物品图标叠加层；**快捷栏 / 容器 GUI / 创造物品栏共用一份代码**。⚠️ **只在 GUI 内被调用** —— 掉落物 / 手持 / 展示框，以及不跑 `renderItemDecorations` 的第三方 GUI（如 JEI）**都不生效** | `icon-system.md`「渲染上下文覆盖范围（重要约束）」 |
+| **图标变体**（`Variant`） | `LivingIconSpec` 的声明式图标分支（按谓词匹配，如耕地 moist/dry） | `system-design/icon-system.md` §3 |
+| **装饰器**（`IItemDecorator`） | 物品图标叠加层；**快捷栏 / 容器 GUI / 创造物品栏共用一份代码**。⚠️ **只在 GUI 内被调用** —— 掉落物 / 手持 / 展示框，以及不跑 `renderItemDecorations` 的第三方 GUI（如 JEI）**都不生效** | `system-design/icon-system.md`「渲染上下文覆盖范围（重要约束）」 |
 | **槽位渲染窗口 vs render TAIL** | 两个渲染时机：前者深度测试**关**（纯绘制顺序）、后者**开**（与世界深度竞争） | 同上「槽位叠加层渲染层级」 |
 
 ## 工程约定
 
 | 术语 | 定义 | 出处 |
 |---|---|---|
-| **文档即规范** | 改代码必须同步文档；文档里的数字 / 路径断言必须**可复算** | `docs/README.md` |
-| **入口 / 契约 / 实现 / 指南 / 参考 / 归档层** | 文档分层；入口（`AGENTS.md`）**≤20,000 字符**，只放路由与不可违反的约束 | `docs/README.md` §1 |
-| **修订历史块** | `system-design/红电系统.md` 顶部的 `> **vX.Y 修订**` **逆序**块：记录**当时**的设计（含已废弃因子如「规律度」），**不是当前口径** | `system-design/红电系统.md` 头部 |
-| **不变量（I-x#）** | 红电系统的可执行断言编号（A 记账 / B 相位 / C 共振 / D 储能 / E 集成 / F 显示 / **G 算术安全**） | `power-invariants.md` §1 |
+| **文档即规范** | 改代码必须同步文档；文档里的数字 / 路径断言必须**可复算** | `README.md` |
+| **入口 / 契约 / 实现 / 指南 / 参考 / 归档层** | 文档分层；入口（`AGENTS.md`）**≤20,000 字符**，只放路由与不可违反的约束 | `README.md` §1 |
+| **修订历史块** | `system-design/红电系统.md` 顶部的 `> **vX.Y 修订**` **逆序**块：记录**当时**的设计（含已废弃因子如「规律度」），**不是当前口径**。**vN = 本块条目索引**，红电族互引语义（「红电 v18 语义」= v18 修订时的行为定义）；锚点行标「修订基线」 | `system-design/红电系统.md` 头部 |
+| **不变量（I-x#）** | 红电系统的可执行断言编号（A 记账 / B 相位 / C 共振 / D 储能 / E 集成 / F 显示 / **G 算术安全**） | `system-design/power-invariants.md` §1 |
