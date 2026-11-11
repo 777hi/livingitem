@@ -150,7 +150,8 @@ public record RayMemory(Vec3 offset, @Nullable Block block) { }
 
 ### 2.4 黑名单（Blacklist）
 
-沿射线扫描时**直接无视**的方块集合。目前 = 宿主自身方块（大箱子两格都算）。
+沿射线扫描时**直接无视**的方块集合。目前 = 宿主自身方块（大箱子两格都算；
+**实体宿主** 2026-11-12 起含**载体脚下方块**——工具不会挖女仆站着的那格）。
 
 它是个通用接口 `Set<BlockPos>`，将来可扩：玩家配置保护方块、模组标记方块等（`L41`）。
 
@@ -573,21 +574,24 @@ NeoForge 对此的防御是双层的：`FakePlayer.tick()` 与其连接器的 `t
 | —— | **客户端可见性** | —— | —— |
 | 方块容器 | ❌ 瞎（不开 GUI 拿不到）→ **`K2` 的 `LivingToolHostPacket`** | `LivingToolHostSync` → `LivingToolHostClientCache` | 见 §12 |
 
-### 6.1 渲染的配置门（2026-10-28）
+### 6.1 渲染的配置门（2026-10-28 立；2026-11-12 改按 hostSlot 分流）
 
-`tool_and_weapon` 开关（`GameplayConfig`，管「物品形态容器借宿主锚点」）关闭时，
-**物品形态宿主（玩家 / 实体身上的活背包）的工具外显一并取消**——悬浮模型、记忆射线、
-背后环都不画（`LivingToolModelRenderer` ③ / `LivingToolRayRenderer#renderContainerHosts`
-按 `HostRef.Kind != BLOCK && !开关` 跳过）。对齐活信标口径：功能关 ⇒ 光束消失。
-方块容器有自己的锚点、不受此开关 ⇒ 照常渲染。
+`tool_and_weapon` 开关（`GameplayConfig`，管「物品形态容器**借**宿主锚点」）关闭时，
+**借来的锚点条目（`HostRef.hostSlot() ≥ 0` = 物品形态活背包，无论宿主是玩家 / 方块 / 实体）的
+工具外显一并取消**——悬浮模型、记忆射线、背后环都不画（`LivingToolModelRenderer` ③ /
+`LivingToolRayRenderer#renderContainerHosts` 按 `hostSlot ≥ 0 && !开关` 跳过）。
+对齐活信标口径：功能关 ⇒ 光束消失。
+宿主自己的直接内容（方块容器 / 实体容器，`hostSlot = -1`）不借位置、**不受此开关** ⇒ 照常渲染
+（D-container-25：自己的位置直接用，借来的位置才要开关）。
 
 - K2 上报**不**受此门控制（2026-10-27 定）：客户端算辅助挖掘速度（顶层相加 + 背包取最高）
   需要知道背包里有哪些工具 ⇒ 上报照常、只关渲染。
 - 🔴 **被动辅助（挖掘 / 攻击）不受此门控制**（2026-10-29 真机发现并确认）：
-  辅助**不用锚点** —— 起点是玩家眼睛（`LivingToolAssist` / `LivingWeaponAssist`），
-  走的是「随身携带 = 物品栏顶层 + 已活化容器内容」（`CarriedLivingItems`）这条判据，
-  它不读 `tool_and_weapon`。⇒ 开关关 = **主动模式停 + 外显消失，但背包里的活武器照样补刀、
-  活工具照样加速挖掘**（玩家观感：看不见，但还在打 / 还在变快）。
+  辅助**不用锚点** —— 起点是挥刀者眼睛（`LivingToolAssist` / `LivingWeaponAssist`，
+  实体宿主同理，见 D-container-25），走的是「随身携带 = 物品栏顶层 + 已活化容器内容」
+  （`CarriedLivingItems`，玩家）或实体容器逐槽（`EntityContainers` 准入，宿主侧）判据，
+  它们不读 `tool_and_weapon`。⇒ 开关关 = **主动模式停 + 外显消失，但背包里的活武器照样补刀、
+  活工具照样加速挖掘**（观感：看不见，但还在打 / 还在变快）。
   📌 要真关必须**同时**改两处：`CarriedLivingItems`（消费侧，服务端不展开容器内容）+
   `LivingToolFunction#reportHostTools`（生产侧，物品形态宿主不再上报 K2）——
   只关服务端会让客户端预测的挖掘速度高于服务端 ⇒ **方块破坏回弹**（2026-10-27 踩过）。
@@ -1871,6 +1875,16 @@ private float incrementDestroyProgress(...) {
 
 仍不可见：**被动辅助挖掘环**（"他正在挖哪格"不在组件里，`LivingToolAssistState` 是本机
 BreakSpeed 的本地记录；要做得新增协议字段，判定偏复杂暂缓）。
+
+#### ✅ 扩展：实体宿主的背后环（2026-11-12，D-container-25）
+
+**实体宿主（船 / 矿车 / 生物背包）直接内容（`hostSlot = -1`）里的无记忆工具 / 武器，
+进【该宿主的背后环】**——环心 = 载体身后（`getViewVector` 水平分量定向，与玩家背后环同款
+几何，`renderBackRing` 已泛化到 `Entity`）。数据**零新增同步**：K2 实体路径
+（`hostRefOfContext`）本来就每 tick 载着容器完整工具清单，客户端 ③ 收集即可。
+方块容器是**地点**不是携带者 ⇒ **无环**（辅助工具在方块容器里维持不显示，只有主动模式
+悬浮模型）；物品形态嵌套（`hostSlot ≥ 0`，女仆身上活背包里的辅助武器）也不进环——
+与补刀收集同口径（只收直接槽位，展开活背包缓办，见 TODO 实体宿主节）。
 
 ---
 

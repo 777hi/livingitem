@@ -51,7 +51,7 @@
 | `LivingMapEventHandler` | `onContainerOpen`(`Open`) `onPlayerLoggedOut`(`PlayerLoggedOutEvent`) `onPlayerTick`(`Post`) `onRightClickItem`(`RightClickItem`) `onServerStopped`(`ServerStoppedEvent`) |
 | `LivingToolAssist` | `onBlockDrops`(`BlockDropsEvent`) `onBreakSpeed`(`BreakSpeed`) `onHarvestCheck`(`HarvestCheck`) |
 | `LivingToolRecorder` | `onBlockBreak`(`BreakEvent`) `onLeftClickBlock`(`LeftClickBlock`) `onLivingDamage`(`Post`) `onPlayerLoggedOut`(`PlayerLoggedOutEvent`) `onRightClickItem`(`RightClickItem`) `onServerStopped`(`ServerStoppedEvent`) `onToolModify`(`BlockToolModificationEvent`) |
-| `LivingWeaponAssist` | `onIncomingDamage`(`LivingIncomingDamageEvent`) `onKnockback`(`LivingKnockBackEvent`) `onPlayerDamage`(`Post`) |
+| `LivingWeaponAssist` | `onIncomingDamage`(`LivingIncomingDamageEvent`) `onKnockback`(`LivingKnockBackEvent`) `onWielderDamage`(`Post`) |
 | `PhaseDataMigration` | `onBlockDrops`(`BlockDropsEvent`) `onBlockPlace`(`EntityPlaceEvent`) |
 | ▸ **客户端包 `com/qiqi/li/client/`（客户端侧，不在服务器 tick 线程）** | |
 | `ContainerFluidOverlaySubscriber` | `onRenderForeground`(`Foreground`) |

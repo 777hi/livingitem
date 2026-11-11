@@ -149,8 +149,8 @@
   两处相关设计：
   ① **`getBlockPos()` 对实体容器恒返回 `null`** —— 它不是方块容器；且这防了一个真 bug：
   船恰好停在箱子上方时，`getBlockEntity(船位置)` 会拿到**地形里的箱子** ⇒ 活信标误判
-  「有盖容器宿主」而把光束漂在下面的箱子上（返回 null 后走「非方块宿主 ⇒ 实体无 owner ⇒
-  不开光」的空路径，与 `LidBlockEntity` 判据的本意一致）；
+  「有盖容器宿主」而把光束漂在下面的箱子上（返回 null 后信标按锚点分类走实体宿主路径，
+  不会误把下方箱子当宿主，与 `LidBlockEntity` 判据的本意一致）；
   ② **实体宿主的菜单解析天然结构化** —— `ContainerEntity extends Container` ⇒ 菜单槽的
   `slot.container` 就是船本身，`MenuSlotOwners` 第一级直接命中、**零反射**。所以「实体容器能不能
   做 viewer 匹配」的答案是**能，且不需要任何降级**（曾经预设的「viewer 降级」方案随之作废）。

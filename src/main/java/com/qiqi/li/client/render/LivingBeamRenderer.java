@@ -2,12 +2,17 @@ package com.qiqi.li.client.render;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
+
+import javax.annotation.Nullable;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.compat.iris.ModIris;
 import com.qiqi.li.living.domain.beacon.BeaconBaseBlocks;
+import com.qiqi.li.living.domain.beacon.BeaconEntityHostClientCache;
+import com.qiqi.li.living.domain.beacon.BeaconEntityHostPacket;
 import com.qiqi.li.living.domain.beacon.BeaconGlassColor;
 import com.qiqi.li.living.domain.beacon.BeaconHostClientCache;
 import com.qiqi.li.living.domain.beacon.BeaconHostPacket;
@@ -25,6 +30,7 @@ import net.minecraft.client.renderer.blockentity.BeaconRenderer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.util.Mth;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -42,7 +48,7 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
  * 活信标光束渲染（Phase 1/2）—— 设计稿 {@code docs/tech/living-beacon-tech.md}
  * §2.1 / §2.4 / §6。
  *
- * <p><b>两种宿主</b>（规则 1：仅玩家 / 箱子）：</p>
+ * <p><b>三种宿主</b>（规则 1：玩家 / 箱子 / 实体容器，D-container-25）：</p>
  * <ul>
  *   <li><b>玩家宿主</b>：本机背包（含快捷栏 / 副手）里的活信标，从<b>头颅顶面</b>沿<b>顶面法线</b>射出
  *       （随头俯仰转动：平视 = 竖直向上、低头 = 朝前上方、抬头 = 朝后上方）。</li>
@@ -50,6 +56,9 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
  *       判级 → level ≥ 1 才亮（无条件亮是 Phase 1 临时口径，Phase 2 接入）。</li>
  *   <li><b>箱子宿主</b>：{@link BeaconHostClientCache}（S2C 同步的位置 + 等级），
  *       从箱口顶部垂直向上射出，本地 clip 截断。开盖由服务端 blockEvent 驱动。</li>
+ *   <li><b>实体宿主</b>（船 / 矿车 / 生物背包 / 掉落物）：{@link BeaconEntityHostClientCache}
+ *       （S2C 同步的实体 UUID + 等级），从<b>宿主 bbHeight 顶面</b>沿顶面法线射出——
+ *       无俯仰实体法线天然竖直向上（与玩家同一套公式，D-container-25）。</li>
  * </ul>
  *
  * <h3>复用的原版函数</h3>
@@ -122,6 +131,7 @@ public final class LivingBeamRenderer {
         boolean drew = renderPlayerHost(mc, level, poseStack, buffers, cameraPos, partialTick);
         drew |= renderRemotePlayerHosts(mc, level, poseStack, buffers, cameraPos, partialTick);
         drew |= renderChestHosts(level, poseStack, buffers, cameraPos, partialTick);
+        drew |= renderEntityHosts(level, poseStack, buffers, cameraPos, partialTick);
 
         if (drew) {
             // ⚠️ 必须 flush 两趟：renderBeaconBeam 内部画 beam（不透明）+ glow（半透明外晕），
@@ -157,7 +167,7 @@ public final class LivingBeamRenderer {
             }
             renderBeamAlong(poseStack, buffers, cameraPos, partialTick, level,
                 headTop(mc.player, partialTick), headNormal(mc.player),
-                playerColorSections(level, mc.player,
+                hostColorSections(level, mc.player,
                     BeaconGlassColor.scanColumn(slot, size, 9, inventory::getItem), partialTick));
             return true;
         }
@@ -168,22 +178,27 @@ public final class LivingBeamRenderer {
     private static final double HEAD_TOP_FROM_PIVOT = 0.3;
 
     /**
-     * 光束起点 = <b>头颅顶面中心</b>（像帽子一样贴在头顶 ⇒ <b>随头转动</b>）。
+     * 光束起点 = <b>宿主顶面中心</b>（像帽子一样贴在头顶 ⇒ <b>随俯仰转动</b>）。
      *
-     * <p>= 颈部枢轴 + 头部旋转后的"上方向"（{@link #headNormal}）× 顶面偏移。
+     * <p>= 枢轴 + 旋转后的"上方向"（{@link #headNormal}）× 顶面偏移。
      * 平视时退化为「脚底 + 实体高度」（与更早的实现一致），但<b>低头时头顶面中心会往前、往下移动</b>
      * —— 这才是"贴在头顶那个面上"的准确位置。潜行 / 坐骑的高度变化仍然保留。</p>
+     *
+     * <p>⚠️ 参数是 {@code Entity} 而非 {@code Player}：公式只用 Entity API
+     * （{@code getPosition} / {@code getBbHeight} / {@code getYRot} / {@code getXRot}），
+     * 实体宿主（船 / 矿车 / 生物背包 / 掉落物）直接复用——无俯仰的实体
+     * {@code xRot = 0} ⇒ 法线退化为竖直向上、起点退化为 bbHeight 顶面（D-container-25）。</p>
      */
-    private static Vec3 headTop(Player player, float partialTick) {
-        Vec3 pivot = player.getPosition(partialTick)
-            .add(0.0, player.getBbHeight() - HEAD_TOP_FROM_PIVOT, 0.0);
-        return pivot.add(headNormal(player).scale(HEAD_TOP_FROM_PIVOT));
+    private static Vec3 headTop(Entity entity, float partialTick) {
+        Vec3 pivot = entity.getPosition(partialTick)
+            .add(0.0, entity.getBbHeight() - HEAD_TOP_FROM_PIVOT, 0.0);
+        return pivot.add(headNormal(entity).scale(HEAD_TOP_FROM_PIVOT));
     }
 
     /**
-     * 光束方向 = <b>头颅顶面的法线</b>（世界坐标单位向量）—— 用户 2026-10-16 定。
+     * 光束方向 = <b>顶面的法线</b>（世界坐标单位向量）—— 用户 2026-10-16 定。
      *
-     * <p>几何：这个面<b>随头俯仰转动</b> ⇒ 平视时法线 = <b>竖直向上</b>；<b>低头</b>时头顶朝
+     * <p>几何：这个面<b>随俯仰转动</b> ⇒ 平视时法线 = <b>竖直向上</b>；<b>低头</b>时头顶朝
      * <b>前上方</b>；<b>抬头</b>时朝<b>后上方</b>。它与视线方向<b>垂直</b>（相差 90°）—— 别把两者
      * 混为一谈（低头时视线朝前下、顶面法线朝前上）。</p>
      *
@@ -193,9 +208,9 @@ public final class LivingBeamRenderer {
      * 三个校验点：p=0 ⇒ (0,1,0)（竖直向上）；p=+90° ⇒ (−sin y, 0, cos y)（水平<b>前</b>方）；
      * p=−90° ⇒ 水平<b>后</b>方。且 {@code N·L = 0} 恒成立。</p>
      */
-    private static Vec3 headNormal(Player player) {
-        float yaw = player.getYRot() * Mth.DEG_TO_RAD;
-        float pitch = player.getXRot() * Mth.DEG_TO_RAD;
+    private static Vec3 headNormal(Entity entity) {
+        float yaw = entity.getYRot() * Mth.DEG_TO_RAD;
+        float pitch = entity.getXRot() * Mth.DEG_TO_RAD;
         return new Vec3(-Mth.sin(yaw) * Mth.sin(pitch), Mth.cos(pitch), Mth.cos(yaw) * Mth.sin(pitch));
     }
 
@@ -209,16 +224,16 @@ public final class LivingBeamRenderer {
      * <p>⚠️ 分段高度是<b>竖直格数</b>，而玩家光束沿<b>顶面法线</b> —— 两者不严格对应；因"最后一段一直画到
      * 终点"，实际观感仍是"第一块染色玻璃决定整根颜色"（与原版一致）。</p>
      */
-    private static List<BeamColorSections.Section> playerColorSections(ClientLevel level, Player player,
-                                                                      List<Integer> containerColors,
-                                                                      float partialTick) {
+    private static List<BeamColorSections.Section> hostColorSections(ClientLevel level, Entity carrier,
+                                                                     List<Integer> containerColors,
+                                                                     float partialTick) {
         List<BeamColorSections.Observation> observations = new ArrayList<>();
         // 容器侧：信标同列向上的玻璃（本机背包可见，本地读；顺序在首位 = 紧贴信标上方）
         for (int color : containerColors) {
             observations.add(new BeamColorSections.Observation(color, false));
         }
         observations.addAll(
-            scanAbove(level, BlockPos.containing(headTop(player, partialTick)).above(), COLOR_SCAN_LIMIT));
+            scanAbove(level, BlockPos.containing(headTop(carrier, partialTick)).above(), COLOR_SCAN_LIMIT));
         return BeamColorSections.build(observations, BeamColorSections.DEFAULT_COLOR);
     }
 
@@ -294,9 +309,44 @@ public final class LivingBeamRenderer {
             // 颜色同样本地算世界部分（U3 方案 A）；容器玻璃色随玩家宿主包下发
             drew |= renderBeamAlong(poseStack, buffers, cameraPos, partialTick, level,
                 headTop(owner, partialTick), headNormal(owner),
-                playerColorSections(level, owner, entry.glassColors(), partialTick));
+                hostColorSections(level, owner, entry.glassColors(), partialTick));
         }
         return drew;
+    }
+
+    /**
+     * 实体宿主（船 / 矿车 / 生物背包 / 掉落物 · D-container-25）：S2C 的实体 UUID + 等级
+     * ⇒ 查实体取<b>宿主顶面</b>与顶面法线 ⇒ 与玩家光束同款几何——
+     * 无俯仰的实体（船 / 掉落物等）{@code xRot = 0}，法线天然退化为竖直向上。
+     *
+     * <p>没有「排除自己」：信标在宿主实体身上，主人物品栏里没有它 ⇒ 本机也走这条。</p>
+     */
+    private static boolean renderEntityHosts(ClientLevel level, PoseStack poseStack,
+                                             MultiBufferSource.BufferSource buffers, Vec3 cameraPos,
+                                             float partialTick) {
+        List<BeaconEntityHostPacket.Entry> hosts =
+            BeaconEntityHostClientCache.get(level.dimension().location());
+        boolean drew = false;
+        for (BeaconEntityHostPacket.Entry entry : hosts) {
+            if (entry.level() < 1) {
+                continue;   // 未激活 ⇒ 不亮（服务端只发 ≥ 1，双保险）
+            }
+            Entity carrier = findByUuid(level, entry.entityId());
+            if (carrier == null) {
+                continue;   // 不在渲染集（未同步 / 已卸载）⇒ 跳过，不画在原点
+            }
+            // 颜色同玩家宿主：容器玻璃色随包下发 + 世界逐格扫描本地算
+            drew |= renderBeamAlong(poseStack, buffers, cameraPos, partialTick, level,
+                headTop(carrier, partialTick), headNormal(carrier),
+                hostColorSections(level, carrier, entry.glassColors(), partialTick));
+        }
+        return drew;
+    }
+
+    /** 实体 UUID → 渲染集中的实体（{@code HostOrigin#findEntity} 唯一口径）；找不到返回 {@code null}。 */
+    @Nullable
+    private static Entity findByUuid(ClientLevel level, UUID uuid) {
+        return HostOrigin.findEntity(level, uuid);
     }
 
     /** 箱子宿主：S2C 位置集，垂直向上光束（本地 clip 截断）。 */

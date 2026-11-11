@@ -233,10 +233,12 @@ public final class LivingToolRayRenderer {
         List<LivingToolHostPacket.Entry> hosts =
             LivingToolHostClientCache.get(level.dimension().location());
         for (LivingToolHostPacket.Entry entry : hosts) {
-            // ⚠️ 物品形态宿主（玩家 / 实体身上的活背包）受 tool_and_weapon 开关管：
-            //    开关关 ⇒ 功能关闭 ⇒ 记忆射线一并取消（2026-10-28 用户定，对齐活信标
-            //    「关 ⇒ 光束消失」；否则只剩淡射线悬空）。方块容器有自己的锚点 ⇒ 照常画。
-            if (entry.host().kind() != HostRef.Kind.BLOCK
+            // ⚠️ 物品形态宿主（活背包**借**宿主锚点：玩家 / 方块 / 实体身上）受 tool_and_weapon
+            //    开关管：开关关 ⇒ 功能关闭 ⇒ 记忆射线一并取消（2026-10-28 用户定，对齐活信标
+            //    「关 ⇒ 光束消失」；否则只剩淡射线悬空）。宿主自己的直接内容（方块容器 /
+            //    实体容器，hostSlot=-1）不借位置、不受此开关（D-container-25）。
+            //    hostSlot ≥ 0 ⇔ 借来的锚点。
+            if (entry.host().hostSlot() >= 0
                     && !GameplayConfig.toolAndWeaponUsesHostAnchor()) {
                 continue;
             }

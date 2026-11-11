@@ -19,6 +19,7 @@
 | [2026-10-29-测试域梳理.md](2026-10-29-测试域梳理.md) | 分析探讨（2026-10-29）—— 本文是测试域的建议，不是测试规范定案。 |
 | [architecture-evolution-roadmap.md](architecture-evolution-roadmap.md) | 未定案 —— 本文是演进编排与排期依据，不是现状描述，也不是已批准的执行计划 |
 | [container-menu-introspection-topic.md](container-menu-introspection-topic.md) | 设计论证原稿（2026-11-07 复核）—— 无实施计划，保留查证、翻案与否决 |
+| [entity-host-behavior-design.md](entity-host-behavior-design.md) | 已实施 —— 批次 A / B / A2 全部落地（2026-11-12），结论 |
 | [framework-evolution-plan.md](framework-evolution-plan.md) | 提案（buffer）——未定案、未排期，别当现状读**。 |
 | [gui-interaction-redesign.md](gui-interaction-redesign.md) | 设计稿（已定案未实施）—— E2 交互设计，不是现状。 |
 | [living-axe-strip-design.md](living-axe-strip-design.md) | 设计提案 —— 本文供审阅，不是已生效玩法或执行授权。 |
@@ -29,6 +30,7 @@
 | [活滴水石锥.md](活滴水石锥.md) | 探讨中 —— 滴水石锥设计稿，不是现状。 |
 | [活潜影箱实现细节.md](活潜影箱实现细节.md) | 探讨中 —— 活潜影箱**兼容所有活物品**（而非当前阶段已实现的活物品），本随 |
 | [活物品大战僵尸.md](活物品大战僵尸.md) | 探讨中（2026-10-30 头脑风暴沉淀）。本文描述的全部机制均未实现，别当现 |
+| [活魂符换位玩法设计.md](活魂符换位玩法设计.md) | 设计稿（已拍板未实施）—— 活魂符"换位"动词与食物语义翻转，不是现状；实施前别 |
 
 <!-- buffer-index:end -->
 

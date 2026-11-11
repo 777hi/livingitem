@@ -19,6 +19,8 @@
 | 类 | 清理入口（本类文件内可见的事实） | 跨 tick 可变 static 集合 |
 |---|---|---|
 | `BeaconChestHost` | 登记 | `activeLids` `current` `lidLastTick` |
+| `BeaconEntityHostClientCache` | ⚠️ 本类无清理入口 | `CACHE` |
+| `BeaconEntityHostSync` | 登记 | `current` |
 | `BeaconPlayerHostSync` | 登记 | `current` |
 | `ContainerChunkCache` | 登记 | `INSTANCE` |
 | `ContainerLivingItemHandler` | 登记 | `CONTAINER_DATA` `LAST_SEEN` `LIVING_SLOT_ITEMS` `PENDING_RUNTIME_INVALIDATIONS` `POS_TO_CACHE_KEY` |

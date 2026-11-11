@@ -21,12 +21,17 @@ import org.junit.jupiter.api.Test;
 
 import com.qiqi.li.living.config.GameplayConfig;
 import com.qiqi.li.living.container.ContainerAnchor;
+import com.qiqi.li.living.container.EntityContainerContext;
+import com.qiqi.li.living.container.HostRef;
 import com.qiqi.li.living.container.ItemFormContainerContext;
 import com.qiqi.li.living.container.SimpleContainerContext;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.items.ItemStackHandler;
 
 /**
@@ -147,6 +152,69 @@ class LivingToolHostBlockTest {
             mock(Player.class)));
         assertTrue(LivingToolFunction.hostBlocksOf(onPlayer).isEmpty(),
             "借到的是玩家锚点，同样没有方块");
+    }
+
+    @Test
+    @DisplayName("实体容器：origin = 实体眼睛位置（自己的锚点，不设门）")
+    void entityContainer_originIsEyePosition_ignoringSwitch() {
+        ServerLevel level = mock(ServerLevel.class);
+        Entity entity = mock(Entity.class);
+        when(entity.getUUID()).thenReturn(UUID.randomUUID());
+        when(entity.blockPosition()).thenReturn(HOST_CHEST);
+        Vec3 eye = new Vec3(10.5, 66.9, 10.5);
+        when(entity.getEyePosition()).thenReturn(eye);
+        EntityContainerContext ctx = new EntityContainerContext(entity, level, handler);
+
+        // 开关关（BeforeEach 重置为 false）也非空 —— 实体锚点是自己的物理事实，不设门
+        ContainerAnchor anchor = LivingToolFunction.effectiveAnchor(ctx);
+        assertTrue(anchor instanceof ContainerAnchor.AtEntity,
+            "实体容器自己的锚点 = AtEntity（开关关也一样）");
+        assertEquals(eye, LivingToolFunction.originOf(anchor),
+            "实体宿主的射线起点 = 实体眼睛位置（与玩家宿主取点同判）");
+
+        // 开关开同样不变 —— 开关只门物品形态的借用
+        setToolAndWeaponHostAnchor(true);
+        assertTrue(LivingToolFunction.effectiveAnchor(ctx) instanceof ContainerAnchor.AtEntity,
+            "开关开不改变实体锚点");
+    }
+
+    @Test
+    @DisplayName("K2 上报宿主引用：实体容器 = ofEntity(maid UUID, -1)（一实体一容器天然唯一）")
+    void hostRefOfContext_entityContainer() {
+        ServerLevel level = mock(ServerLevel.class);
+        Entity entity = mock(Entity.class);
+        UUID uuid = UUID.randomUUID();
+        when(entity.getUUID()).thenReturn(uuid);
+        when(entity.blockPosition()).thenReturn(HOST_CHEST);
+        EntityContainerContext ctx = new EntityContainerContext(entity, level, handler);
+
+        HostRef host = LivingToolFunction.hostRefOfContext(ctx);
+        assertEquals(HostRef.Kind.ENTITY, host.kind(), "实体容器走 ENTITY 宿主引用");
+        assertEquals(uuid, host.entityId());
+        assertEquals(-1, host.hostSlot(), "实体容器没有宿主槽位概念，恒 -1");
+    }
+
+    @Test
+    @DisplayName("K2 上报宿主引用：物品形态借用路径不变（箱内 / 实体宿主内）")
+    void hostRefOfContext_itemFormUnchanged() {
+        // 背包在箱子里：ofBlock(pos, hostSlot) —— 既有行为回归（6 参构造显式传 hostSlot=5）
+        ItemFormContainerContext inChestCtx = new ItemFormContainerContext(
+            handler, UUID.randomUUID(), null, 9, new ContainerAnchor.AtBlock(HOST_CHEST), 5);
+        HostRef inChest = LivingToolFunction.hostRefOfContext(inChestCtx);
+        assertEquals(HostRef.Kind.BLOCK, inChest.kind());
+        assertEquals(HOST_CHEST, inChest.pos());
+        assertEquals(5, inChest.hostSlot());
+
+        // 背包在实体宿主（船 / 女仆）身上：ofEntity(host UUID, hostSlot) —— 既有行为回归
+        UUID hostUuid = UUID.randomUUID();
+        Entity host = mock(Entity.class);
+        when(host.getUUID()).thenReturn(hostUuid);
+        ItemFormContainerContext onEntityCtx = new ItemFormContainerContext(
+            handler, UUID.randomUUID(), null, 9, new ContainerAnchor.AtEntity(host), 5);
+        HostRef onEntity = LivingToolFunction.hostRefOfContext(onEntityCtx);
+        assertEquals(HostRef.Kind.ENTITY, onEntity.kind());
+        assertEquals(hostUuid, onEntity.entityId());
+        assertEquals(5, onEntity.hostSlot());
     }
 
     @Test

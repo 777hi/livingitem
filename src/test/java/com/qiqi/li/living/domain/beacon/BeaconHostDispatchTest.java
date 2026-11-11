@@ -2,6 +2,7 @@ package com.qiqi.li.living.domain.beacon;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -15,12 +16,16 @@ import org.junit.jupiter.api.Test;
 
 import com.qiqi.li.living.config.GameplayConfig;
 import com.qiqi.li.living.container.ContainerAnchor;
+import com.qiqi.li.living.container.EntityContainerContext;
 import com.qiqi.li.living.container.ItemFormContainerContext;
 import com.qiqi.li.living.container.SimpleContainerContext;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.items.ItemStackHandler;
 
 /**
@@ -103,6 +108,25 @@ class BeaconHostDispatchTest {
     void switchOff_noHost() {
         assertNull(BeaconFunction.effectiveAnchor(itemForm(new ContainerAnchor.AtBlock(CHEST))),
             "开关关时物品形态没有锚点 ⇒ 不开光是既定语义");
+    }
+
+    @Test
+    @DisplayName("实体容器：自己的锚点（不设门）+ 取点 = 实体位置（D-container-25）")
+    void entityContainer_usesOwnAnchorAndPosition() {
+        ServerLevel level = mock(ServerLevel.class);
+        Entity carrier = mock(Entity.class);
+        UUID uuid = UUID.randomUUID();
+        Vec3 pos = new Vec3(20.5, 70.0, 20.5);
+        when(carrier.getUUID()).thenReturn(uuid);
+        when(carrier.blockPosition()).thenReturn(new BlockPos(20, 70, 20));
+        when(carrier.position()).thenReturn(pos);
+        EntityContainerContext ctx = new EntityContainerContext(carrier, level, handler);
+
+        // 开关关（BeforeEach 重置）也非空 —— 实体锚点是自己的物理事实，不设门
+        assertTrue(BeaconFunction.effectiveAnchor(ctx) instanceof ContainerAnchor.AtEntity,
+            "实体容器自己的锚点 = AtEntity");
+        assertEquals(pos, BeaconFunction.resolveHostPosition(ctx, level),
+            "buff 中心 = 实体位置（光束锚点在渲染侧取宿主顶面）");
     }
 
     @Test

@@ -7,4 +7,5 @@ domain/tnt/ExplosionComponent.java	1
 domain/tnt/LivingTntFunction.java	3
 domain/tools/CarriedLivingItems.java	1
 domain/tools/LivingToolFunction.java	2
+domain/tools/LivingWeaponAssist.java	1
 domain/water/ContainerFluidData.java	5

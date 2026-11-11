@@ -127,7 +127,9 @@ public class LivingToolFunction implements LivingItemFunction {
         //    宿主方块中心 ⇒ 不把那一格加进黑名单，扫描第一个穿到的格子就是宿主自己：
         //    蹲着记过方块类型 ⇒ 类型不匹配直接停（完全没反应）；没记类型 ⇒ 挖自己所在的箱子。
         //    方块容器本来就在列表里 ⇒ 对本类零副作用（同一格加两遍而已）。
-        //    AtPlayer / AtEntity 无方块可加（掉落物形态刻意不跳过起点所在格，见下方注释）。
+        //    AtPlayer 无方块可加；AtEntity（船 / 矿车 / 生物背包）经位置列表把**载体脚下方块**
+        //    加进黑名单（2026-11-12 起实体宿主有射线起点 ⇒ 该格生效）—— 别挖自己站着的那格；
+        //    掉落物形态刻意不跳过起点所在格（见下方注释）。
         // ⚠️ origin 为 null（开关关 / 无锚点）时不需要它 ⇒ 省一次遍历；上报那边复用同一份。
         Set<BlockPos> hostBlocks = origin != null ? hostBlocksOf(context) : Set.of();
 
@@ -374,10 +376,7 @@ public class LivingToolFunction implements LivingItemFunction {
     private static void reportHostTools(ContainerContext context, List<SlotEntry> entries,
                                         @Nullable Vec3 origin, Set<BlockPos> hostBlocks,
                                         ServerLevel serverLevel) {
-        BlockPos hostPos = context.getBlockPos();
-        HostRef host = hostPos != null
-            ? HostRef.ofBlock(hostPos)
-            : hostRefOf(context.getHostAnchor(), context.getHostSlot());
+        HostRef host = hostRefOfContext(context);
         if (host == null) {
             return;
         }
@@ -393,6 +392,25 @@ public class LivingToolFunction implements LivingItemFunction {
             tools.add(new LivingToolHostPacket.ToolRay(entry.stack(), digLanded, useLanded));
         }
         LivingToolHostSync.report(host, serverLevel.dimension().location(), tools);
+    }
+
+    /**
+     * 容器 → K2 上报的宿主引用；{@code null} = 没有可上报的宿主。
+     *
+     * <p>方块容器走自己的位置；实体容器（船 / 矿车 / 生物背包 / 掉落物）宿主就是容器自己 ——
+     * 一实体一容器 ⇒ hostSlot 恒 -1 天然唯一；物品形态走借用路径（{@code hostRefOf}）。</p>
+     */
+    // 包级可见：供单测验「实体容器上报」（LivingToolHostBlockTest）。
+    @Nullable
+    static HostRef hostRefOfContext(ContainerContext context) {
+        BlockPos hostPos = context.getBlockPos();
+        if (hostPos != null) {
+            return HostRef.ofBlock(hostPos);
+        }
+        if (context.getAnchor() instanceof ContainerAnchor.AtEntity entityAnchor) {
+            return HostRef.ofEntity(entityAnchor.entity().getUUID(), -1);
+        }
+        return hostRefOf(context.getHostAnchor(), context.getHostSlot());
     }
 
     /**
@@ -469,9 +487,12 @@ public class LivingToolFunction implements LivingItemFunction {
      * 锚点 → 射线起点。
      *
      * <p>取点差异是<b>有意的</b>（见 {@code ContainerAnchor} 类注释）：方块取中心、
-     * 玩家取<b>眼睛</b>（与录制端一致）、掉落物取<b>碰撞箱中心</b>。</p>
+     * 玩家取<b>眼睛</b>（与录制端一致）、掉落物取<b>碰撞箱中心</b>、其余实体容器取
+     * <b>实体眼睛位置</b>。</p>
      */
-    private static Vec3 originOf(ContainerAnchor anchor) {
+    // 包级可见：供单测验「实体宿主眼睛位置取点」（LivingToolHostBlockTest）。
+    @Nullable
+    static Vec3 originOf(ContainerAnchor anchor) {
         if (anchor instanceof ContainerAnchor.AtBlock block) {
             // L14 = a：容器方块中心
             return Vec3.atCenterOf(block.pos());
@@ -481,10 +502,12 @@ public class LivingToolFunction implements LivingItemFunction {
             return at.player().getEyePosition();
         }
         if (anchor instanceof ContainerAnchor.AtEntity entityAnchor) {
-            // L14 = d：掉落物【碰撞箱中心】—— 用 position() 会落在脚下方块里（见 rayOrigin 说明）。
-            // 船/矿车里的活工具本来就不重放 ⇒ 维持 null（不是遗漏）。
+            // 掉落物：碰撞箱中心 —— 用 position() 会落在脚下方块里（见 rayOrigin 说明）。
+            // 其余实体容器（船 / 矿车 / 生物背包）：实体眼睛位置 —— 容器自己的物理事实，
+            // 与方块 / 玩家宿主同判，不设门（D-container-25）。
             return entityAnchor.entity() instanceof net.minecraft.world.entity.item.ItemEntity item
-                ? ItemEntityContainerContext.rayOrigin(item) : null;
+                ? ItemEntityContainerContext.rayOrigin(item)
+                : entityAnchor.entity().getEyePosition();
         }
         return null;
     }

@@ -102,7 +102,7 @@ public class BeaconFunction implements LivingItemFunction {
                 RuntimeSegments.EMPTY.with(BeaconSegment.INSTANCE,
                     new BeaconSegment.BeaconRuntime(pyramidLevel, heights, exists)));
 
-            // 宿主（规则 1：仅玩家 / 箱子）—— 未激活 = 完全死物 ⇒ 无 buff / 无光束 / 不开盖
+            // 宿主（规则 1：玩家 / 箱子 / 实体容器，D-container-25）—— 未激活 = 完全死物 ⇒ 无 buff / 无光束 / 不开盖
             Vec3 hostPos = resolveHostPosition(context, level);
             if (pyramidLevel >= 1 && hostPos != null) {
                 // buff 施加：照原版 80 刻节奏（时长 (9+等级×2) 秒 ⇒ 范围内永不掉效）
@@ -154,13 +154,20 @@ public class BeaconFunction implements LivingItemFunction {
                         pyramidLevel,
                         BeaconGlassColor.scanColumn(slot, context.getSize(), context.getWidth(),
                             context::getItem));
+                } else if (anchor instanceof ContainerAnchor.AtEntity entityAnchor) {
+                    // 实体宿主（船 / 矿车 / 生物背包 / 掉落物）：buff 已在 hostPos = 实体位置施加；
+                    // 光束 / 联机走实体键通道——没有「自己那份不发」（主人物品栏里没有信标，
+                    // 所有跟踪者含主人都靠包，D-container-25）
+                    BeaconEntityHostSync.report(entityAnchor.entity().getUUID(), pyramidLevel,
+                        BeaconGlassColor.scanColumn(slot, context.getSize(), context.getWidth(),
+                            context::getItem));
                 }
             }
         }
     }
 
     /**
-     * 宿主位置（规则 1：仅玩家 / 箱子）—— 无效宿主返回 {@code null}。
+     * 宿主位置（规则 1：玩家 / 箱子 / 实体容器）—— 无效宿主返回 {@code null}。
      *
      * <ul>
      *   <li><b>方块容器</b>（{@code getBlockPos() != null}）：只有<b>有盖子的箱子</b>算宿主——
@@ -175,7 +182,9 @@ public class BeaconFunction implements LivingItemFunction {
      *   <li><b>非方块容器</b>：玩家背包 / <b>末影箱</b>等玩家锚定容器取主人位置
      *       （⇒ 末影箱里的信标 = 玩家宿主：光束从头颅顶面射出、buff 跟人走、联机广播，
      *       与放背包里完全一样；末影箱方块本身不 tick / 不开盖 / 不发光）；
-     *       掉落物容器无主人 ⇒ null。</li>
+     *       <b>实体容器</b>（船 / 矿车 / 生物背包 / 掉落物）取实体位置
+     *       （2026-11-12 D-container-25，原「无主人 ⇒ null」保守默认翻转：buff 中心 =
+     *       实体位置，光束锚点在渲染侧取宿主顶面）。</li>
      * </ul>
      */
     /**
@@ -199,7 +208,8 @@ public class BeaconFunction implements LivingItemFunction {
         return anchor;
     }
 
-    private static Vec3 resolveHostPosition(ContainerContext context, Level level) {
+    // 包级可见：供单测验「实体宿主取点」（BeaconHostDispatchTest）。
+    static Vec3 resolveHostPosition(ContainerContext context, Level level) {
         // 分类统一走 ContainerAnchor（2026-10-23 普查：此处原是与另外三处重复的一份三选一）
         ContainerAnchor anchor = effectiveAnchor(context);
         if (anchor instanceof ContainerAnchor.AtBlock block) {
@@ -209,8 +219,12 @@ public class BeaconFunction implements LivingItemFunction {
         if (anchor instanceof ContainerAnchor.AtPlayer at) {
             return at.player().position();
         }
-        // AtEntity（船/矿车/掉落物）⇒ 不开光（既有语义，见本类 isLiddedChest 的注释）；
-        // 无锚点（物品形态且开关关闭）⇒ 同样不开光。
+        if (anchor instanceof ContainerAnchor.AtEntity entityAnchor) {
+            // 实体宿主：buff 中心 = 实体位置（光束锚点在客户端渲染侧取宿主顶面，
+            // 2026-11-12 D-container-25，原「不开光」保守默认翻转）
+            return entityAnchor.entity().position();
+        }
+        // 无锚点（物品形态且开关关闭）⇒ 不开光。
         return null;
     }
 

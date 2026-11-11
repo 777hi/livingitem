@@ -128,10 +128,11 @@ src/test/java/com/qiqi/li/
 │   ├── LivingBackpackTickTest.java            # 活背包 tick 的三道闸（2026-10-24 终审补，此前 tick 零测试）·**宿主锚点传进内层 ctx**（AtBlock 同坐标 / 宿主无锚点⇒null）/深度闸（背包里的背包不再处理）/**逐条目隔离**（一个背包的来源抛异常不带走同批）（⚠️ 环检测在 MAX_DEPTH=1 下不可达，故意不测；探针功能只认 SHULKER_SHELL，避免与既有「无功能」断言串味）
 │   └── LivingBackpackTooltipTest.java         # 活背包 tooltip 的容器 ID 行（2026-10-26）·短码固定 8 位（**前导零不能丢，否则 substring 越界**）/未活化不输出空 ID 行/高级提示才给完整 UUID + 重新活化提示/**复制品短码必须相同**/剥掉后重新生成换新身份
 ├── living/domain/tools/
-│   ├── LivingToolHostBlockTest.java              # 活工具「别挖自己容器」黑名单与射线起点**同源**（2026-10-25，TODO 6.2）·背包在箱子里+开关开⇒黑名单含宿主那一格（旧实现位置列表恒空⇒射线第一个穿到的格子就是那只箱子：记过类型⇒停住没反应 / 没记⇒挖自己的箱子）/ 开关关⇒不借锚点⇒黑名单空 / 方块容器保留自己的两格（回归）/ 玩家背包与背包在玩家身上⇒无方块可跳过 / 方块容器不受开关影响（⚠️ Inventory.player 是 public final 字段，Mockito 桩不了⇒反射设值，同 Level.random）
+│   ├── LivingToolHostBlockTest.java              # 活工具「别挖自己容器」黑名单与射线起点**同源**（2026-10-25，TODO 6.2）·背包在箱子里+开关开⇒黑名单含宿主那一格（旧实现位置列表恒空⇒射线第一个穿到的格子就是那只箱子：记过类型⇒停住没反应 / 没记⇒挖自己的箱子）/ 开关关⇒不借锚点⇒黑名单空 / 方块容器保留自己的两格（回归）/ 玩家背包与背包在玩家身上⇒无方块可跳过 / 方块容器不受开关影响（⚠️ Inventory.player 是 public final 字段，Mockito 桩不了⇒反射设值，同 Level.random）+ **实体宿主（2026-11-12，D-container-25）**·实体容器 origin=眼睛位置（开关关/开都非 null = 不设门）/ K2 上报：实体容器⇒ofEntity(uuid,-1)、物品形态借用路径不变（箱内 ofBlock / 实体宿主内 ofEntity 带 hostSlot）
 │   ├── LivingToolHostSyncDedupTest.java      # K2 去重键口径（2026-10-26）·**动画状态必须算变化**（只有 progress / 只有 action / 只有 digTicks 不同 ⇒ 判有变化，否则方块容器「有模型、不转圈」）/ 内容全同⇒无变化 / **耐久不进键**（多比一个就刷包）（两个方向都钉）
 │   ├── LivingToolHostSyncDimensionTest.java  # K2 跨维度铁律（2026-10-27 审查）·PLAYER 宿主上报在玩家循环（维度循环之前）⇒ **登记表不得在 flush 里抽干**：两维度背包宿主各收各的（旧实现首维度抽干全表 ⇒ 地狱/末地条目全丢）/ 方块宿主**显式按上报维度隔离**（不再依赖抽干顺序）/ beginTick 清残留（取走背包⇒发空包清客户端）/ 稳态零发包（flush 只读去重仍生效）（替身结构同 BeaconPlayerHostSyncTest）
 │   ├── LivingToolAssistTest.java             # 辅助挖掘**速度分层**（2026-10-27 用户定，真机翻车那层的回归）·顶层相加+背包只取最高（3+4+9=16，背包另一把 5 不加）/ 空列表⇒0 / 只有背包条目⇒取最高（含客户端 S2C 补的条目）
+│   ├── LivingWeaponAssistTest.java           # 活武器辅助的**实体宿主触发判据**（2026-11-12，D-container-25）·准入实体宿主⇒触发（临时 Provider）/ 无准入实体 / ServerPlayer（含 FakePlayer 结构上落不进实体判据）/ null ⇒ 不触发；出手循环（无敌帧压制/直连目标/写回）依赖 ServerLevel+FakePlayer 链 ⇒ 实机清单
 │   ├── CarriedLivingItemsTest.java              # 「随身携带」判据（2026-10-27，物品形态）·顶层工具收（innerSlot=-1）/ 已活化容器展开一层（outerSlot=宿主格、innerSlot=内容格）/ **未活化容器不展开**（活化门槛即性能闸门）/ skipMainHand（主手工具不收）/**skipMainHand 仍展开主手背包内容**（原版计入的是手持工具不是手持容器的内容；连展开一起跳 ⇒ 手持背包两端不同源）/ **槽位顺序**（容器条目紧跟宿主槽位，E6 掉落归属取最靠前）/ **写回容器走 setStackInSlot**（否则背包里的工具白干活不掉耐久）/**客户端 S2C 补的条目仍算容器内**（否则两端分层不一致 ⇒ 方块破坏又恢复）/ 写回守卫（目标格被换走⇒放弃不覆盖 / 槽位越界⇒不抛）
 │   └── LivingToolMemoryTest.java                # 工具记忆（2026-10-29）·射线/攻击 offset 逐位保留 + 宿主起点回放 / EntityType 匹配 / with/without 只动目标字段 / Codec + StreamCodec 往返
 ├── living/domain/tnt/
@@ -187,7 +188,7 @@ src/test/java/com/qiqi/li/
 ├── living/domain/beacon/
 │   ├── BeaconFunctionTest.java                 # 宿主判据(协议级 LidBlockEntity)·原版箱/末影箱⇒true/木桶/潜影盒⇒false/null 安全
 │   ├── BeaconPyramidTest.java                 # 1D 金字塔判级·各级精确目标/全0/null不足长/差一块掉档/多堆不亏/嵌套单调/L3 缺一列仍 L2/边界钳制封顶/单列无法激活/距下一级差额/范围公式/合计 9·34·83·164
-│   ├── BeaconHostDispatchTest.java               # 信标宿主分派与取点**同源**（2026-10-25，TODO 6.2）·背包在箱子里+开关开⇒分派拿到宿主箱子锚点（旧写法问 getBlockPos/getOwnerPlayer 双 null⇒有 buff 没光）/ 背包在玩家身上⇒玩家锚点 / 开关关⇒无宿主 / 方块容器与玩家背包各用自己的锚点（回归）（⚠️ 只测 effectiveAnchor 决策点 —— tick 全链路的金字塔等级靠 BEACON_BASE_BLOCKS 标签，单测环境不加载⇒等级恒 0⇒宿主分支进不去，由 BeaconBaseBlocks 注释与游戏内验证兜住）
+│   ├── BeaconHostDispatchTest.java               # 信标宿主分派与取点**同源**（2026-10-25，TODO 6.2）·背包在箱子里+开关开⇒分派拿到宿主箱子锚点（旧写法问 getBlockPos/getOwnerPlayer 双 null⇒有 buff 没光）/ 背包在玩家身上⇒玩家锚点 / 开关关⇒无宿主 / 方块容器与玩家背包各用自己的锚点（回归）（⚠️ 只测 effectiveAnchor 决策点 —— tick 全链路的金字塔等级靠 BEACON_BASE_BLOCKS 标签，单测环境不加载⇒等级恒 0⇒宿主分支进不去，由 BeaconBaseBlocks 注释与游戏内验证兜住）+ **实体宿主（2026-11-12，D-container-25）**·实体容器锚点 AtEntity（开关关也非 null = 不设门）/ 取点 = 实体位置
 │   ├── BeaconColumnSlotsTest.java             # 下方 9 列槽位解析(纯数学)·居中/右边界钳制/左边界钳制/最底行全 -1/顶行居中/单行容器
 │   ├── BeaconSegmentTest.java                 # 遥测段编解码往返(等级+9柱高+列存在位图，⚠️再生不进遥测)/id=beacon 线格式契约/equals 按数组内容比(稳态不脏写前提,仅位图不同也判不等)
 │   ├── BeaconPanelGeometryTest.java           # 9 柱面板几何纯函数·满程 24=L4 中心契约/柱位 x/刻度 y 四档/柱顶钳位/缺口高度/数字取舍(目标值·达标不画·溢出绝对高)/reachable 可达性(含列存在)/columnExistsFrom
@@ -196,6 +197,7 @@ src/test/java/com/qiqi/li/
 │   ├── BeaconHostPacketTest.java              # S2C 宿主包往返(维度+位置+等级+容器玻璃色列表)/空列表
 │   ├── BeaconChestHostTest.java               # 多枚每枚一条·键格式(容器#槽位)/全同条目去重/两枚开一次/取一枚不关盖/全走才关/20tick 节流/关后重开即发/S2C 每枚一条/内容不变不重发
 │   ├── BeaconPlayerHostSyncTest.java          # 跨维度回归·两维度各自只发本维度/beginTick 清残留/只发别人(自己本机渲染)
+│   ├── BeaconEntityHostSyncTest.java          # 实体宿主联机广播回归（2026-11-12，D-container-25）·维度隔离（getEntity 本维度解析得到/其它维度 null⇒不发）/ 同实体多枚取最高（等级+玻璃色同源）/ beginTick 清残留（发空表清客户端）/ 半径外观察者只可能收空表（替身结构同 BeaconPlayerHostSyncTest）
 │   ├── BeaconGlassColorTest.java             # 容器玻璃取色·16 色玻璃/玻璃板/DyeColor 口径/非玻璃与空⇒null/同列扫描(自下而上·非玻璃跳过·顶行越界)
 │   ├── BeaconEffectsTest.java                 # 效果纯逻辑·喂锭门控(档位/II 仅 L4/5 槽满/未激活全拒)+生效数 min(堆叠,档内槽数)取前 N+buff 时长(9+等级×2)×20（⚠️原「再生三档 5 案例」随 2026-11-08 满级无条件再生 II 整体删除）
 │   ├── BeaconConfigTest.java                  # 配置组件·add/amplify 不可变+5 槽封顶+contains+编解码往返(含空配置)
@@ -242,6 +244,7 @@ src/test/java/com/qiqi/li/
 │   ├── LivingBucketInteractSupportTest.java   # 倒桶源格替换（A 档对齐原版）·契约 default false（未覆写流体保守拒绝）/ 水⇄岩浆对称替换 + 同种不构成 / 倒桶判定四例
 │   ├── BucketInteractRealMenuTest.java        # 倒/汲的**真实原版菜单**路径（2026-10-28，缺口 #6）·真实 `BrewingStandMenu` + 真实 BE 能解析出容器（假菜单测不到）/ 倒水后桶排空 / 汲水后桶装水且源消失（脚手架=真实菜单+BE+capability 替身）
 │   ├── ContainerStressDataTest.java           # 水车力矩纯函数（2026-10-31）·直流水无力矩（叉积 0）/ 侧向水 CCW / 堆叠 × 数量 / 无水为 0 —— 抽成纯函数后不再依赖 create:water_wheel 物品
+│   ├── ContainerStressWritebackTest.java      # 水车注入锚点双路径（2026-11-12 实体宿主兼容）·实体容器用自己的位置（开关关也非空 = 不设门）/ 开关开不变 / 物品形态开关关 null / 开关开借宿主锚点（D-container-16 原样）
 │   └── ContainerFluidPerfTest.java            # 性能量测（@Tag("perf")，默认不跑；`-Pperf` 才计入。200 容器×54 格×200 拍，打印基线 + 病态回归宽松阈值 + 落盘 build/_perf.txt）·引擎 tick / 空容器
 ├── living/domain/sponge/
 │   ├── LivingSpongeDataTest.java              # 活海绵组件形状契约（2026-11-01 第一段）·干/湿不变量归一（无流体或非正存量 ⇒ 干态，幽灵湿海绵在类型层面不可能）/ 容量与总量 long 域（每枚 6.4e7 mmB，×count 线性）/ CODEC 湿·干·岩浆往返 / 未知流体 id 归干态（I-C6 同款宁损勿鬼）/ wither 不可变
@@ -254,10 +257,10 @@ src/test/java/com/qiqi/li/
 │   ├── InteractionRuleConfigTest.java         # 交互规则 JSON 加载语义·内置全有效/玩家覆盖与removed/坏值跳过/未知字段忽略/version守卫/reload幂等（自带 mock handler 不依赖测试执行顺序）
 │   └── TillToFarmlandCompatTest.java          # 活锄头跨模组兼容·模组锄头命中+处理器产物回归
 ├── living/transfer/
-│   ├── ContainerCompatibilityConfigTest.java  # 容器布局推断 + 类型表与规则文件一致（双源漂移守卫）+ 多档容量共存（精妙背包 27/81=9 列、108/120=12 列）
+│   ├── ContainerCompatibilityConfigTest.java  # 容器布局推断 + 原版家族表数值（箱9/漏5/发3/投3/熔炉族1/酿造台1，2026-11-12 起为原版唯一来源）+ 内置规则形状（ironchest）+ 多档容量共存（程序化注册：9 列档与 12 列档）
 │   ├── ContainerLayoutLearnerTest.java        # 布局学习形状/身份/玩家槽过滤 + 菜单入口四门禁独立守卫（归属混合、重复/负数/越界/断号、局部视图、真实熔炉非行优先）+ 规则阻止学习 + 菜单冲突/歧义跨重启 + 普通与歧义保存失败重试 + 矛盾磁盘输入以歧义为准 + 学习优先家族且规则仍优先学习（事件用 ServerPlayer，准入用真 BE，单测静态态清理）
 
-│   ├── ContainerRuleConfigTest.java           # 玩家差异持久化·覆盖内置+删除不复活+导出全量快照+社区闭环+多档共存/旧格式删除记录不被抹掉/内置规则含无尽箱子300格25列/contentRetaining 内置声明与玩家追加
+│   ├── ContainerRuleConfigTest.java           # 玩家差异持久化·覆盖内置+删除不复活+导出全量快照+社区闭环+多档共存/旧格式删除记录不被抹掉/内置规则含无尽箱子300格25列/contentRetaining 内置声明与玩家追加（内置夹具 = ironchest:iron_chest，2026-11-12 起原版/精妙条目不再内置）
 │   ├── SlotInteractionCargoGateTest.java      # 槽位交互货物准入真值表·活骨粉不施肥
 │   ├── FilteredSlotAccessorTest.java          # 过滤装饰器接缝（2026-10-29）·黑名单抽取回滚 / 模拟不回滚 / 插入拒绝不达下层 / 放行透传 / unwrap / null+EMPTY 全放行
 │   ├── NeighborSlotAccessorTest.java          # 邻居访问器接缝（2026-10-29）·抽取/模拟/插入改栈 / 堆叠部分插入余量 / 回滚只回原槽（异物品/满槽只报日志）/ isFull 取 min(槽位上限,物品上限) / getter

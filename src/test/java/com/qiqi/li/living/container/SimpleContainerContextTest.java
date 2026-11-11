@@ -256,7 +256,7 @@ class SimpleContainerContextTest {
         @Test
         @DisplayName("未注册类型不借用「同 namespace 共享词」的规则（规则只按精确 id 匹配）")
         void unregisteredType_doesNotBorrowRuleFromSiblingId() {
-            // 把内置的 minecraft:chest（27 格 9 列）临时改成 3 列 —— 这样「借用」与「启发式」
+            // 注册一条 minecraft:chest 27 格 3 列的临时规则 —— 这样「借用」与「启发式」
             // 的结果可区分。原实现有一层 namespace + 分词模糊匹配，会拿 "chest" 这个词命中它。
             net.minecraft.resources.ResourceLocation chestId =
                 net.minecraft.resources.ResourceLocation.withDefaultNamespace("chest");
@@ -279,10 +279,8 @@ class SimpleContainerContextTest {
                     "未注册类型应走启发式（27→9），不能借用 minecraft:chest 的 3 列 —— "
                         + "模糊匹配已按 D-container-09 删除");
             } finally {
-                // 注册表是全局静态的，必须恢复内置值，否则污染同类其它用例
-                com.qiqi.li.living.transfer.ContainerCompatibilityConfig.register(chestId,
-                    com.qiqi.li.living.transfer.ContainerCompatibilityConfig.ContainerRule.builder()
-                        .containerSize(27).columns(9).description("chest").build());
+                // 注册表是全局静态的；原版规则已不内置（2026-11-12），移除测试注册以免污染其它用例
+                com.qiqi.li.living.transfer.ContainerCompatibilityConfig.remove(chestId);
             }
         }
 

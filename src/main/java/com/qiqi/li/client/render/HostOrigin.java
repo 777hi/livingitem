@@ -1,5 +1,7 @@
 package com.qiqi.li.client.render;
 
+import java.util.UUID;
+
 import javax.annotation.Nullable;
 
 import com.qiqi.li.living.container.HostRef;
@@ -54,16 +56,25 @@ public final class HostOrigin {
                 yield player != null ? forPlayer(player, partialTick) : null;
             }
             case ENTITY -> {
-                Entity found = null;
-                for (Entity entity : level.entitiesForRendering()) {
-                    if (entity.getUUID().equals(host.entityId())) {
-                        found = entity;
-                        break;
-                    }
-                }
+                Entity found = findEntity(level, host.entityId());
                 yield found != null ? forEntity(found, partialTick) : null;
             }
         };
+    }
+
+    /**
+     * 实体 UUID → 渲染集中的实体；{@code null} = 不在渲染集（未同步 / 已卸载）。
+     *
+     * <p>「宿主 UUID ⇒ 实体」的唯一查找口径（K2 环渲染等同款消费者）。</p>
+     */
+    @Nullable
+    public static Entity findEntity(ClientLevel level, UUID uuid) {
+        for (Entity entity : level.entitiesForRendering()) {
+            if (entity.getUUID().equals(uuid)) {
+                return entity;
+            }
+        }
+        return null;
     }
 
     /** 玩家宿主：<b>眼睛</b>（带插值）。本机 / 远程 / 物品形态三条路径共用。 */

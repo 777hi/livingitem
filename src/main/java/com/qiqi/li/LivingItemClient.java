@@ -177,6 +177,7 @@ public class LivingItemClient {
         LivingToolHostClientCache.clear();
         com.qiqi.li.living.domain.beacon.BeaconHostClientCache.clear();
         com.qiqi.li.living.domain.beacon.BeaconPlayerHostClientCache.clear();
+        com.qiqi.li.living.domain.beacon.BeaconEntityHostClientCache.clear();
     }
 
     /**

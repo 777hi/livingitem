@@ -17,11 +17,20 @@
 
 ## 2026-11-12
 
+- ⭐ **实体宿主的辅助背后环（D-container-25 泛化）** —— 实体容器直接内容（hostSlot=-1）里的无记忆工具/武器进【该宿主的背后环】，环心 = 载体身后（`renderBackRing` 泛化到 Entity）；数据零新增同步（复用 K2 实体路径的工具清单）。方块容器是地点不是携带者 ⇒ 无环；物品形态嵌套不进环（与补刀收集同口径，展开活背包缓办）。顺带修渲染配置门（见下）。→ `living-tool-tech.md` §11.8
+- 🐛 **渲染配置门改按 hostSlot 分流（D-container-25 渲染侧补齐）** —— K2 实体路径引入「实体容器直接条目（hostSlot=-1）」后被旧门 `Kind != BLOCK` 误伤（开关关 ⇒ 有回放无外显）。`LivingToolModelRenderer` ③ / `LivingToolRayRenderer#renderContainerHosts` 改为 `hostSlot ≥ 0 && !开关`（hostSlot ≥ 0 ⇔ 物品形态借锚；-1 ⇔ 宿主直接内容，不设门）。→ `living-tool-tech.md` §6.1
+- ⭐ **实体宿主行为兼容 A2 批：活信标实体开光（D-container-25）** —— 三宿主完整落地（玩家 / 箱子 / 实体容器）：buff 中心 = 实体位置；光束锚点 = 宿主 bbHeight 顶面 + 顶面法线（`headTop`/`headNormal` 泛化到 Entity，无俯仰实体零分支退化为竖直向上）；一实体一条光束（多枚取最高，与玩家口径一致）；新增 `BeaconEntityHostSync`/`BeaconEntityHostPacket`/客户端缓存（无「自己那份不发」——主人物品栏里没有信标，所有跟踪者都靠包）。→ `living-beacon-tech.md` §0 · [buffer/entity-host-behavior-design.md](../buffer/entity-host-behavior-design.md)
+- ⭐ **实体宿主行为兼容批次 A 第二段 + B 批（D-container-25）** —— K2 上报补实体容器路径（`hostRefOfContext`：实体容器 `ofEntity(uuid,-1)`，客户端 `HostOrigin` 画实体中心，F3+B 射线联机可见）；武器辅助触发泛化（`onWielderDamage`：挥刀者 = 玩家或准入实体宿主，容器逐槽收集无记忆活武器、写回 `ctx.setItem`+槽位同步；`ServerPlayer`/FakePlayer 结构上落不进实体判据，`active` 标志第二道防递归）。→ [buffer/entity-host-behavior-design.md](../buffer/entity-host-behavior-design.md) · `living-tool-tech.md` §6 · `living-weapon-tech.md` §0
+- ⭐ **实体宿主行为兼容批次 A 第一段（不设门口径，D-container-25）** —— 活工具在实体容器（船/矿车/生物背包）从实体眼睛位置回放记忆射线（掉落物碰撞箱中心不变）、活水车向实体脚下方块注应力（掉落物同判）；`host_anchor.*` 四开关范围不变，只门物品形态借锚（活背包嵌套仍受门）。目标测试 +7、全量 1815 条 --rerun 全绿。→ [buffer/entity-host-behavior-design.md](../buffer/entity-host-behavior-design.md) · `living-tool-tech.md` §2.3/§6 · `living-water-wheel-tech.md` §4.5
+- 🧹 **容器内置规则表清理（28 条 → 15 条，删的全是死数据）** —— 删原版 7 条（列数由 `BuiltInContainerLayouts` 家族代码表给出、单源化；`minecraft:double_chest` 本是从未匹配过 BE 类型键的死键）与精妙背包 6 条（联动 `SophisticatedBackpackSource` 按「槽数÷行数」给权威列数，LIVE 层优先于规则，且能算对装升级后的任意容量——钉死六档的规则表做不到）；保留 ironchest 14 条（108×12 是启发式盲区）与 avaritia 1 条（`TileInfinityChest` 菜单结构学不到 + 启发式必错 ⇒ 规则是唯一正确来源）。连带：`ContainerCompatibilityConfigTest` 双源漂移守卫退役、改为守代码表数值，多档共存测试改程序化注册；`ContainerRuleConfigTest` 内置夹具换 `ironchest:iron_chest`；`SimpleContainerContextTest` 借用守卫 finally 改移除临时规则；指南规则清单同步。→ [container-compatibility.md](../guides/container-compatibility.md)
+
 - 🧹 **文档系统第一轮减法** —— 删 `docs/README.md` §0 的叙述性铺垫与「第 4 项已退役」在脚本 / 规约中的全部残留（编号 4 留空、不重排）；`decisions.md` §2「理由要点」体例改为判据式（不可重推论证可就地展开，29 行现状即合规）；铁律 6 的事故复盘压缩行数、位置不变。不改口径 / 能力边界，两份索引与冷启动卡不变。→ [文档规约](../README.md) · [决策体例](../decisions.md)
 
 - 🚫 **文档头退出「最后更新」日期字段**（D-doc-09）—— 字段不可复算、必漂（实测：power-tech 头写 09-08，git 实际 11-08）。活跃层 + buffer 28 处删除（archive 豁免）；pinyin-search-tech 顺带删 AI 页脚（「生产就绪」等现状口吻断言）；新鲜度口径显式化：git log 查新鲜度 / changelog 查状态跃迁；`doc_check` 第 16 项负向棘轮防模仿回潮。→ [文档规约 §1](../README.md) · [D-doc-09](../decisions.md)
 
 - 🧹 **入口进展残留清零 + §8 台账退出（第二轮减法）** —— AGENTS 子系统索引表的「2026-11-01 R3」行整行删除（进展流水且 changelog 已有同内容条目，索引表还原纯路由）；头部状态行删「活信标 Phase 4 完成」里程碑；README §8「已补（2026-09-16）」五项台账先守恒补录至本文件 09-16 节再删除（「43 条」「18,548 字符」等快照数字必漂）；README 头部补一行「砍系统前先跑 doc_check」。全部执行 D-doc-07 / D-doc-08 既有判据，无新决策。→ [文档规约](../README.md)
+
+- 🚫 **「文档版本」字段退出活跃层 + buffer**（D-doc-10）—— 31 份字段删除（含 buffer 5 + reference 1）；字段曾混装四种语义：文档自身版本（不可复算必漂，map-pearl 已至 v57 无处引用）/ 红电引擎修订指针（**保留**，glossary「修订历史块」补 vN 语义）/ 升格摘要（与头部「状态」行重复，不迁 changelog）/ 装饰递增。修正 invariants 两处指针错位（「AGENTS.md v19.1」→「红电 v19.1 系列」）；红电系统.md 锚点行改「修订基线： v19」实现门禁零例外；`doc_check` 第 17 项负向棘轮。→ [文档规约 §1](../README.md) · [D-doc-10](../decisions.md)
 
 ## 2026-11-11
 

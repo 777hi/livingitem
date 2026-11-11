@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -446,6 +447,8 @@ public final class LivingToolModelRenderer {
         // 槽位记录 —— 背后环要按【背包顺序】排布：工具/武器分收集会打乱顺序，合并时靠它恢复
         // （物品引用做 key：getItem 返回同一实例，收集循环里不会被改写）
         Map<ItemStack, Integer> assistSlots = new HashMap<>();
+        // 实体宿主的背后环（载体 UUID → 无记忆工具/武器，按服务端槽位序）—— ③′ 消费
+        Map<UUID, List<ItemStack>> entityRings = new LinkedHashMap<>();
 
         // ① 玩家背包（排除手持 —— 玩家手里已经拿着了，再飘一个是重复）
         //    ⭐ 按【有没有记忆】分两条路：无记忆 → 辅助环（围成一圈）；有记忆 → 记忆射线上。
@@ -486,13 +489,13 @@ public final class LivingToolModelRenderer {
         // ③ 方块容器 + 物品形态容器（数据来自 K2 的 S2C 包；宿主可能是方块 / 玩家 / 实体）
         for (LivingToolHostPacket.Entry entry :
                 LivingToolHostClientCache.get(level.dimension().location())) {
-            // ⚠️ 物品形态宿主（玩家 / 实体身上的活背包）受 tool_and_weapon 开关管：
-            //    开关关 ⇒ 背包工具不借宿主锚点（功能关闭）⇒ 外显（悬浮模型 / 背后环）一并
+            // ⚠️ 物品形态宿主（活背包**借**宿主锚点：玩家 / 方块 / 实体身上）受 tool_and_weapon
+            //    开关管：开关关 ⇒ 背包工具不借宿主锚点（功能关闭）⇒ 外显（悬浮模型 / 背后环）一并
             //    取消（2026-10-28 用户定，对齐活信标「关 ⇒ 光束消失」）。K2 上报不能关
-            //    （客户端算辅助挖掘速度要靠它），所以门在渲染这一侧。方块容器有自己的
-            //    锚点、不受此开关 ⇒ 照常渲染。
-            if (entry.host().kind() != HostRef.Kind.BLOCK
-                    && !GameplayConfig.toolAndWeaponUsesHostAnchor()) {
+            //    （客户端算辅助挖掘速度要靠它），所以门在渲染这一侧。
+            //    宿主自己的直接内容（方块容器 / 实体容器，hostSlot=-1）不借位置、不受此开关
+            //    （D-container-25：自己的位置直接用，借来的位置才要开关）。hostSlot ≥ 0 ⇔ 借来的锚点。
+            if (entry.host().hostSlot() >= 0 && !GameplayConfig.toolAndWeaponUsesHostAnchor()) {
                 continue;
             }
             Vec3 origin = HostOrigin.of(level, entry.host(), partialTick);
@@ -504,6 +507,19 @@ public final class LivingToolModelRenderer {
             var tools = entry.tools();
             for (int i = 0; i < tools.size(); i++) {
                 ItemStack stack = tools.get(i).stack();
+                // ⭐ 实体宿主的**直接内容**（hostSlot = -1）：无记忆的工具 / 武器进【该宿主的
+                //    背后环】—— 环跟携带者的身体走（2026-11-12 用户定，实体容器泛化；
+                //    方块容器是地点不是携带者，无环）。物品形态嵌套（hostSlot ≥ 0）不进环，
+                //    与补刀收集同口径（只收直接槽位；活背包展开见 TODO 实体宿主节）。
+                if (entry.host().kind() == HostRef.Kind.ENTITY && entry.host().hostSlot() == -1
+                        && ToolRenderState.of(stack).memory().isEmpty()) {
+                    // 🔴 工具 / 武器分流判据与 ① 相同（活斧子算工具）。
+                    if (LivingToolRecorder.isAssistTool(stack) || LivingToolRecorder.isAssistWeapon(stack)) {
+                        entityRings.computeIfAbsent(entry.host().entityId(),
+                            k -> new ArrayList<>()).add(stack);
+                    }
+                    continue;
+                }
                 // ⭐ 无记忆（被动模式）的工具没有射线，`renderOne` 会直接 return。
                 //   自己背包里的这类工具应当像"身上的工具"一样进【背后环】（2026-10-27）——
                 //   否则它们在物品形态里既没有射线、也不在环上 ⇒ 完全不显示。
@@ -525,6 +541,16 @@ public final class LivingToolModelRenderer {
                     origin, bearer, stack,
                     "h" + entry.host().renderKey() + "_" + i, seen);
             }
+        }
+
+        // ③′ 实体宿主的背后环 —— 环心 = 载体身后（用载体的水平朝向定向），与玩家背后环同款几何。
+        //    无「排除自己」：工具在女仆（等实体宿主）身上，本机物品栏里没有 ⇒ 本机也画。
+        for (Map.Entry<UUID, List<ItemStack>> ring : entityRings.entrySet()) {
+            Entity carrier = HostOrigin.findEntity(level, ring.getKey());
+            if (carrier == null || carrier.distanceToSqr(cameraPos) > MAX_DISTANCE * MAX_DISTANCE) {
+                continue;   // 载体不在渲染集 / 太远 ⇒ 跳过（与 ⑤ 其它玩家同口径）
+            }
+            renderBackRing(mc, poseStack, buffers, level, cameraPos, partialTick, carrier, ring.getValue());
         }
 
         // ④/④′ 挖掘环 + 攻击环 —— 各自只画「正在干活」的那部分；
@@ -809,22 +835,22 @@ public final class LivingToolModelRenderer {
      */
     private static void renderBackRing(Minecraft mc, PoseStack poseStack, MultiBufferSource buffers,
                                        ClientLevel level, Vec3 cameraPos, float partialTick,
-                                       net.minecraft.world.entity.player.Player player,
+                                       net.minecraft.world.entity.Entity carrier,
                                        List<ItemStack> tools) {
-        Vec3 look = player.getViewVector(partialTick);
+        Vec3 look = carrier.getViewVector(partialTick);
         Vec3 flat = new Vec3(look.x, 0.0, look.z);
         if (flat.lengthSqr() < 1.0E-6) {
             // 视线正上 / 正下 ⇒ 水平分量退化为零向量。
             // 本机玩家沿用上一次的有效值（否则环会"啪"地钉到固定一侧）；
-            // 其它玩家没有历史可选，退回世界北即可（他们的视角本来就不该影响你的画面）。
-            flat = player == mc.player ? lastRingFlat : new Vec3(0.0, 0.0, -1.0);
+            // 其它玩家 / 实体宿主没有历史可选，退回世界北即可（他们的朝向不该影响你的画面）。
+            flat = carrier == mc.player ? lastRingFlat : new Vec3(0.0, 0.0, -1.0);
         } else {
             flat = flat.normalize();
-            if (player == mc.player) {
+            if (carrier == mc.player) {
                 lastRingFlat = flat;
             }
         }
-        Vec3 center = player.getPosition(partialTick)
+        Vec3 center = carrier.getPosition(partialTick)
             .add(0.0, RING_HEIGHT, 0.0)                 // 世界竖直 ⇒ 高度不随俯仰变
             .subtract(flat.scale(RING_BACK_OFFSET));    // 水平向后 ⇒ 始终在【背后】
         drawRing(mc, poseStack, buffers, level, cameraPos, center, flat, tools, 0.0F, 1.0F, false);

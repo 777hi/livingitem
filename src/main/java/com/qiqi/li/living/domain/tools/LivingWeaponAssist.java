@@ -1,9 +1,12 @@
 package com.qiqi.li.living.domain.tools;
 
 import com.qiqi.li.living.api.LivingMod;
+import com.qiqi.li.living.container.EntityContainers;
+import com.qiqi.li.living.container.TickableContainerContext;
 
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
@@ -13,15 +16,17 @@ import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
 import net.neoforged.neoforge.event.entity.living.LivingKnockBackEvent;
 
+import javax.annotation.Nullable;
+
 /**
- * 活武器<b>辅助攻击</b> —— 玩家打中怪时，背包里【无记忆】的活武器**一起出手**
+ * 活武器<b>辅助攻击</b> —— 玩家 / 实体宿主打中目标时，其背包里【无记忆】的活武器**一起出手**
  * （{@code docs/idea.md} §1.7）。
  *
  * <h3>为什么必须干预原版的「无敌间隔」</h3>
  *
  * <p>原版规则：生物受击后 {@code invulnerableTime = 20}，且只要 {@code > 10} 就
  * <b>完全免疫</b> ⇒ **同一只怪在一个无敌窗口内只能吃一次伤害**。
- * 而玩家自己的攻击<b>已经占掉了这个窗口</b> ⇒ 活武器随后打的全部被吞
+ * 而挥刀者自己的攻击<b>已经占掉了这个窗口</b> ⇒ 活武器随后打的全部被吞
  * （伤害、附魔、击退<b>都不触发</b>）。</p>
  *
  * <p>⇒ 故用 NeoForge 官方接口把辅助攻击期间的无敌压到 0：</p>
@@ -36,7 +41,7 @@ import net.neoforged.neoforge.event.entity.living.LivingKnockBackEvent;
  *
  * <p>{@code active} 标志只在辅助攻击循环期间为 true ⇒</p>
  * <ul>
- *   <li>玩家自己的那一刀<b>不受影响</b>（仍有无敌限制）</li>
+ *   <li>挥刀者自己的那一刀<b>不受影响</b>（仍有无敌限制）</li>
  *   <li>自主模式（有记忆、每 tick 打）<b>不受影响</b> —— 否则 DPS 会失控</li>
  * </ul>
  */
@@ -59,33 +64,57 @@ public final class LivingWeaponAssist {
     }
 
     /**
-     * 玩家攻击命中生物 ⇒ 背包里无记忆的活武器一起出手。
+     * 挥刀者攻击命中生物 ⇒ 其携带的无记忆活武器一起出手。两类挥刀者：
+     * <b>玩家</b>（物品栏 + 活背包一层）与<b>实体宿主</b>（船 / 矿车 / 生物背包——
+     * 判据按 {@code EntityContainers} 准入，不认具体宿主类 ⇒ 未来生物容器自动兼容，
+     * D-container-25；船 / 矿车不近战，自然不触发）。
      *
-     * <p>⭐ <b>挂在伤害结算之后</b>（{@code Post}）：让玩家那一刀先正常生效，
+     * <p>⭐ <b>挂在伤害结算之后</b>（{@code Post}）：让挥刀者那一刀先正常生效，
      * 活武器随后补刀（靠压制无敌帧让每一刀都生效）。
      * 若改挂 {@code AttackEntityEvent}（攻击前）⇒ 活武器先打 ⇒
-     * <b>玩家自己的伤害反被无敌吞掉</b>。</p>
+     * <b>挥刀者自己的伤害反被无敌吞掉</b>。</p>
      *
-     * <p>⚠️ <b>必须排除 FakePlayer</b>：活武器自己造成的伤害也会触发本事件 ⇒ 不排除会无限递归。</p>
+     * <p>⚠️ <b>必须排除 FakePlayer</b>：活武器自己造成的伤害也会触发本事件 ⇒ 不排除会无限递归
+     * （{@code active} 标志是第二道保险）。</p>
      */
     @SubscribeEvent
-    public static void onPlayerDamage(LivingDamageEvent.Post event) {
+    public static void onWielderDamage(LivingDamageEvent.Post event) {
         if (active) {
             return;   // 已在辅助攻击中（理论上不该发生，保险）
-        }
-        if (!(event.getSource().getEntity() instanceof ServerPlayer player) || player.isFakePlayer()) {
-            return;
-        }
-        // ⭐ 创造模式 2026-09-25 放开（用户定，与辅助挖掘对齐）：创造打怪时活武器照样
-        //    出手有实际意义，且创造物品不掉耐久、无副作用；旁观依旧排除。
-        if (player.isSpectator()) {
-            return;
         }
         LivingEntity target = event.getEntity();
         if (target.isDeadOrDying()) {
             return;
         }
+        Entity source = event.getSource().getEntity();
+        if (source instanceof ServerPlayer player) {
+            if (player.isFakePlayer()) {
+                return;
+            }
+            // ⭐ 创造模式 2026-09-25 放开（用户定，与辅助挖掘对齐）：创造打怪时活武器照样
+            //    出手有实际意义，且创造物品不掉耐久、无副作用；旁观依旧排除。
+            if (!player.isSpectator()) {
+                assistFromPlayer(player, target);
+            }
+            return;
+        }
+        if (isEntityHostSource(source)) {
+            assistFromEntityHost(source, target);
+        }
+    }
 
+    /**
+     * 实体宿主触发判据 —— 准入实体容器且非旁观。
+     *
+     * <p>{@code ServerPlayer} / FakePlayer 不是 {@code ContainerEntity}、也无 Provider
+     * ⇒ 结构上落不进本判据，无需显式排除玩家。</p>
+     */
+    // 包级可见：供单测验「实体宿主触发」（LivingWeaponAssistTest）。
+    static boolean isEntityHostSource(@Nullable Entity source) {
+        return source != null && !source.isSpectator() && EntityContainers.isContainerEntity(source);
+    }
+
+    private static void assistFromPlayer(ServerPlayer player, LivingEntity target) {
         ServerLevel level = player.serverLevel();
         Vec3 origin = player.getEyePosition();
         long now = level.getGameTime();
@@ -101,27 +130,8 @@ public final class LivingWeaponAssist {
                 if (target.isDeadOrDying()) {
                     break;
                 }
-                ItemStack weapon = carried.stack();
-
-                // ⭐ 压制无敌帧，让【这一把】的伤害与附魔真正生效
-                //    （顺序：hurt 内 1153 post 事件 → 1190 免疫判断 → 1202 读 container）
-                //
-                //    官方入口见 onIncomingDamage（setPostAttackInvulnerabilityTicks）；
-                //    但 1190 的免疫判断读的是【当前 invulnerableTime】，而官方入口只能改【本次之后】的值
-                //    ⇒ 本循环里再直接压一道，确保下一把不会被吞。
-                //    invulnerableTime 是 public 字段（Entity.java），无需反射 / AT。
-                if (target.invulnerableTime > 10) {
-                    target.invulnerableTime = 10;   // 进 hurt 时会先 -1 ⇒ 9 ⇒ 跨过 `> 10` 的免疫阈值
-                }
-
-                // ⭐ 直连目标（2026-11-06）：可达性已由玩家这一刀证明 ⇒ 不造射线、不做隔墙检测
-                // —— 沿「眼睛 → 包围盒中心」造射线复查会在「怪掉坑里只露头」时误判隔墙
-                //    （中心在坑沿下，射线穿坑沿方块），表现为玩家打得到、辅助不动。
-                //    目标过滤与 per-weapon 冷却由 strikeKnownTarget 自己管。
-                LivingToolReplay.AttackResult result = LivingToolReplay.strikeKnownTarget(
-                    weapon, origin, target, level, now);
-
-                if (result.outcome() == LivingToolReplay.Outcome.ATTACKED) {
+                LivingToolReplay.AttackResult result = strikeOne(carried.stack(), origin, target, level, now);
+                if (result != null) {
                     // 写回（可能扣了耐久 / 损坏）：容器里的武器要写回容器，不能写物品栏
                     CarriedLivingItems.writeBack(player, carried, result.tool());
                     any = true;
@@ -134,6 +144,66 @@ public final class LivingWeaponAssist {
         if (any) {
             player.inventoryMenu.broadcastChanges();
         }
+    }
+
+    /** 实体宿主路径：容器上下文逐槽收集无记忆活武器，写回走 {@code ctx.setItem} + 槽位同步。 */
+    private static void assistFromEntityHost(Entity host, LivingEntity target) {
+        if (!(host.level() instanceof ServerLevel level)) {
+            return;
+        }
+        TickableContainerContext ctx = EntityContainers.createContext(host, level);
+        if (ctx == null) {
+            return;
+        }
+        active = true;
+        try {
+            Vec3 origin = host.getEyePosition();
+            long now = level.getGameTime();
+            for (int slot = 0; slot < ctx.getSize(); slot++) {
+                if (target.isDeadOrDying()) {
+                    break;
+                }
+                ItemStack weapon = ctx.getItem(slot);
+                if (!LivingToolRecorder.isAssistWeapon(weapon)) {
+                    continue;
+                }
+                LivingToolReplay.AttackResult result = strikeOne(weapon, origin, target, level, now);
+                if (result != null) {
+                    // ⚠️ 同物品的耐久 / 损坏写回（非数量搬运）—— 与工具回放 writeBack 同判，基线登记
+                    ItemStack after = result.tool();
+                    ctx.setItem(slot, after);
+                    ctx.syncSlotToClients(slot, after);
+                }
+            }
+        } finally {
+            active = false;
+        }
+    }
+
+    /**
+     * 出手一刀（无敌帧压制 + 直连目标），打中了返回结算结果。
+     *
+     * <p>⭐ 压制无敌帧，让【这一把】的伤害与附魔真正生效
+     * （顺序：hurt 内 1153 post 事件 → 1190 免疫判断 → 1202 读 container）；
+     * 官方入口见 {@code onIncomingDamage}（setPostAttackInvulnerabilityTicks），
+     * 但 1190 的免疫判断读的是【当前 invulnerableTime】，官方入口只能改【本次之后】的值
+     * ⇒ 这里再直接压一道，确保下一把不会被吞。invulnerableTime 是 public 字段（Entity.java），
+     * 无需反射 / AT。</p>
+     *
+     * <p>⭐ 直连目标（2026-11-06）：可达性已由挥刀者这一刀证明 ⇒ 不造射线、不做隔墙检测
+     * —— 沿「眼睛 → 包围盒中心」造射线复查会在「怪掉坑里只露头」时误判隔墙
+     * （中心在坑沿下，射线穿坑沿方块），表现为挥刀者打得到、辅助不动。
+     * 目标过滤与 per-weapon 冷却由 {@code strikeKnownTarget} 自己管。</p>
+     */
+    @Nullable
+    private static LivingToolReplay.AttackResult strikeOne(ItemStack weapon, Vec3 origin,
+                                                           LivingEntity target, ServerLevel level, long now) {
+        if (target.invulnerableTime > 10) {
+            target.invulnerableTime = 10;   // 进 hurt 时会先 -1 ⇒ 9 ⇒ 跨过 `> 10` 的免疫阈值
+        }
+        LivingToolReplay.AttackResult result = LivingToolReplay.strikeKnownTarget(
+            weapon, origin, target, level, now);
+        return result.outcome() == LivingToolReplay.Outcome.ATTACKED ? result : null;
     }
 
     /**

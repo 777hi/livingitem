@@ -343,6 +343,7 @@ public class LivingItem {
         // 清在 flush 里会让第一个维度抽干全表、其余维度恒空。2026-10-18 审查发现并修信标，
         // 2026-10-27 审查发现 K2（活工具宿主同步）也踩同一条铁律）
         com.qiqi.li.living.domain.beacon.BeaconPlayerHostSync.beginTick();
+        com.qiqi.li.living.domain.beacon.BeaconEntityHostSync.beginTick();
         com.qiqi.li.living.domain.tools.LivingToolHostSync.beginTick();
 
         for (var player : server.getPlayerList().getPlayers()) {
@@ -365,6 +366,8 @@ public class LivingItem {
         com.qiqi.li.living.domain.beacon.BeaconChestHost.flush(level);
         // 活信标：玩家宿主联机广播（UUID + 等级，照 LivingToolPlayerSync 模式）
         com.qiqi.li.living.domain.beacon.BeaconPlayerHostSync.flush(level);
+        // 活信标：实体宿主联机广播（实体 UUID + 等级，D-container-25）
+        com.qiqi.li.living.domain.beacon.BeaconEntityHostSync.flush(level);
             // 联机可见性（最小版）：把各玩家背包里的无记忆活工具广播给附近客户端
             com.qiqi.li.living.domain.tools.LivingToolPlayerSync.flush(level);
         }
@@ -730,6 +733,10 @@ public class LivingItem {
         registrar.playToClient(com.qiqi.li.living.domain.beacon.BeaconPlayerHostPacket.TYPE,
             com.qiqi.li.living.domain.beacon.BeaconPlayerHostPacket.STREAM_CODEC,
             com.qiqi.li.living.domain.beacon.BeaconPlayerHostPacket::handle);
+        // 活信标：实体宿主（实体 UUID + 等级，D-container-25），供客户端画宿主顶面光束
+        registrar.playToClient(com.qiqi.li.living.domain.beacon.BeaconEntityHostPacket.TYPE,
+            com.qiqi.li.living.domain.beacon.BeaconEntityHostPacket.STREAM_CODEC,
+            com.qiqi.li.living.domain.beacon.BeaconEntityHostPacket::handle);
         // 联机可见性（最小版）：近处玩家背包里的无记忆活工具清单（UUID + ItemStack），
         // 供客户端给【其它玩家】画背后的待机环（自己那份不发 —— 本机渲染更实时，且能走挖掘环）
         registrar.playToClient(LivingToolPlayerPacket.TYPE, LivingToolPlayerPacket.STREAM_CODEC, LivingToolPlayerPacket::handle);

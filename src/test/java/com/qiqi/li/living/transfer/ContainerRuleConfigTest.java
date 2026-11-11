@@ -34,7 +34,7 @@ class ContainerRuleConfigTest {
 
     /** 一个确实存在于内置资源中的 ID，用于测试对内置规则的覆盖/删除 */
     private static final ResourceLocation BUNDLED_ID =
-        ResourceLocation.fromNamespaceAndPath("minecraft", "chest");
+        ResourceLocation.fromNamespaceAndPath("ironchest", "iron_chest");
 
     /** 无尽箱子：300 格 / 25 列。启发式会算成 10 列（300%9≠0、300%10=0）⇒ 必须靠规则。 */
     private static final ResourceLocation INFINITY_CHEST =
@@ -56,7 +56,7 @@ class ContainerRuleConfigTest {
      * 跨测试类共享。
      *
      * <p>⚠️ 2026-10-18 实测：不加这一步时，本类若排在 {@code ContainerCompatibilityConfigTest}
-     * 之前执行，后者会看到「{@code minecraft:chest} 不见了」（{@code findRule} 返回 empty），
+     * 之前执行，后者会看到「{@code BUNDLED_ID} 不见了」（{@code findRule} 返回 empty），
      * 表现为<b>与代码无关的顺序性 flaky</b>。用<b>全新空目录</b>重新 {@code load()}：
      * 空目录没有 removed 记录 ⇒ 内置规则被完整读回。</p>
      */
@@ -70,7 +70,7 @@ class ContainerRuleConfigTest {
     @DisplayName("内置规则加载后：被识别为内置，且未被玩家修改")
     void bundledRule_isMarkedAsBundledAndUnmodified() {
         assertTrue(ContainerRuleConfig.isBundledRule(BUNDLED_ID),
-            "minecraft:chest 应来自内置资源");
+            "ironchest:iron_chest 应来自内置资源");
         assertFalse(ContainerRuleConfig.isUserModified(BUNDLED_ID),
             "刚加载时玩家还没动过它");
         assertFalse(ContainerRuleConfig.isRemovedByUser(BUNDLED_ID),
@@ -122,8 +122,8 @@ class ContainerRuleConfigTest {
     @Test
     @DisplayName("覆盖内置规则：记为玩家修改，且导出内容反映新数值")
     void overridingBundledRule_isRecordedAsUserModified() {
-        // 内置的 minecraft:chest 是 27 槽 9 列；玩家改成 3 列
-        var overrides = buildRule(27, 3);
+        // 内置的 ironchest:iron_chest 是 54 槽 9 列；玩家改成 3 列
+        var overrides = buildRule(54, 3);
 
         boolean overwrote = ContainerRuleConfig.addAndSave(BUNDLED_ID, overrides);
 
@@ -212,7 +212,7 @@ class ContainerRuleConfigTest {
     void legacyWildcardRemoval_survivesSecondRemove() throws Exception {
         java.nio.file.Files.writeString(
             tempDir.resolve("living_item").resolve("container_rules.json"),
-            "{\"version\":1,\"removed\":[\"minecraft:chest\"]}");
+            "{\"version\":1,\"removed\":[\"ironchest:iron_chest\"]}");
         ContainerRuleConfig.load();
 
         assertTrue(ContainerRuleConfig.isRemovedByUser(BUNDLED_ID), "前置：旧格式删除已生效");
@@ -246,7 +246,7 @@ class ContainerRuleConfigTest {
     @Test
     @DisplayName("覆盖后再删除内置：以删除为准，且不再出现在导出里")
     void overrideThenRemove_removalWins() {
-        ContainerRuleConfig.addAndSave(BUNDLED_ID, buildRule(27, 3));
+        ContainerRuleConfig.addAndSave(BUNDLED_ID, buildRule(54, 3));
         ContainerRuleConfig.removeAndSave(BUNDLED_ID);
 
         assertTrue(ContainerRuleConfig.isRemovedByUser(BUNDLED_ID));
@@ -275,7 +275,7 @@ class ContainerRuleConfigTest {
         // 这样作者才能直接用它覆盖 assets 资源而不丢内置数据。
         assertTrue(ContainerRuleConfig.getExportFile().toFile().exists(), "导出文件应真实写盘");
         String json = java.nio.file.Files.readString(ContainerRuleConfig.getExportFile(), java.nio.charset.StandardCharsets.UTF_8);
-        assertTrue(json.contains("\"minecraft:chest\""),
+        assertTrue(json.contains("\"ironchest:iron_chest\""),
             "快照应保留内置规则（否则覆盖会丢数据）");
         assertTrue(json.contains("\"testmod:a\""), "快照应含玩家新增规则");
     }
@@ -289,7 +289,7 @@ class ContainerRuleConfigTest {
         ContainerRuleConfig.exportBundledFormat();
 
         String json = java.nio.file.Files.readString(ContainerRuleConfig.getExportFile(), java.nio.charset.StandardCharsets.UTF_8);
-        assertFalse(json.contains("\"minecraft:chest\""),
+        assertFalse(json.contains("\"ironchest:iron_chest\""),
             "玩家删掉的内置规则不应回到快照，否则覆盖后又复活了");
     }
 
@@ -322,7 +322,7 @@ class ContainerRuleConfigTest {
         ResourceLocation contributed =
             ResourceLocation.fromNamespaceAndPath("testmod", "community_chest");
         ContainerRuleConfig.addAndSave(contributed, buildRule(216, 18));
-        ContainerRuleConfig.addAndSave(BUNDLED_ID, buildRule(27, 3)); // 覆盖内置
+        ContainerRuleConfig.addAndSave(BUNDLED_ID, buildRule(54, 3)); // 覆盖内置
 
         int expectedTotal = ContainerCompatibilityConfig.getAllRules().size();
         ContainerRuleConfig.exportBundledFormat();
@@ -336,7 +336,7 @@ class ContainerRuleConfigTest {
 
         assertEquals(expectedTotal, ContainerCompatibilityConfig.getAllRules().size(),
             "覆盖加载后的规则数应与导出时一致——一条不少");
-        assertEquals(27, ContainerCompatibilityConfig.findRule(BUNDLED_ID).orElseThrow().containerSize(),
+        assertEquals(54, ContainerCompatibilityConfig.findRule(BUNDLED_ID).orElseThrow().containerSize(),
             "内置条目应仍在（覆盖不丢内置数据）");
         assertEquals(3, ContainerCompatibilityConfig.findRule(BUNDLED_ID).orElseThrow().columns(),
             "玩家对内置规则的修正应随快照一起发布");
