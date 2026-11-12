@@ -394,7 +394,7 @@
 ✅ `PlainSlotAccessor` extract / insert / rollback 写后回读（2026-11-05，与 `BodySlotAccessor`
 同形）：写回静默失败 ⇒ restore + 返回 EMPTY / 0，绝不把没离开源的货交给调用方；
 其余搬运点（漏斗 / 末影箱 / 活箱子 insert）已审计为原子或组件内写。
-✅ **槽位数量操作原语落地（2026-11-05，收编域内写回）**：`ContainerContext` 四原语
+✅ **槽位数量操作原语落地（2026-11-05，收编域内写回）**：`ContainerContext` 原语
 —— `move(from, to, amount, MovePolicy)`（按数量搬运，**允许部分交付与合并**；
 `PHYSICAL` = A3 口径：容量只问 `getSlotLimit`，不问准入与抽取权限）、`produce`
 （产物放置，预算 = `simulateInsertItem`，**差额只 WARN 不回滚**——无源槽无复制面，
@@ -404,6 +404,13 @@
 编排留守）；守卫测试 `ContainerSlotOpsTest`。⏳ 抽取权限维度未接入读取路径
 （`PlainSlotAccessor.simulateExtract` 未查 `simulateExtractItem`、流体推动不看抽取权限）
 ——玩法口径需拍板（[TODO 物品传输](../TODO.md)）。
+✅ **swap 原语（2026-11-12，双槽关系操作）**：`swap(from, to)` 双方非空、整栈互换、
+不拆分不合并；准入用配套 `canFullyReceive`（「假定槽位清空后能否完整接纳」——
+`canAcceptAll` 的 `simulateInsertItem` 在槽非空时按「现有内容之上合并」作答，
+表达不了互换场景）；验证式原子（写入逐槽回读 + 双槽终验，任一不符恢复双槽快照）；
+成功登记两槽 `movedSlots`；**无撤销凭据**（逆操作 = 再 swap）。首个用户 = 活魂符换位
+（[living-maid-tech §1.2](../tech/living-maid-tech.md#12-居家餐供品换位与待兑现好感)）；
+守卫测试并入 `ContainerSlotOpsTest`。
 
 ---
 

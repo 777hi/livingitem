@@ -3,6 +3,7 @@ package com.qiqi.li.living.container;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.DisplayName;
@@ -12,8 +13,11 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import com.qiqi.li.testutil.FakeContainerContext;
 
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.CustomData;
 import net.neoforged.neoforge.items.IItemHandlerModifiable;
 
 /**
@@ -70,7 +74,8 @@ class ContainerSlotOpsTest {
         @Override public ItemStack getStackInSlot(int slot) { return slots[slot]; }
         @Override public void setStackInSlot(int slot, ItemStack stack) { slots[slot] = stack; }
         @Override public int getSlotLimit(int slot) { return limits[slot]; }
-        @Override public boolean isItemValid(int slot, ItemStack stack) { return true; }
+        /** 准入拒绝同时表达进 NeoForge 的规范准入口（insertItem 空槽接纳也查它）。 */
+        @Override public boolean isItemValid(int slot, ItemStack stack) { return !noInsertSlots.contains(slot); }
 
         @Override
         public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
@@ -594,5 +599,161 @@ class ContainerSlotOpsTest {
         assertFalse(ctx.transform(0, ItemStack::getCraftingRemainingItem));
         assertTrue(stackOf(ctx, 0).is(Items.LAVA_BUCKET), "还原成功 ⇒ 原样");
         assertEquals(1, stackOf(ctx, 0).getCount());
+    }
+
+    // ── swap：双非空整栈互换（活魂符换位原语，2026-11-12） ──────────
+
+    @ParameterizedTest(name = "{0}：双非空互换 —— 内容对调、moved=进入 to 的数量、总量守恒")
+    @ValueSource(booleans = {true, false})
+    void swapExchangesBothStacks(boolean handlerBacked) {
+        ContainerContext ctx = newCtx(handlerBacked, 2, null);
+        ctx.setItem(0, new ItemStack(Items.REDSTONE, 30));
+        ctx.setItem(1, new ItemStack(Items.GOLD_INGOT, 2));
+
+        MoveResult result = ctx.swap(0, 1);
+
+        MoveResult.Success success = assertInstanceOf(MoveResult.Success.class, result);
+        assertEquals(30, success.moved(), "moved = 移入 to 的数量（原 from 栈）");
+        assertNull(success.undo(), "swap 的逆操作是再次 swap，无撤销凭据");
+        assertEquals(2, stackOf(ctx, 0).getCount(), "target 栈来到 from");
+        assertEquals(Items.GOLD_INGOT, stackOf(ctx, 0).getItem());
+        assertEquals(30, stackOf(ctx, 1).getCount(), "source 栈来到 to");
+        assertEquals(Items.REDSTONE, stackOf(ctx, 1).getItem());
+        assertEquals(32, total(ctx), "总量守恒");
+    }
+
+    @Test
+    @DisplayName("swap 成功登记两槽进 movedSlots（同拍旧条目失效语义与 moveStack 一致）")
+    void swapRegistersMovedSlots() {
+        SimpleContainerContext ctx = new SimpleContainerContext(new LimitedHandler(64, 64));
+        ctx.setItem(0, new ItemStack(Items.REDSTONE, 5));
+        ctx.setItem(1, new ItemStack(Items.GOLD_INGOT, 3));
+        TickContext tick = new TickContext(ctx);
+        ctx.setTickContext(tick);
+
+        assertInstanceOf(MoveResult.Success.class, ctx.swap(0, 1));
+
+        assertTrue(tick.movedSlots.contains(0), "from 侧登记");
+        assertTrue(tick.movedSlots.contains(1), "to 侧登记");
+    }
+
+    @ParameterizedTest(name = "{0}：一侧为空 ⇒ SOURCE_EMPTY（一空一非空走 move，不是 swap 职责）")
+    @ValueSource(booleans = {true, false})
+    void swapRequiresBothNonEmpty(boolean handlerBacked) {
+        ContainerContext ctx = newCtx(handlerBacked, 2, null);
+        ctx.setItem(0, new ItemStack(Items.REDSTONE, 5));
+
+        assertEquals(MoveResult.Reason.SOURCE_EMPTY,
+            assertInstanceOf(MoveResult.Rejected.class, ctx.swap(0, 1)).reason());
+        assertEquals(MoveResult.Reason.SOURCE_EMPTY,
+            assertInstanceOf(MoveResult.Rejected.class, ctx.swap(1, 0)).reason());
+        assertEquals(5, stackOf(ctx, 0).getCount(), "状态未变");
+        assertTrue(stackOf(ctx, 1).isEmpty(), "状态未变");
+    }
+
+    @Test
+    @DisplayName("swap：同槽 / 越界 ⇒ INVALID_ADDRESS")
+    void swapRejectsInvalidAddress() {
+        ContainerContext ctx = newCtx(true, 2, null);
+        ctx.setItem(0, new ItemStack(Items.REDSTONE, 1));
+        ctx.setItem(1, new ItemStack(Items.GOLD_INGOT, 1));
+
+        assertEquals(MoveResult.Reason.INVALID_ADDRESS,
+            assertInstanceOf(MoveResult.Rejected.class, ctx.swap(0, 0)).reason());
+        assertEquals(MoveResult.Reason.INVALID_ADDRESS,
+            assertInstanceOf(MoveResult.Rejected.class, ctx.swap(0, 9)).reason());
+    }
+
+    @Test
+    @DisplayName("swap 双向抽取权限：任一侧只出不进 ⇒ SOURCE_NOT_EXTRACTABLE，状态不变")
+    void swapHonorsExtractionPermissionOnBothSides() {
+        LimitedHandler h = new LimitedHandler(64, 64);
+        h.slots[0] = new ItemStack(Items.REDSTONE, 8);
+        h.slots[1] = new ItemStack(Items.GOLD_INGOT, 4);
+        h.noExtractSlots.add(1);
+        SimpleContainerContext ctx = new SimpleContainerContext(h);
+
+        assertEquals(MoveResult.Reason.SOURCE_NOT_EXTRACTABLE,
+            assertInstanceOf(MoveResult.Rejected.class, ctx.swap(0, 1)).reason());
+        assertEquals(8, stackOf(ctx, 0).getCount(), "状态未变");
+        assertEquals(4, stackOf(ctx, 1).getCount(), "状态未变");
+    }
+
+    @ParameterizedTest(name = "{0}：整栈装不进对方槽（容量 512 → 64）⇒ TARGET_INSUFFICIENT，不部分交换")
+    @ValueSource(booleans = {true, false})
+    void swapRejectsWhenStackDoesNotFit(boolean handlerBacked) {
+        ContainerContext ctx = newCtx(handlerBacked, 2, new int[]{64, 512});
+        ctx.setItem(0, new ItemStack(Items.REDSTONE, 1));
+        ctx.setItem(1, new ItemStack(Items.IRON_INGOT, 512));
+
+        assertEquals(MoveResult.Reason.TARGET_INSUFFICIENT,
+            assertInstanceOf(MoveResult.Rejected.class, ctx.swap(0, 1)).reason());
+        assertEquals(1, stackOf(ctx, 0).getCount(), "状态未变");
+        assertEquals(512, stackOf(ctx, 1).getCount(), "状态未变（不截断、不部分交换）");
+    }
+
+    @Test
+    @DisplayName("swap 准入拒绝（handler 拒收异类写入侧）⇒ TARGET_INSUFFICIENT，状态不变")
+    void swapHonorsAdmissionOnBothSides() {
+        LimitedHandler h = new LimitedHandler(64, 64);
+        h.slots[0] = new ItemStack(Items.REDSTONE, 8);
+        h.slots[1] = new ItemStack(Items.GOLD_INGOT, 4);
+        h.noInsertSlots.add(1);   // 槽 1 拒绝接纳来自槽 0 的红石
+        SimpleContainerContext ctx = new SimpleContainerContext(h);
+
+        assertEquals(MoveResult.Reason.TARGET_INSUFFICIENT,
+            assertInstanceOf(MoveResult.Rejected.class, ctx.swap(0, 1)).reason());
+        assertEquals(8, stackOf(ctx, 0).getCount(), "状态未变");
+        assertEquals(4, stackOf(ctx, 1).getCount(), "状态未变");
+    }
+
+    @Test
+    @DisplayName("swap to 侧静默写失败 ⇒ BackendViolation + 双槽恢复原状")
+    void swapRollsBackOnSilentWrite() {
+        SilentWriteHandler h = new SilentWriteHandler(64, 64);
+        h.slots[0] = new ItemStack(Items.REDSTONE, 8);
+        h.slots[1] = new ItemStack(Items.GOLD_INGOT, 4);
+        h.silentSlots.add(1);
+        SimpleContainerContext ctx = new SimpleContainerContext(h);
+
+        assertInstanceOf(MoveResult.BackendViolation.class, ctx.swap(0, 1));
+        assertEquals(8, stackOf(ctx, 0).getCount(), "from 恢复原状");
+        assertEquals(4, stackOf(ctx, 1).getCount(), "to 恢复原状");
+    }
+
+    @Test
+    @DisplayName("swap to 侧整库重定向 ⇒ BackendViolation + 双槽恢复原状")
+    void swapRollsBackOnRedirect() {
+        FirstWriteRedirectHandler h = new FirstWriteRedirectHandler(1, 64, 64);
+        h.slots[0] = new ItemStack(Items.REDSTONE, 8);
+        h.slots[1] = new ItemStack(Items.GOLD_INGOT, 4);
+        SimpleContainerContext ctx = new SimpleContainerContext(h);
+
+        assertInstanceOf(MoveResult.BackendViolation.class, ctx.swap(0, 1));
+        assertEquals(8, stackOf(ctx, 0).getCount(), "from 恢复原状");
+        assertEquals(Items.GOLD_INGOT, stackOf(ctx, 1).getItem(), "to 恢复原状");
+        assertEquals(4, stackOf(ctx, 1).getCount());
+    }
+
+    @Test
+    @DisplayName("swap 保全组件：双方栈的组件随物品完整互换")
+    void swapPreservesComponents() {
+        ContainerContext ctx = newCtx(true, 2, null);
+        ItemStack named = new ItemStack(Items.REDSTONE, 5);
+        CompoundTag tag = new CompoundTag();
+        tag.putString("marker", "kept");
+        named.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+        ItemStack plain = new ItemStack(Items.GOLD_INGOT, 2);
+        ctx.setItem(0, named);
+        ctx.setItem(1, plain);
+
+        assertInstanceOf(MoveResult.Success.class, ctx.swap(0, 1));
+
+        ItemStack atFrom = stackOf(ctx, 0);
+        assertEquals(Items.GOLD_INGOT, atFrom.getItem(), "target 栈来到 from");
+        ItemStack atTo = stackOf(ctx, 1);
+        assertEquals(Items.REDSTONE, atTo.getItem(), "source 栈来到 to");
+        assertEquals("kept", atTo.get(DataComponents.CUSTOM_DATA).copyTag().getString("marker"),
+            "source 栈组件原样随行");
     }
 }

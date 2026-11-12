@@ -80,7 +80,21 @@ public final class LivingSoulSlabFunction implements LivingItemFunction {
     @Override public String getFunctionId() { return ID; }
 
     @Override public Set<DataComponentType<?>> getOwnedComponentTypes() {
-        return Set.of(MaidComponents.CLOCK.get());
+        return Set.of(MaidComponents.CLOCK.get(), MaidComponents.SITTING.get());
+    }
+
+    /** 空光标右键 toggle 坐下 / 起身；false 规范化为组件缺席。 */
+    public static boolean toggleSitting(ItemStack stack) {
+        boolean next = !isSitting(stack);
+        if (next) stack.set(MaidComponents.SITTING.get(), new LivingSoulSlabSitting(true));
+        else stack.remove(MaidComponents.SITTING.get());
+        return true;
+    }
+
+    /** 坐下的女仆暂停随机走位（被动位移不受影响，被推到新槽保持坐姿）。 */
+    public static boolean isSitting(ItemStack stack) {
+        LivingSoulSlabSitting sitting = stack.get(MaidComponents.SITTING.get());
+        return sitting != null && sitting.value();
     }
 
     @Override
@@ -95,11 +109,17 @@ public final class LivingSoulSlabFunction implements LivingItemFunction {
         tooltipAdder.accept(Component.empty());
         tooltipAdder.accept(Component.translatable("tooltip.livingitem.soul_slab.title")
                 .withStyle(ChatFormatting.LIGHT_PURPLE));
-        tooltipAdder.accept(Component.translatable("tooltip.livingitem.soul_slab.attempt_chance",
-                Component.literal("1/" + interval).withStyle(ChatFormatting.YELLOW),
-                Component.literal(percentage + "%").withStyle(ChatFormatting.AQUA),
-                Component.literal(Integer.toString(interval)).withStyle(ChatFormatting.YELLOW))
-                .withStyle(ChatFormatting.GRAY));
+        if (isSitting(stack)) {
+            // 坐下 = 行动暂停 ⇒ 概率行会误导，只显示休息状态
+            tooltipAdder.accept(Component.translatable("tooltip.livingitem.soul_slab.sitting")
+                    .withStyle(ChatFormatting.GRAY));
+        } else {
+            tooltipAdder.accept(Component.translatable("tooltip.livingitem.soul_slab.attempt_chance",
+                    Component.literal("1/" + interval).withStyle(ChatFormatting.YELLOW),
+                    Component.literal(percentage + "%").withStyle(ChatFormatting.AQUA),
+                    Component.literal(Integer.toString(interval)).withStyle(ChatFormatting.YELLOW))
+                    .withStyle(ChatFormatting.GRAY));
+        }
         int pending = favorLedger.pending(stack);
         if (pending > 0) {
             tooltipAdder.accept(Component.translatable("tooltip.livingitem.soul_slab.pending_favor",
@@ -120,6 +140,7 @@ public final class LivingSoulSlabFunction implements LivingItemFunction {
                 clearClock(container, source, current);
                 continue;
             }
+            if (isSitting(current)) continue;   // 坐下 ⇒ 行动尝试直接跳过，I 不变
 
             LivingSoulSlabClock clock = current.get(MaidComponents.CLOCK.get());
             if (clock == null || !clock.valid()) {
@@ -138,8 +159,19 @@ public final class LivingSoulSlabFunction implements LivingItemFunction {
             }
             ItemStack targetStack = container.getItem(target).copy();
             if (!targetStack.isEmpty()) {
-                AttemptOutcome feeding = tryFeed(container, source, target, current, targetStack, clock);
-                if (feeding == AttemptOutcome.FAILURE) adjustClock(container, source, false);
+                AttemptOutcome outcome;
+                if (LivingItemManager.isLivingItem(targetStack)) {
+                    outcome = AttemptOutcome.FAILURE;   // 活物品是居民/机器，不是货物：挡路
+                } else if (foodPredicate.test(targetStack)) {
+                    outcome = tryFeed(container, source, target, current, targetStack);
+                } else {
+                    outcome = trySwap(container, source, target);
+                }
+                if (outcome == AttemptOutcome.FAILURE) {
+                    adjustClock(container, source, false);
+                } else if (outcome == AttemptOutcome.SUCCESS) {
+                    adjustClock(container, target, true);   // 女仆已在新位置，I−1 统一在新槽提交
+                }
                 continue;
             }
 
@@ -167,57 +199,56 @@ public final class LivingSoulSlabFunction implements LivingItemFunction {
         return AttemptOutcome.SUCCESS;
     }
 
+    /**
+     * 换位：与普通非活化物品交换位置（女仆进入目标槽，整栈来到原槽）。
+     * 换位是女仆完成的行动 ⇒ 按成功 {@code I−1}；后端不支持 / 违约 ⇒ 技术中性。
+     */
+    AttemptOutcome trySwap(ContainerContext container, int source, int target) {
+        MoveResult result = container.swap(source, target);
+        if (result instanceof MoveResult.Success) return AttemptOutcome.SUCCESS;
+        if (result instanceof MoveResult.Unsupported
+                || result instanceof MoveResult.BackendViolation) return AttemptOutcome.NEUTRAL;
+        return AttemptOutcome.FAILURE;
+    }
+
+    /**
+     * 供品：吃一份居家餐并与其剩余堆换位（2026-11-12 翻转旧"站着吃不移动"口径）。
+     *
+     * <p>顺序 = swap → consume → commit（swap 是自身逆操作，吃失败换回即整体无净变化）；
+     * commit 失败时已换位已吃，事实保留、pending 不加（宁失勿复）。</p>
+     */
     AttemptOutcome tryFeed(ContainerContext container, int source, int target,
-                           ItemStack soul, ItemStack food, LivingSoulSlabClock clock) {
-        if (LivingItemManager.isLivingItem(food) || !foodPredicate.test(food)
-                || !favorLedger.canAdd(soul)) return AttemptOutcome.FAILURE;
-        if (!container.supportsItemComponentWrite(source)) return AttemptOutcome.NEUTRAL;
-        if (container.simulateExtractItem(target, 1) < 1) return AttemptOutcome.FAILURE;
+                           ItemStack soul, ItemStack food) {
+        if (!favorLedger.canAdd(soul)) return AttemptOutcome.FAILURE;
+        if (!container.supportsItemComponentWrite(target)) return AttemptOutcome.NEUTRAL;
         if (!ItemStack.matches(container.getItem(source), soul)
                 || !ItemStack.matches(container.getItem(target), food)) return AttemptOutcome.NEUTRAL;
 
-        ItemStack after = favorLedger.add(soul, 1);
+        MoveResult swapped = container.swap(source, target);
+        if (swapped instanceof MoveResult.Unsupported
+                || swapped instanceof MoveResult.BackendViolation) return AttemptOutcome.NEUTRAL;
+        if (!(swapped instanceof MoveResult.Success)) return AttemptOutcome.FAILURE;
+
+        ItemStack fed = container.getItem(target).copy();
+        if (container.consume(source, 1) != 1) {
+            MoveResult reverted = container.swap(source, target);
+            if (reverted instanceof MoveResult.Success) return AttemptOutcome.FAILURE;
+            LOGGER.error("投喂回退失败：容器 {}，魂符槽 {}，食物槽 {}，实际魂符 {} / 食物 {}",
+                    container.getCacheKey(), source, target,
+                    container.getItem(source), container.getItem(target));
+            return AttemptOutcome.NEUTRAL;
+        }
+
+        ItemStack after = favorLedger.add(fed, 1);
         if (after.isEmpty()) return AttemptOutcome.NEUTRAL;
-        after.set(MaidComponents.CLOCK.get(), clock.afterSuccess());
-        if (!container.commitItemComponents(source, soul, after)) return AttemptOutcome.NEUTRAL;
-        if (!ItemStack.matches(container.getItem(target), food)) {
-            compensateFeed(container, source, target, after, soul, "目标食物在源提交后变化");
-            return AttemptOutcome.NEUTRAL;
+        // clock 的 I−1 由 tick 的 SUCCESS 统一在新位置 adjust，此处只提交 pending
+        if (container.commitItemComponents(target, fed, after)
+                && ItemStack.matches(container.getItem(target), after)) {
+            return AttemptOutcome.SUCCESS;
         }
-        if (container.consume(target, 1) == 1) {
-            if (ItemStack.matches(container.getItem(source), after)) return AttemptOutcome.SUCCESS;
-            restoreConsumedFood(container, target, food);
-            LOGGER.error("投喂后魂符被同步监听改写：容器 {}，魂符槽 {}，食物槽 {}，实际魂符 {}",
-                    container.getCacheKey(), source, target, container.getItem(source));
-            return AttemptOutcome.NEUTRAL;
-        }
-
-        compensateFeed(container, source, target, after, soul, "食物扣除未确认");
+        LOGGER.warn("投喂账本提交失败：容器 {}，槽位 {} —— 已换位已吃，事实保留、pending 不加",
+                container.getCacheKey(), target);
         return AttemptOutcome.NEUTRAL;
-    }
-
-    private static void restoreConsumedFood(ContainerContext container, int target, ItemStack before) {
-        ItemStack expected = before.getCount() == 1 ? ItemStack.EMPTY : before.copyWithCount(before.getCount() - 1);
-        ItemStack actual = container.getItem(target).copy();
-        if (!ItemStack.matches(actual, expected) || !container.trySetItemExact(target, before)) {
-            LOGGER.error("投喂食物恢复失败：容器 {}，食物槽 {}，期望原状 {}，实际 {}",
-                    container.getCacheKey(), target, before, container.getItem(target));
-            return;
-        }
-        ItemStack restored = container.getItem(target).copy();
-        container.syncSlotToClients(target, restored);
-        if (!ItemStack.matches(restored, before)) {
-            LOGGER.error("投喂食物恢复回读不符：容器 {}，食物槽 {}，期望 {}，实际 {}",
-                    container.getCacheKey(), target, before, restored);
-        }
-    }
-
-    private static void compensateFeed(ContainerContext container, int source, int target,
-                                       ItemStack after, ItemStack before, String reason) {
-        if (!container.commitItemComponents(source, after, before)) {
-            LOGGER.error("投喂补偿失败（{}）：容器 {}，魂符槽 {}，食物槽 {}，实际魂符 {}",
-                    reason, container.getCacheKey(), source, target, container.getItem(source));
-        }
     }
 
     static AttemptOutcome classify(MoveResult result) {

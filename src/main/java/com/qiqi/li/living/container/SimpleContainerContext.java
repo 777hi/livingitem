@@ -360,6 +360,25 @@ public class SimpleContainerContext implements TickableContainerContext {
         return handler.isItemValid(slot, stack);
     }
 
+    /**
+     * 「假定槽位清空后能否完整接纳」—— 补齐 {@code simulateInsertItem} 独有的两条准入桥接
+     * （盔甲槽、原版 {@code Container.canPlaceItem}）；其余维度与接口 default 同源。
+     */
+    @Override
+    public boolean canFullyReceive(int slot, ItemStack stack) {
+        if (!isValidSlot(slot) || stack.isEmpty()) return false;
+        if (isArmorSlot(inventory, slot)) {
+            return stack.getCount() <= Math.min(getSlotLimit(slot), stack.getMaxStackSize());
+        }
+        Container container = ContainerContext.getContainer(getLevel(), getBlockPos());
+        if (container != null && isSameSlotSpaceAsHandler(container, slot)) {
+            return container.canPlaceItem(slot, stack)
+                && stack.getCount() <= Math.min(container.getMaxStackSize(), stack.getMaxStackSize());
+        }
+        return handler.isItemValid(slot, stack)
+            && stack.getCount() <= Math.min(handler.getSlotLimit(slot), stack.getMaxStackSize());
+    }
+
     @Override
     public int simulateInsertItem(int slot, ItemStack stack) {
         if (isArmorSlot(inventory, slot)) {

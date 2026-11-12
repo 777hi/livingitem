@@ -17,6 +17,12 @@
 
 ## 2026-11-12
 
+- 🪑 **活魂符空光标右键坐下（D-maid-07）** —— GUI交互规则+空光标谓词toggle owned sitting组件；坐下行动零随机零写、I保持，被活塞推走仍坐；预览一行`setInSittingPose`复用TLM坐姿链，tooltip休息行取代概率行；+组件/handler/过滤/跳过/tooltip守卫，YSM与实机坐姿待验。→ [女仆 §0/§2](../tech/living-maid-tech.md) · [设计稿](../buffer/活魂符坐下互动设计.md)。
+
+- ✅ **活魂符换位玩法实机验收** —— 用户反馈"基本功能逻辑正常"；换位/供品/挡路核心链路通过，食物堆逐份消耗、活塞压制、超大堆叠等未逐项组合继续按设计稿验证点核对。→ [女仆 §4](../tech/living-maid-tech.md#4-验证状态与已知边界)。
+
+- 🔀 **活魂符换位动词 + `swap` 槽位原语（D-maid-06）** —— 新增 `ContainerContext.swap`（双非空整栈互换、`canFullyReceive` 清空后接纳预检、验证式原子 + 双槽终验、逆操作 = 再 swap）与普通物品碰撞表分支；居家餐翻转为"吃一份并换位进入"（swap → consume → commit，吃失败换回，翻转 D-maid-05"站着吃"）；活化物品挡路，被动位移不触发换位。守卫：swap 契约组并入 `ContainerSlotOpsTest`、女仆碰撞表 +9 例。→ [女仆 §0/§1.2](../tech/living-maid-tech.md) · [slot-ops §2/§3](../guides/slot-ops.md) · [设计稿](../buffer/活魂符换位玩法设计.md)。
+
 - ⭐ **实体宿主的辅助背后环（D-container-25 泛化）** —— 实体容器直接内容（hostSlot=-1）里的无记忆工具/武器进【该宿主的背后环】，环心 = 载体身后（`renderBackRing` 泛化到 Entity）；数据零新增同步（复用 K2 实体路径的工具清单）。方块容器是地点不是携带者 ⇒ 无环；物品形态嵌套不进环（与补刀收集同口径，展开活背包缓办）。顺带修渲染配置门（见下）。→ `living-tool-tech.md` §11.8
 - 🐛 **渲染配置门改按 hostSlot 分流（D-container-25 渲染侧补齐）** —— K2 实体路径引入「实体容器直接条目（hostSlot=-1）」后被旧门 `Kind != BLOCK` 误伤（开关关 ⇒ 有回放无外显）。`LivingToolModelRenderer` ③ / `LivingToolRayRenderer#renderContainerHosts` 改为 `hostSlot ≥ 0 && !开关`（hostSlot ≥ 0 ⇔ 物品形态借锚；-1 ⇔ 宿主直接内容，不设门）。→ `living-tool-tech.md` §6.1
 - ⭐ **实体宿主行为兼容 A2 批：活信标实体开光（D-container-25）** —— 三宿主完整落地（玩家 / 箱子 / 实体容器）：buff 中心 = 实体位置；光束锚点 = 宿主 bbHeight 顶面 + 顶面法线（`headTop`/`headNormal` 泛化到 Entity，无俯仰实体零分支退化为竖直向上）；一实体一条光束（多枚取最高，与玩家口径一致）；新增 `BeaconEntityHostSync`/`BeaconEntityHostPacket`/客户端缓存（无「自己那份不发」——主人物品栏里没有信标，所有跟踪者都靠包）。→ `living-beacon-tech.md` §0 · [buffer/entity-host-behavior-design.md](../buffer/entity-host-behavior-design.md)

@@ -23,13 +23,14 @@
 | [framework-evolution-plan.md](framework-evolution-plan.md) | 提案（buffer）——未定案、未排期，别当现状读**。 |
 | [gui-interaction-redesign.md](gui-interaction-redesign.md) | 设计稿（已定案未实施）—— E2 交互设计，不是现状。 |
 | [living-axe-strip-design.md](living-axe-strip-design.md) | 设计提案 —— 本文供审阅，不是已生效玩法或执行授权。 |
-| [living-tnt-explosion-design.md](living-tnt-explosion-design.md) | 未定案** —— TNT 爆炸规模化设计稿，别当现状读。 |
+| [living-tnt-explosion-design.md](living-tnt-explosion-design.md) | 设计稿（局部定案，整体实施方案待确认）—— TNT 爆炸规模化提案，不是现状，也 |
 | [living-weapon-design.md](living-weapon-design.md) | 设计探讨层（buffer）。⚠️ 描述的是**计划 / 未决**，不是现状。 |
 | [open-plan.md](open-plan.md) | 未定案** —— 对外开放计划探讨稿，别当现状读。 |
 | [redstone-evolution-roadmap.md](redstone-evolution-roadmap.md) | 路线图 —— 红电架构演进探讨稿，别当现状读。 |
 | [活滴水石锥.md](活滴水石锥.md) | 探讨中 —— 滴水石锥设计稿，不是现状。 |
-| [活潜影箱实现细节.md](活潜影箱实现细节.md) | 探讨中 —— 活潜影箱**兼容所有活物品**（而非当前阶段已实现的活物品），本随 |
+| [活潜影箱实现细节.md](活潜影箱实现细节.md) | 探索性实现提案 —— 不是现状、玩法定案或代码实施授权。 |
 | [活物品大战僵尸.md](活物品大战僵尸.md) | 探讨中（2026-10-30 头脑风暴沉淀）。本文描述的全部机制均未实现，别当现 |
+| [活魂符坐下互动设计.md](活魂符坐下互动设计.md) | 设计稿（已拍板未实施）—— 活魂符"坐下"互动与行动暂停，不是现状；实施前别当 |
 | [活魂符换位玩法设计.md](活魂符换位玩法设计.md) | 设计稿（已拍板未实施）—— 活魂符"换位"动词与食物语义翻转，不是现状；实施前别 |
 
 <!-- buffer-index:end -->

@@ -14,6 +14,7 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.ByteBufferBuilder;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.qiqi.li.living.compat.tlm.TlmSoulData;
+import com.qiqi.li.living.domain.maid.LivingSoulSlabFunction;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -78,6 +79,9 @@ final class SoulSlabMaidPreview {
                         Objects.requireNonNullElse(readName(tag, EntityMaid.YSM_MODEL_NAME_TAG, level), Component.empty()));
             }
             maid.setOnGround(true);
+            // 坐下标记驱动原模组三条动画链（Gecko "sit" / Bedrock 坐姿分支）自动切坐姿；
+            // sitting 组件变化会让预览按既有重建路径携新姿态重建
+            maid.setInSittingPose(LivingSoulSlabFunction.isSitting(stack));
             if (tag.contains("MaidSubConfig", Tag.TAG_COMPOUND)) {
                 CompoundTag config = tag.getCompound("MaidSubConfig");
                 if (config.contains("ChatBubbleShow", Tag.TAG_BYTE)) {
@@ -167,6 +171,9 @@ final class SoulSlabMaidPreview {
         return SoulSlabFeedPulse.scale(feedTicks, partial);
     }
 
+    /** 女仆绘制深度：高于槽物品层（+100 槽 pose + 物品内部 +150 = 250），低于 carried / tooltip（400）。 */
+    private static final float PREVIEW_Z = 300;
+
     void render(GuiGraphics graphics, PoseStack origin, int x, int y, int height, int mouseX, int mouseY) {
         Minecraft mc = Minecraft.getInstance();
         float partial = mc.getTimer().getGameTimeDeltaPartialTick(false);
@@ -174,13 +181,13 @@ final class SoulSlabMaidPreview {
         float py = displayY(y, partial);
         float displayScale = scale * height / 16 * feedScale(partial);
         Vector3f head = origin.last().pose().transformPosition(
-                new Vector3f(px + 8, py + height - maid.getEyeHeight() * displayScale, -50));
+                new Vector3f(px + 8, py + height - maid.getEyeHeight() * displayScale, PREVIEW_Z));
         facing.look(head.x(), head.y(), mouseX, mouseY, partial);
         applyFacing();
         PoseStack pose = new PoseStack();
         pose.last().pose().set(origin.last().pose());
         pose.last().normal().set(origin.last().normal());
-        pose.translate(px + 8, py + height, -50);
+        pose.translate(px + 8, py + height, PREVIEW_Z);
         pose.scale(displayScale, displayScale, -displayScale);
         pose.mulPose(new Quaternionf().rotateZ((float) Math.PI));
 

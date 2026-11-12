@@ -77,7 +77,7 @@ src/test/java/com/qiqi/li/
 ├── living/container/
 │   ├── ContainerComponentCommitTest.java       # 原数量组件提交·原引用/副本/旧值重验/非空同物同量/无writer拒绝/无抽插截断/快照隔离/拒写与部分恢复/双BE通知/真实revision脏槽/实体前置槽映射
 │   ├── ContainerMoveStackTest.java             # **I-C12 一步整栈移动 + 安全撤销**·整栈不拆/超大栈一次搬完（抽屉 512）/目标被占拒绝/整栈放不进拒绝（不搬一部分）/源空/地址非法 + **抽取权限第三维**（只出不进的槽 ⇒ SOURCE_NOT_EXTRACTABLE）/后端无 setStackInSlot ⇒ Unsupported 非 BackendViolation + **撤销两槽一起**（只恢复源会复制）/撤销前校验（第三方改动 ⇒ 不覆盖）/撤销后守恒 + canAcceptAll 纯预检
-│   ├── ContainerSlotOpsTest.java              # **槽位数量操作原语**（2026-11-05，I-C12 契约化）·move 六场景 × 双容器实现（整栈守恒/同类合并/部分交付差额留源/异类 TARGET_OCCUPIED/满 TARGET_INSUFFICIENT/undo 恢复合并前）/PHYSICAL=A3（不问准入与抽取权限、容量只问槽位上限、500→64 搬 64 留 436）/违约三态（源写回静默失败 ⇒ 撤销目标防复制、重定向还原、无精确写回退路径可用）/produce 差额留痕不回滚 + 超槽位上限/consume 抽取权限 + 写回违约按「没扣到」/transform 失败还原 + 无变化不写（负向验证三例见类注释）
+│   ├── ContainerSlotOpsTest.java              # **槽位数量操作原语**（2026-11-05，I-C12 契约化）·move 六场景 × 双容器实现（整栈守恒/同类合并/部分交付差额留源/异类 TARGET_OCCUPIED/满 TARGET_INSUFFICIENT/undo 恢复合并前）/PHYSICAL=A3（不问准入与抽取权限、容量只问槽位上限、500→64 搬 64 留 436）/违约三态（源写回静默失败 ⇒ 撤销目标防复制、重定向还原、无精确写回退路径可用）/produce 差额留痕不回滚 + 超槽位上限/consume 抽取权限 + 写回违约按「没扣到」/transform 失败还原 + 无变化不写（负向验证三例见类注释）·**swap 原语**（2026-11-12）双非空整栈互换/movedSlots 两槽登记/双向抽取与准入/装不下不部分交换/静默写与重定向恢复双槽/组件保全/无撤销凭据
 │   ├── EnderChestContextTest.java              # 末影箱锚点口径（2026-10-27 定案「存放处」D-container-18）·getAnchor 必须显式为 null（默认实现经 getOwnerPlayer 退化成 AtPlayer ⇒ K2 当玩家宿主上报 ⇒ 两端不同源）/ 非物品形态 ⇒ hostAnchor 恒 null、hostSlot=-1
 │   ├── ContainerLayoutResolverTest.java        # 共同布局链·子类禁止替换流程/实例先于内建/规则学习家族启发式顺序/多宿主规则优先/首容器回落/家族子类/现取与结果复用/掉落物同链
 │   ├── ContainerMenuInfosTest.java             # 当前菜单宿主信息·空容器/背包/状态分离/来源同源/真实无MenuType驴菜单反查/无类型方块与未知菜单分开/末影箱固定布局及改容量不误套
@@ -113,8 +113,10 @@ src/test/java/com/qiqi/li/
 │   └── ContainerTickIsolationTest.java        # tick 异常隔离（2026-10-30，R-01）·RuntimeException 不向外抛且可重复调用 / 取 key 本身抛异常仍隔离 / Error 不被吞
 ├── living/domain/maid/
 │   ├── LivingSoulSlabClockTest.java           # 概率活跃度I·初始7/成功失败±1/1-49钳位/非法值
-│   ├── LivingSoulSlabFunctionTest.java        # 每秒1/I判定·随机四向不重掷/空槽移动/居家餐供品整件扣一+pending+I成功/活食物与满好感失败/消费失败补偿/技术中性/换槽保I/超堆叠不拆
-│   └── LivingSoulSlabTooltipTest.java         # 活魂符tooltip·I=1/7/49与非法回退/1位小数/pending零隐藏与+N/非活或多件不显示/只读不改栈/双语措辞和占位符
+│   ├── LivingSoulSlabFunctionTest.java        # 每秒1/I判定·随机四向不重掷/坐下零随机零写且被动位移保坐姿/空槽移动/普通物品整栈换位（装不下失败）/居家餐吃一份换位进入（N=1全吃/N>1剩堆换位）/吃失败换回/活食物与满好感挡路不重掷/技术中性/换槽保I/超堆叠不拆
+│   ├── LivingSoulSlabSittingTest.java         # sitting组件·Codec/StreamCodec双态往返/非bool拒绝/toggle true写组件 false移除/Function恰好owned clock+sitting
+│   ├── SoulSlabSitHandlerTest.java            # 坐下handler·有效魂符toggle并setChanged+broadcast/非活多件普通物品与缺快照零副作用
+│   └── LivingSoulSlabTooltipTest.java         # 活魂符tooltip·I=1/7/49与非法回退/1位小数/pending零隐藏与+N/坐下休息行取代概率/非活或多件不显示/只读不改栈/双语措辞和占位符
 ├── living/domain/ender/
 │   ├── EnderChannelRegistryDimTest.java        # 活末影箱路由表**维度隔离**（2026-10-27 审查待拍板 #2，2026-10-28 修）·跨维度同坐标同槽位都能注册（去重键含维度，旧实现误判重复 ⇒ 第二条注册不进去）/ 按位置+槽位清理只删指定维度 / 区块卸载不删另一维度同坐标路由 / `validateRoutes` 不误删另一维度同键路由
 │   ├── EnderRouteExtractTest.java              # 路由**端到端提取**（2026-10-28 链路回归；2026-10-29 口径改为「源解析不到 ⇒ 条目丢弃」）·方块容器按位置取能力并扣源 / 玩家背包按 UUID 找玩家 / **物品形态按容器 UUID 取活视图（新能力）** / 活视图未登记 ⇒ 不取且**条目丢弃**（路由只有注册/不注册两态）/ 方块被搬走 ⇒ 丢弃且频道清空 / **物品形态源 rollback 回活视图（持有提取时 handler，活视图清掉也能回滚）**

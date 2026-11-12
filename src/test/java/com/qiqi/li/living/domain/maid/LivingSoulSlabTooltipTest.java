@@ -70,6 +70,20 @@ class LivingSoulSlabTooltipTest {
         assertFalse(hasKey(tooltip(stack), "tooltip.livingitem.soul_slab.pending_favor"));
     }
 
+    @Test void sittingReplacesChanceLineAndStandingKeepsIt() {
+        ItemStack stack = livingSoul(1);
+        stack.set(MaidComponents.SITTING.get(), new LivingSoulSlabSitting(true));
+        List<Component> lines = tooltip(stack);
+        assertTrue(hasKey(lines, "tooltip.livingitem.soul_slab.sitting"), "坐下显示休息行");
+        assertFalse(hasKey(lines, "tooltip.livingitem.soul_slab.attempt_chance"), "坐下 = 行动暂停，概率行误导");
+        assertFalse(hasKey(lines, "tooltip.livingitem.soul_slab.pending_favor"));
+
+        stack.set(MaidComponents.SITTING.get(), new LivingSoulSlabSitting(false));
+        lines = tooltip(stack);
+        assertFalse(hasKey(lines, "tooltip.livingitem.soul_slab.sitting"), "站立不显示休息行");
+        assertTrue(hasKey(lines, "tooltip.livingitem.soul_slab.attempt_chance"));
+    }
+
     @Test void inactiveAndOversizedStacksDoNotAdvertiseRuntimeState() {
         assertTrue(tooltip(new ItemStack(Items.PAPER)).isEmpty());
         assertTrue(tooltip(livingSoul(2)).isEmpty());
@@ -82,7 +96,7 @@ class LivingSoulSlabTooltipTest {
                 assertNotNull(stream);
                 json = JsonParser.parseString(new String(stream.readAllBytes(), StandardCharsets.UTF_8)).getAsJsonObject();
             }
-            for (String suffix : List.of("title", "attempt_chance", "pending_favor")) {
+            for (String suffix : List.of("title", "attempt_chance", "pending_favor", "sitting")) {
                 assertTrue(json.has("tooltip.livingitem.soul_slab." + suffix));
             }
             String chance = json.get("tooltip.livingitem.soul_slab.attempt_chance").getAsString();

@@ -90,6 +90,7 @@
   "tooltip.livingitem.piston.extended": "  §a已伸出§r",
   "tooltip.livingitem.piston.retracted": "  §7已收回§r",
   "tooltip.livingitem.soul_slab.title": "活魂符",
+  "tooltip.livingitem.soul_slab.sitting": "  休息中（右键起身）",
   "tooltip.livingitem.soul_slab.attempt_chance": "  行动尝试：每秒 %s（%s，I=%s）",
   "tooltip.livingitem.soul_slab.pending_favor": "  待兑现好感：%s（释放后生效）",
   "tooltip.livingitem.repeater.title": "§6活中继器§r",

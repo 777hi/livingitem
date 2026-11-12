@@ -16,6 +16,11 @@ public final class MaidComponents {
                     .persistent(LivingSoulSlabClock.CODEC)
                     .networkSynchronized(LivingSoulSlabClock.STREAM_CODEC)
                     .build());
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingSoulSlabSitting>> SITTING =
+            REG.register("living_soul_slab_sitting", () -> DataComponentType.<LivingSoulSlabSitting>builder()
+                    .persistent(LivingSoulSlabSitting.CODEC)
+                    .networkSynchronized(LivingSoulSlabSitting.STREAM_CODEC)
+                    .build());
 
     private MaidComponents() {}
 }

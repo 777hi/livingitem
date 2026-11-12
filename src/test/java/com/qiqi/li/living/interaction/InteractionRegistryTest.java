@@ -95,6 +95,21 @@ class InteractionRegistryTest {
     }
 
     @Test
+    @DisplayName("空光标谓词：只拦空手右键，非空光标保持原版操作")
+    void emptyCursorPredicateGatesWildcardInteraction() {
+        InteractionRegistry.register(new InteractionEntry(Items.PAPER, null, 1, "soul_slab_sit",
+                false, (trigger, target) -> trigger.isEmpty()));
+        ItemStack target = new ItemStack(Items.PAPER);
+        LivingItemManager.setLiving(target, true);
+
+        InteractionEntry empty = InteractionRegistry.findInteraction(ItemStack.EMPTY, target, 1, false);
+        assertEquals("soul_slab_sit", empty.actionId());
+
+        assertNull(InteractionRegistry.findInteraction(new ItemStack(Items.STICK), target, 1, false),
+                "拿着物品时谓词拒绝，不拦截原版拿起/放置/分堆");
+    }
+
+    @Test
     @DisplayName("无任何条目匹配活物品组合 → null")
     void noMatchReturnsNull() {
         InteractionRegistry.register(WILDCARD_FARM);

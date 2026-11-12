@@ -406,6 +406,20 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
     }
 
     /**
+     * 「假定槽位清空后能否完整接纳整栈」（准入 + 容量）—— {@link #swap} 的配套预检。
+     *
+     * <p>与 {@link #canAcceptAll} 的差异：那边走 {@link #simulateInsertItem}，槽位非空时按
+     * 「现有内容之上合并」作答（异类直接拒绝）—— 表达不了「槽内原有物品即将让位」的互换场景。
+     * 本判据 = 纯准入 + 数量上界（与写入截断口径同源）；实现若还有 simulateInsertItem
+     * 独有的准入桥接（如原版 {@code Container.canPlaceItem}），应覆写本方法补齐。</p>
+     */
+    default boolean canFullyReceive(int slot, ItemStack stack) {
+        if (!isValidSlot(slot) || stack.isEmpty()) return false;
+        return isItemValid(slot, stack)
+            && stack.getCount() <= Math.min(getSlotLimit(slot), stack.getMaxStackSize());
+    }
+
+    /**
      * 一步整栈移动：把 {@code from} 槽的全部物品移到 {@code to} 槽。
      *
      * <p><b>语义</b>：整栈、不拆数量、不合并（目标必须为空）。成功时
@@ -518,6 +532,82 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
         syncSlotToClients(to, getItem(to));
         if (restored) onSlotsMoved(from, to);   // 撤销同样是移动 ⇒ 旧信息同样过期
         return restored;
+    }
+
+    /**
+     * 一步整栈互换：两槽内容对调 —— 活魂符「换位」动词的槽位原语（2026-11-12 拍板，
+     * 设计稿见 {@code buffer/活魂符换位玩法设计.md}）。
+     *
+     * <p><b>语义</b>：双方非空、整栈互换、不拆分不合并（一空一非空走 {@link #moveStack}）。
+     * 成功时 {@code Success.moved} = 移入 {@code to} 的数量（即原 {@code from} 栈数量）。
+     * <b>不返回撤销凭据</b>：swap 的逆操作就是再次 swap（成功路径零参数可逆），
+     * 与 {@link UndoToken}「清源填目标」的单向快照语义不匹配。</p>
+     *
+     * <p><b>I-C12 三维度逐维回答</b>：容量与准入用 {@link #canFullyReceive}（互换场景
+     * 两槽都被占用，{@link #canAcceptAll} 的「现有内容之上合并」模拟不适用）；
+     * 抽取权限双向必查；精确写双向必查（整栈覆盖语义，与 moveStack 同档）。</p>
+     *
+     * <p><b>验证式原子</b>：写入后逐槽回读，任一步不符即恢复双槽到操作前快照并报
+     * {@code BackendViolation}；末尾再做一次双槽终验，防「后续写入引发回调改动先前槽」。</p>
+     *
+     * <p>活物品隔离由<b>调用方</b>把关（与 {@link #move} 同责）：内核不认「活物品」概念。</p>
+     */
+    default MoveResult swap(int from, int to) {
+        if (!isValidSlot(from) || !isValidSlot(to) || from == to) {
+            return new MoveResult.Rejected(MoveResult.Reason.INVALID_ADDRESS);
+        }
+        ItemStack source = getItem(from).copy();   // 即将移入 to；快照防 setItem 覆盖抽干活引用
+        ItemStack target = getItem(to).copy();     // 即将移入 from
+        if (source.isEmpty() || target.isEmpty()) {
+            return new MoveResult.Rejected(MoveResult.Reason.SOURCE_EMPTY);
+        }
+        if (!supportsExactWrite(from) || !supportsExactWrite(to)) {
+            return new MoveResult.Unsupported(MoveResult.Reason.EXACT_WRITE_UNSUPPORTED);
+        }
+        if (simulateExtractItem(from, source.getCount()) < source.getCount()
+                || simulateExtractItem(to, target.getCount()) < target.getCount()) {
+            return new MoveResult.Rejected(MoveResult.Reason.SOURCE_NOT_EXTRACTABLE);
+        }
+        if (!canFullyReceive(to, source) || !canFullyReceive(from, target)) {
+            return new MoveResult.Rejected(MoveResult.Reason.TARGET_INSUFFICIENT);
+        }
+
+        // ① 写 to ← source；回读不符 → 恢复 to（from 未动，无需恢复）
+        setItem(to, source.copy());
+        if (!ItemStack.matches(getItem(to), source)) {
+            rollbackSlot(this, to, target, "swap 目标写入不符（期望 " + source.getCount() + "）");
+            syncSlotToClients(to, getItem(to));
+            return new MoveResult.BackendViolation("swap: to 槽写入被重定向（槽位 " + to + "）");
+        }
+        // ② 写 from ← target；from 此刻的期望内容就是 target（未被动过），回读不符 ⇒ 双槽恢复
+        setItem(from, target.copy());
+        if (!ItemStack.matches(getItem(from), target)) {
+            rollbackSlot(this, from, source, "swap 源写入不符（恢复 from）");
+            rollbackSlot(this, to, target, "swap 源写入不符（恢复 to）");
+            syncSlotToClients(from, getItem(from));
+            syncSlotToClients(to, getItem(to));
+            return new MoveResult.BackendViolation("swap: from 槽写入不符（槽位 " + from + "）—— 已恢复双槽");
+        }
+        // ③ 终验：② 的写入可能经 setter 回调改动 to；不符即恢复双槽
+        if (!ItemStack.matches(getItem(to), source)) {
+            rollbackSlot(this, to, target, "swap 终验不符（恢复 to）");
+            rollbackSlot(this, from, source, "swap 终验不符（恢复 from）");
+            syncSlotToClients(from, getItem(from));
+            syncSlotToClients(to, getItem(to));
+            return new MoveResult.BackendViolation("swap: 终验发现 to 槽被回调改动 —— 已恢复双槽");
+        }
+        if (!ItemStack.matches(getItem(from), target)) {
+            rollbackSlot(this, to, target, "swap 终验不符（恢复 to）");
+            rollbackSlot(this, from, source, "swap 终验不符（恢复 from）");
+            syncSlotToClients(from, getItem(from));
+            syncSlotToClients(to, getItem(to));
+            return new MoveResult.BackendViolation("swap: 终验发现 from 槽被回调改动 —— 已恢复双槽");
+        }
+
+        syncSlotToClients(from, getItem(from));
+        syncSlotToClients(to, getItem(to));
+        onSlotsMoved(from, to);
+        return new MoveResult.Success(source.getCount(), null);
     }
 
     // ==================== 槽位数量操作原语（I-C12 契约化，2026-11-05） ====================

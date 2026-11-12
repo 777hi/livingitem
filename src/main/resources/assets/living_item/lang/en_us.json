@@ -90,6 +90,7 @@
   "tooltip.livingitem.piston.extended": "  §aExtended§r",
   "tooltip.livingitem.piston.retracted": "  §7Retracted§r",
   "tooltip.livingitem.soul_slab.title": "Living Soul Spell",
+  "tooltip.livingitem.soul_slab.sitting": "  Resting (right-click to stand up)",
   "tooltip.livingitem.soul_slab.attempt_chance": "  Action attempt: %s each second (%s, I=%s)",
   "tooltip.livingitem.soul_slab.pending_favor": "  Pending favor: %s (applied on release)",
   "tooltip.livingitem.repeater.title": "§6Living Repeater§r",

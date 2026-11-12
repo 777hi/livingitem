@@ -17,6 +17,8 @@
 
     { "id": "farmland_plant",     "target": "minecraft:farmland",         "button": "right", "action": "plant_crop", "predicate": "can_plant" },
     { "id": "farmland_bonemeal",  "target": "minecraft:farmland",         "trigger": "minecraft:bone_meal", "button": "right", "action": "bonemeal" },
-    { "id": "beacon_feed",        "target": "minecraft:beacon",           "button": "right", "action": "beacon_feed", "predicate": "is_beacon_ore" }
+    { "id": "beacon_feed",        "target": "minecraft:beacon",           "button": "right", "action": "beacon_feed", "predicate": "is_beacon_ore" },
+
+    { "id": "soul_slab_sit",      "target": "touhou_little_maid:smart_slab_has_maid", "button": "right", "action": "soul_slab_sit", "predicate": "soul_slab_sit_empty_cursor" }
   ]
 }
