@@ -1,6 +1,7 @@
 package com.qiqi.li.client.render.tlm;
 
 import com.qiqi.li.client.render.LivingSoulSlabFloatingPreview;
+import com.qiqi.li.client.render.LivingSoulSlabHotbarPreview;
 import com.qiqi.li.living.util.StaticCacheRegistry;
 import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
@@ -27,12 +28,17 @@ public final class LivingSoulSlabClientRegistration {
     public static void register() {
         SoulSlabPreviewCache cache = CACHE;
         LivingSoulSlabFloatingPreview.install(cache::renderFloating);
+        LivingSoulSlabHotbarPreview.install(cache);
         NeoForge.EVENT_BUS.addListener((ContainerScreenEvent.Render.Background event) ->
                 cache.beginFrame(event.getContainerScreen(), event.getGuiGraphics()));
         NeoForge.EVENT_BUS.addListener((ContainerScreenEvent.Render.Foreground event) ->
                 cache.render(event.getContainerScreen(), event.getGuiGraphics(), event.getMouseX(), event.getMouseY()));
         NeoForge.EVENT_BUS.addListener((ClientTickEvent.Post event) -> cache.tick());
-        NeoForge.EVENT_BUS.addListener((ScreenEvent.Closing event) -> cache.clear());
+        NeoForge.EVENT_BUS.addListener((ScreenEvent.Closing event) -> {
+            if (event.getScreen() instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?> container) {
+                cache.screenClosing(container);
+            }
+        });
         NeoForge.EVENT_BUS.addListener((ClientPlayerNetworkEvent.LoggingOut event) -> cache.clear());
         NeoForge.EVENT_BUS.addListener((ClientPlayerNetworkEvent.LoggingIn event) -> cache.clear());
     }

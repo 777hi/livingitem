@@ -44,20 +44,22 @@ src/test/java/com/qiqi/li/
 │   ├── LivingItemTooltipTest.java             # 活物品段标题恒在（2026-10-07 定稿）·零内容行仍输出标题/不适用功能同样保留/真实活桶只有标题无内容行/有内容行则空行+标题+行/多功能标题只一次且行序保持
 │   └── BeamColorSectionsTest.java             # 光束颜色分段·无玻璃单段白/玻璃纯色/空气加高/同色累计/异色平均/不透明截断/自定义默认色 + 默认白色完整 ARGB/实际原版内芯顶点 alpha=255、外晕=32（无观测/无玻璃/红玻璃/白玻璃）
 ├── client/render/tlm/
-│   ├── SoulSlabGuiModelWrapperTest.java       # 活魂符GUI模型握手·真实栈identity+槽/光标矩阵双匹配/复制光标栈不claim/TLM原override/null语义/GUI空模型claim/非GUI与过期token/多位置隔离
-│   ├── SoulSlabGuiPoseTest.java               # 活魂符GUI矩阵·容器槽guiLeft/guiTop+Z100与光标现成Z232、物品中心/Z150/16倍翻Y，不污染调用方pose
+│   ├── SoulSlabGuiModelWrapperTest.java       # 活魂符GUI/HUD模型握手·真实栈identity+槽/光标/HUD pop矩阵双匹配/复制栈不claim/TLM原override/null语义/GUI空模型claim/非GUI与过期token/多位置隔离
+│   ├── SoulSlabGuiPoseTest.java               # 活魂符GUI/HUD矩阵·容器槽guiLeft/guiTop+Z100/光标现成Z232/HUD保留当前pop变换/物品中心Z150/翻Y/不污染调用方pose
 │   ├── SoulSlabGuiSlotsTest.java              # 槽位准入与光标分类·普通槽稳定引用/StackCopySlot退化；hover只认显示Slot identity；真实carried identity命中并拒绝snapback
+│   ├── SoulSlabHotbarSlotsTest.java           # HUD快捷栏归属·seed1-9映射玩家0-8/seed10映射副手40，均只认真实栈identity；null/空栈/副本/越界seed拒绝
 │   ├── SoulSlabFeedFeedbackTest.java          # 投喂反馈单调观察·首次只建基线/增长只触发一次/下降重置/非法负值归零
 │   ├── SoulSlabFeedPulseTest.java             # 投喂6tick缩放曲线·未激活为1/首尾归1/中点峰值1.12
 │   ├── SoulSlabAmbientScheduleTest.java       # Mob环境音后增计数·初值0/命中重置-120/负冷却不触发/隐藏复位
 │   ├── SoulSlabEnvironmentSoundTest.java      # 查看者环境选声·跨日晨夜取模/严格边界/雨雪冷热优先级/概率回退
 │   ├── SoulSlabBooleanFeedbackTest.java       # sitting同步边沿·首次只建基线/双向变化各触发一次/重复值静默
-│   ├── SoulSlabVoiceArbiterTest.java          # 单枚语音仲裁·投喂>回应>待机/低优先级不覆盖/实例间无全局状态/清理丢请求
+│   ├── SoulSlabVoiceArbiterTest.java          # 单枚语音仲裁·投喂>回应>待机/低优先级不覆盖/实例间无全局状态（含十枚同时请求）/清理丢请求
 │   ├── SoulSlabMaidSettingsTest.java          # maid_info个人设置·气泡/语音频率默认值、保存值恢复、错型回退与0-1钳位
 │   ├── SoulSlabPreviewBubblesTest.java        # 图片气泡判定·可见/开关/已有气泡/原检查间隔与UUID相位/图片权重/零总权重/颜文字分支跳过，真实原气泡绘制实机验收
 │   ├── SoulSlabPreviewFacingTest.java         # 活魂符展示角度·初始正面/四向身体/停步保朝向/光标模式回正/最短插值/头部限幅/背侧投影/实例隔离
-│   ├── SoulSlabPreviewMovesTest.java          # 预览身份迁移·物理宿主/clock+sitting+pending排除/引用优先/槽↔光标/同快照交换/相邻兜底/歧义不共享
+│   ├── SoulSlabPreviewMovesTest.java          # 身份迁移·引用优先/稳定快照排除项/槽↔光标/同快照交换/HUD20px逻辑邻接/副手只凭引用/歧义不共享
 │   ├── SoulSlabPreviewScaleTest.java          # 活魂符预览缩放公式·1.0还原旧8倍/默认1.25得10倍/TLM模型因子×可用高度×投喂脉冲各乘一次/非法输入拒绝
+│   ├── SoulSlabPreviewSurfaceTest.java        # 预览表面仲裁·仅无容器屏时HUD持帧/任意跨表面SETTLE/同表面同位NONE、GUI槽异位MOVE、HUD/光标异位SETTLE
 │   └── SoulSlabPreviewVisibilityTest.java     # 活魂符预览可见帧·未绘制哨兵不因int溢出误判/当前至前2tick可见/更旧与tick极值不可见
 ├── client/util/
 │   └── LivingChestTabSearchTest.java          # 活箱子标签页搜索过滤纯函数·空搜索词原样返回(不清空栈)/非空词剔除空栈不改入参/中文名直配/拼音(全拼·首字母·部分)/英文名大小写/注册ID兜底/空物品+非空词⇒匹配(原守卫分支语义·实际路径不可达,钉住防漂)

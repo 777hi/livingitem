@@ -15,6 +15,10 @@
 
 ---
 
+## 2026-11-13
+
+- 🧍 **活魂符HUD快捷栏与跨界面连续预览（D-maid-11）** —— 原版HUD九格/副手按本地玩家真实槽、seed和当前pop矩阵短token握手显示女仆；缓存提升为当前world/player生命周期，GUI槽↔真实carried↔HUD唯一匹配时复用同一实例并settle，关容器不再一律重建。所有实际可见HUD女仆完整沿用环境/交互语音且不设选中槽限制或共享节流；触屏/quick-craft/snapback、配方、非快捷栏HUD、世界与手持仍回原图，十枚最坏场景留实机性能核对。→ [女仆 §0/§2/§4](../tech/living-maid-tech.md)
+
 ## 2026-11-12
 
 - 👀 **活魂符悬停乞食回应** —— 鼠标悬停魂符实际显示槽时，预览女仆纯客户端切TLM begging状态；不要求光标物品、不影响移动/好感/坐下。Background清零、仅Foreground实际claim后按Slot identity开启，模型越槽不扩大响应区，关闭/退化/取走零残留；Gecko/Bedrock复用原动作，YSM待验。→ [女仆 §2](../tech/living-maid-tech.md#2-宿主与客户端接缝)。

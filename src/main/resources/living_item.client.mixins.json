@@ -8,6 +8,7 @@
     "AbstractContainerScreenFloatingItemMixin",
     "AbstractContainerScreenMixin",
     "CreativeModeInventoryScreenMixin",
+    "GuiHotbarSoulSlabMixin",
     "InventoryScreenMixin",
     "ItemInHandRendererMixin",
     "RecipeBookComponentMixin",

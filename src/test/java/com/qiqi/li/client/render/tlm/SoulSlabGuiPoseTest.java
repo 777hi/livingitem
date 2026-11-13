@@ -50,6 +50,23 @@ class SoulSlabGuiPoseTest {
     }
 
     @Test
+    void hotbarPoseKeepsCurrentPopTransformAndExpectedDepth() {
+        PoseStack current = new PoseStack();
+        current.translate(20, 30, 0);
+        int x = 7, y = 11;
+        current.translate(x + 8, y + 12, 0);
+        current.scale(0.8f, 1.1f, 1);
+        current.translate(-(x + 8), -(y + 12), 0);
+        PoseStack item = SoulSlabGuiPose.itemModelPose(current, x, y);
+        Vector3f center = item.last().pose().transformPosition(new Vector3f());
+
+        Vector3f expected = current.last().pose().transformPosition(new Vector3f(15, 19, 150));
+        assertEquals(expected.x(), center.x(), 0.0001f);
+        assertEquals(expected.y(), center.y(), 0.0001f);
+        assertEquals(expected.z(), center.z(), 0.0001f);
+    }
+
+    @Test
     void helpersDoNotMutateBackgroundPose() {
         PoseStack background = new PoseStack();
         SoulSlabGuiPose.itemModelPose(SoulSlabGuiPose.slotOrigin(background, 20, 30), 7, 11);

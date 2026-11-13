@@ -6,6 +6,7 @@ import com.mojang.blaze3d.platform.Lighting;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.qiqi.li.client.mixin.LivingItemSlotWrapperAccessor;
+import com.qiqi.li.client.render.LivingSoulSlabHotbarPreview;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.compat.tlm.TlmSoulData;
 import com.qiqi.li.living.domain.maid.LivingSoulSlabFunction;
@@ -13,6 +14,8 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.items.SlotItemHandler;
@@ -29,20 +32,26 @@ import java.util.Map;
 
 import com.qiqi.li.client.render.tlm.SoulSlabPreviewMoves.Position;
 import com.qiqi.li.client.render.tlm.SoulSlabPreviewMoves.Snapshot;
+import com.qiqi.li.client.render.tlm.SoulSlabPreviewSurface.Kind;
 
-/** 当前screen/level的私有实例缓存；槽位与真实光标共用同一预览身份。 */
-final class SoulSlabPreviewCache {
+/** 当前世界/玩家的预览缓存；HUD、菜单槽与真实光标共用同一实例身份。 */
+final class SoulSlabPreviewCache implements LivingSoulSlabHotbarPreview.Renderer {
     private static final Logger LOGGER = LoggerFactory.getLogger("LivingItem/SoulSlabPreview");
+
     private AbstractContainerScreen<?> screen;
     private ClientLevel level;
+    private LocalPlayer player;
     private GuiGraphics frameGraphics;
     private SoulSlabGuiFrame.Token frameToken;
     private Map<Position, Entry> entries = new HashMap<>();
     private final Map<Position, Drawing> frame = new LinkedHashMap<>();
     private int ticks;
+    private boolean hotbarFrame;
+
+    private record Placement(Kind kind, Position position, Slot slot, ItemStack stack, int x, int y) {}
 
     private static final class Entry {
-        final Slot slot;
+        final Placement placement;
         final ItemStack reference;
         final ItemStack snapshot;
         SoulSlabMaidPreview preview;
@@ -53,27 +62,20 @@ final class SoulSlabPreviewCache {
         boolean attempted;
         int seenTick = Integer.MIN_VALUE;
 
-        Entry(Slot slot, ItemStack reference, ItemStack snapshot) {
-            this.slot = slot;
+        Entry(Placement placement, ItemStack reference, ItemStack snapshot) {
+            this.placement = placement;
             this.reference = reference;
             this.snapshot = snapshot;
         }
-
-        boolean cursor() {
-            return slot == null;
-        }
     }
 
-    private record Placement(Position position, Slot slot, ItemStack stack) {}
     private record Drawing(Entry entry, ItemStack source, ItemStack snapshot,
                            PoseStack origin, PoseStack itemPose, int x, int y, int seed) {}
 
     void beginFrame(AbstractContainerScreen<?> current, GuiGraphics graphics) {
         reconcile(current);
-        entries.values().forEach(entry -> {
-            if (entry.preview != null && !entry.preview.disabled()) entry.preview.setBegging(false);
-        });
-        frame.clear();
+        clearBegging();
+        clearContainerFrame();
         frameGraphics = graphics;
         frameToken = SoulSlabGuiFrame.begin();
         if (current == null || level == null) return;
@@ -86,8 +88,8 @@ final class SoulSlabPreviewCache {
         PoseStack origin = SoulSlabGuiPose.slotOrigin(graphics.pose(), current.getGuiLeft(), current.getGuiTop());
         for (var mapped : entries.entrySet()) {
             Entry entry = mapped.getValue();
-            Slot slot = entry.slot;
-            if (slot == null) continue;
+            Slot slot = entry.placement.slot();
+            if (entry.placement.kind() != Kind.GUI_SLOT || slot == null) continue;
             Slot physical = physicalSlot(slot);
             ItemStack stack = slot.getItem();
             if (!slot.isActive() || slot.isFake() || !SoulSlabGuiSlots.hasStableStackReference(slot, physical)
@@ -107,7 +109,7 @@ final class SoulSlabPreviewCache {
             try {
                 entry.preview = new SoulSlabMaidPreview(stack, level);
             } catch (RuntimeException | LinkageError failure) {
-                int index = entry.slot == null ? -1 : entry.slot.index;
+                int index = entry.placement.slot() == null ? -1 : entry.placement.slot().index;
                 LOGGER.warn("Soul slab preview preparation failed at menu slot {}; keeping original icon", index, failure);
             }
         }
@@ -120,21 +122,22 @@ final class SoulSlabPreviewCache {
 
     private void reconcile(AbstractContainerScreen<?> current) {
         Minecraft mc = Minecraft.getInstance();
-        if (screen != current || level != mc.level) {
+        if (level != mc.level || player != mc.player) {
             clear();
-            screen = current;
             level = mc.level;
+            player = mc.player;
         }
-        if (current == null || level == null) return;
+        screen = current;
+        if (level == null || player == null) return;
 
         Map<Position, Placement> placements = placements(current);
         Map<Position, Entry> next = new LinkedHashMap<>();
         List<Snapshot> added = new ArrayList<>();
         List<Snapshot> removed = new ArrayList<>();
         for (Placement placement : placements.values()) {
-            ItemStack snapshot = stable(placement.stack);
-            next.put(placement.position, new Entry(placement.slot, placement.stack, snapshot));
-            added.add(new Snapshot(placement.position, snapshot, placement.stack));
+            ItemStack snapshot = stable(placement.stack());
+            next.put(placement.position(), new Entry(placement, placement.stack(), snapshot));
+            added.add(new Snapshot(placement.position(), snapshot, placement.stack()));
         }
         entries.forEach((position, entry) ->
                 removed.add(new Snapshot(position, entry.snapshot, entry.reference)));
@@ -145,11 +148,17 @@ final class SoulSlabPreviewCache {
             Entry target = next.get(destination);
             if (old == null || target == null) return;
             transfer(target, old);
-            if (target.preview != null && !target.preview.disabled() && !source.equals(destination)) {
-                if (source.isCursor() || destination.isCursor()) target.preview.settle();
-                else target.preview.move(old.slot.x, old.slot.y, target.slot.x, target.slot.y);
+            SoulSlabPreviewSurface.Motion motion = SoulSlabPreviewSurface.transition(
+                    old.placement.kind(), target.placement.kind(), source.equals(destination));
+            if (target.preview != null && !target.preview.disabled()) {
+                if (motion == SoulSlabPreviewSurface.Motion.SETTLE) {
+                    target.preview.settle();
+                } else if (motion == SoulSlabPreviewSurface.Motion.MOVE) {
+                    target.preview.move(old.placement.x(), old.placement.y(),
+                            target.placement.x(), target.placement.y());
+                }
             }
-            if (destination.isCursor() && !source.isCursor()
+            if (target.placement.kind() == Kind.CURSOR && old.placement.kind() != Kind.CURSOR
                     && SoulSlabPreviewVisibility.recentlyDrawn(ticks, old.seenTick)) {
                 target.responsePending = true;
             }
@@ -166,20 +175,40 @@ final class SoulSlabPreviewCache {
 
     private Map<Position, Placement> placements(AbstractContainerScreen<?> current) {
         Map<Position, Placement> result = new LinkedHashMap<>();
+        addHudPlacements(result);
+        if (current != null) addGuiPlacements(result, current);
+        if (current != null) {
+            ItemStack carried = current.getMenu().getCarried();
+            if (eligible(carried)) {
+                Position cursor = Position.cursor(current.getMenu());
+                result.put(cursor, new Placement(Kind.CURSOR, cursor, null, carried, 0, 0));
+            }
+        }
+        return result;
+    }
+
+    private void addHudPlacements(Map<Position, Placement> result) {
+        for (int slot = 0; slot < 9; slot++) addHudPlacement(result, slot, player.getInventory().getItem(slot));
+        addHudPlacement(result, SoulSlabHotbarSlots.OFFHAND_SLOT, player.getOffhandItem());
+    }
+
+    private void addHudPlacement(Map<Position, Placement> result, int slot, ItemStack stack) {
+        if (!eligible(stack)) return;
+        int logicalX = slot < 9 ? slot * 20 : 10 * 20;
+        Position position = new Position(player.getInventory(), slot, logicalX, 0);
+        result.put(position, new Placement(Kind.HUD_SLOT, position, null, stack, logicalX, 0));
+    }
+
+    private void addGuiPlacements(Map<Position, Placement> result, AbstractContainerScreen<?> current) {
         for (Slot slot : current.getMenu().slots) {
             Slot physical = physicalSlot(slot);
             if (!slot.isActive() || slot.isFake() || !SoulSlabGuiSlots.hasStableStackReference(slot, physical)) continue;
             ItemStack stack = slot.getItem();
             if (!eligible(stack)) continue;
             Position position = position(slot);
-            result.putIfAbsent(position, new Placement(position, slot, stack));
+            result.put(position,
+                    new Placement(Kind.GUI_SLOT, position, slot, stack, slot.x, slot.y));
         }
-        ItemStack carried = current.getMenu().getCarried();
-        if (eligible(carried)) {
-            Position cursor = Position.cursor(current.getMenu());
-            result.put(cursor, new Placement(cursor, null, carried));
-        }
-        return result;
     }
 
     private void observeEntries() {
@@ -233,24 +262,21 @@ final class SoulSlabPreviewCache {
 
     void render(AbstractContainerScreen<?> current, GuiGraphics graphics, int mouseX, int mouseY) {
         if (current != screen || graphics != frameGraphics) {
-            SoulSlabGuiFrame.clear();
-            frame.clear();
-            frameGraphics = null;
-            frameToken = null;
+            clearContainerFrame();
             return;
         }
         try {
             for (Drawing drawing : frame.values()) {
                 if (!SoulSlabGuiFrame.takeClaim(drawing.source, frameToken, drawing.itemPose)) continue;
-                if (drawing.source != drawing.entry.reference
-                        || drawing.source != drawing.entry.slot.getItem()
+                Slot slot = drawing.entry.placement.slot();
+                if (slot == null || drawing.source != drawing.entry.reference
+                        || drawing.source != slot.getItem()
                         || !ItemStack.matches(drawing.snapshot, drawing.source)) {
                     fallback(graphics, drawing.snapshot, drawing.origin, drawing.x, drawing.y, drawing.seed);
                     continue;
                 }
                 try {
-                    drawing.entry.preview.setBegging(
-                            SoulSlabGuiSlots.isHovered(drawing.entry.slot, current.getSlotUnderMouse()));
+                    drawing.entry.preview.setBegging(SoulSlabGuiSlots.isHovered(slot, current.getSlotUnderMouse()));
                     applyPending(drawing.entry);
                     renderOne(graphics, drawing.entry, drawing.snapshot, drawing.origin,
                             drawing.x, drawing.y, mouseX, mouseY, SoulSlabMaidPreview.Display.SLOT);
@@ -258,15 +284,12 @@ final class SoulSlabPreviewCache {
                 } catch (RuntimeException | LinkageError failure) {
                     drawing.entry.preview.disable();
                     LOGGER.warn("Soul slab preview drawing failed at menu slot {}; restoring original icon",
-                            drawing.entry.slot.index, failure);
+                            slot.index, failure);
                     fallback(graphics, drawing.snapshot, drawing.origin, drawing.x, drawing.y, drawing.seed);
                 }
             }
         } finally {
-            SoulSlabGuiFrame.clear();
-            frame.clear();
-            frameGraphics = null;
-            frameToken = null;
+            clearContainerFrame();
         }
     }
 
@@ -307,6 +330,61 @@ final class SoulSlabPreviewCache {
         }
     }
 
+    @Override
+    public void begin() {
+        AbstractContainerScreen<?> current = Minecraft.getInstance().screen instanceof AbstractContainerScreen<?> container
+                ? container : null;
+        reconcile(current);
+        hotbarFrame = SoulSlabPreviewSurface.hudOwnsFrame(current != null);
+        if (hotbarFrame) clearBegging();
+    }
+
+    @Override
+    public void render(GuiGraphics graphics, LivingEntity entity, ItemStack stack,
+                       int x, int y, int seed, Runnable original) {
+        if (!hotbarFrame || entity != player || screen != null || level == null
+                || SoulSlabHotbarSlots.inventorySlot(player, stack, seed) < 0
+                || !eligible(stack) || coolingDown(stack)) {
+            original.run();
+            return;
+        }
+        int slot = SoulSlabHotbarSlots.inventorySlot(player, stack, seed);
+        Position position = new Position(player.getInventory(), slot, 0, 0);
+        Entry entry = entries.get(position);
+        if (entry == null || entry.reference != stack || entry.placement.kind() != Kind.HUD_SLOT
+                || !prepare(entry, stack) || entry.preview.disabled()) {
+            original.run();
+            return;
+        }
+
+        PoseStack origin = copy(graphics.pose());
+        PoseStack itemPose = SoulSlabGuiPose.itemModelPose(origin, x, y);
+        SoulSlabGuiFrame.Token token = SoulSlabGuiFrame.begin();
+        SoulSlabGuiFrame.register(stack, token, itemPose);
+        try {
+            original.run();
+            if (!SoulSlabGuiFrame.takeClaim(stack, token, itemPose)) return;
+            try {
+                entry.preview.setBegging(false);
+                applyPending(entry);
+                renderOne(graphics, entry, stack, origin, x, y, x + 8, y + 8,
+                        SoulSlabMaidPreview.Display.HOTBAR);
+                entry.seenTick = ticks;
+            } catch (RuntimeException | LinkageError failure) {
+                entry.preview.disable();
+                LOGGER.warn("Soul slab hotbar preview drawing failed; restoring original icon", failure);
+                original.run();
+            }
+        } finally {
+            SoulSlabGuiFrame.clear();
+        }
+    }
+
+    @Override
+    public void end() {
+        hotbarFrame = false;
+    }
+
     private static void applyPending(Entry entry) {
         if (entry.feedPending) {
             entry.feedPending = false;
@@ -320,7 +398,7 @@ final class SoulSlabPreviewCache {
 
     private void renderOne(GuiGraphics graphics, Entry entry, ItemStack stack, PoseStack origin,
                            int x, int y, int mouseX, int mouseY, SoulSlabMaidPreview.Display display) {
-        // Foreground/光标接缝的标准恢复基线是3D item光照；不改dispatcher/options。
+        // Foreground/光标/HUD接缝的标准恢复基线是3D item光照；不改dispatcher/options。
         boolean depth = GL11.glIsEnabled(GL11.GL_DEPTH_TEST);
         boolean depthMask = GL11.glGetBoolean(GL11.GL_DEPTH_WRITEMASK);
         int depthFunc = GL11.glGetInteger(GL11.GL_DEPTH_FUNC);
@@ -383,15 +461,32 @@ final class SoulSlabPreviewCache {
         }
     }
 
-    void clear() {
+    void screenClosing(AbstractContainerScreen<?> closing) {
+        clearContainerFrame();
+        clearBegging();
+    }
+
+    private void clearBegging() {
+        entries.values().forEach(entry -> {
+            if (entry.preview != null && !entry.preview.disabled()) entry.preview.setBegging(false);
+        });
+    }
+
+    private void clearContainerFrame() {
         SoulSlabGuiFrame.clear();
-        entries.values().forEach(entry -> { if (entry.preview != null) entry.preview.dispose(); });
-        entries.clear();
         frame.clear();
         frameGraphics = null;
         frameToken = null;
+    }
+
+    void clear() {
+        clearContainerFrame();
+        entries.values().forEach(entry -> { if (entry.preview != null) entry.preview.dispose(); });
+        entries.clear();
         screen = null;
         level = null;
+        player = null;
         ticks = 0;
+        hotbarFrame = false;
     }
 }

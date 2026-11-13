@@ -41,10 +41,14 @@ import static com.github.tartaricacid.touhoulittlemaid.client.event.SpecialMaidR
 /** 不入世界、不读取任务/背包、不完整tick的单枚显示对象。 */
 final class SoulSlabMaidPreview {
     enum Display {
-        SLOT(300), CURSOR(168);
+        SLOT(300, true), CURSOR(168, false), HOTBAR(168, false);
 
         final float z;
-        Display(float z) { this.z = z; }
+        final boolean followsMouse;
+        Display(float z, boolean followsMouse) {
+            this.z = z;
+            this.followsMouse = followsMouse;
+        }
     }
 
     private static final int RESPONSE_COOLDOWN_TICKS = 10;
@@ -249,7 +253,7 @@ final class SoulSlabMaidPreview {
         float py = displayY(y, partial);
         float displayScale = SoulSlabPreviewScale.compose(modelScale,
                 TlmClientConfig.previewScaleMultiplier(), height, feedScale(partial));
-        if (display == Display.CURSOR) {
+        if (!display.followsMouse) {
             setBegging(false);
             facing.centerLook();
         } else {

@@ -34,6 +34,14 @@ class SoulSlabVoiceArbiterTest {
     }
 
     @Test
+    void tenVisibleInstancesDoNotShareThrottlingState() {
+        var arbiters = java.util.stream.IntStream.range(0, 10)
+                .mapToObj(ignored -> new SoulSlabVoiceArbiter()).toList();
+        arbiters.forEach(arbiter -> arbiter.request(SoulSlabVoiceArbiter.Request.AMBIENT));
+        arbiters.forEach(arbiter -> assertEquals(SoulSlabVoiceArbiter.Request.AMBIENT, arbiter.take()));
+    }
+
+    @Test
     void clearDropsPendingVoice() {
         var arbiter = new SoulSlabVoiceArbiter();
         arbiter.request(SoulSlabVoiceArbiter.Request.FEED);

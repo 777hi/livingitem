@@ -32,6 +32,27 @@ class SoulSlabPreviewMovesTest {
     }
 
     @Test
+    void hotbarLogicalSpacingSupportsSnapshotFallback() {
+        Object inventory = new Object();
+        Position source = new Position(inventory, 0, 0, 0);
+        Position target = new Position(inventory, 1, 20, 0);
+        assertEquals(Map.of(target, source), SoulSlabPreviewMoves.match(
+                List.of(snapshot(source)), List.of(snapshot(target))));
+    }
+
+    @Test
+    void offhandNeedsLiveReferenceRatherThanSnapshotGuess() {
+        Object inventory = new Object();
+        Position hotbar = new Position(inventory, 8, 160, 0);
+        Position offhand = new Position(inventory, net.minecraft.world.entity.player.Inventory.SLOT_OFFHAND, 200, 0);
+        assertTrue(SoulSlabPreviewMoves.match(List.of(snapshot(hotbar)), List.of(snapshot(offhand))).isEmpty());
+        ItemStack stack = new ItemStack(Items.PAPER);
+        assertEquals(Map.of(offhand, hotbar), SoulSlabPreviewMoves.match(
+                List.of(new Snapshot(hotbar, stack.copy(), stack)),
+                List.of(new Snapshot(offhand, stack.copy(), stack))));
+    }
+
+    @Test
     void slotMovesToCursorWithoutAdjacency() {
         Position source = position(0, 0, 0), cursor = Position.cursor(new Object());
         assertEquals(Map.of(cursor, source), SoulSlabPreviewMoves.match(List.of(snapshot(source)), List.of(snapshot(cursor))));

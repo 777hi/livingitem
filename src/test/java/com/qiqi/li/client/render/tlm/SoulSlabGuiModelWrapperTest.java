@@ -219,6 +219,22 @@ class SoulSlabGuiModelWrapperTest {
     }
 
     @Test
+    void hotbarRegistrationUsesCurrentPopMatrix() {
+        ProbeModel resolved = new ProbeModel();
+        var wrapper = new SoulSlabGuiModelWrapper(resolvingTo(resolved));
+        ItemStack stack = new ItemStack(Items.PAPER);
+        PoseStack hotbar = hotbarItemPose(7, 11);
+        var token = SoulSlabGuiFrame.begin();
+        SoulSlabGuiFrame.register(stack, token, hotbar);
+
+        BakedModel contextual = wrapper.getOverrides().resolve(wrapper, stack, null, null, 0);
+        assertSame(resolved, contextual.applyTransform(ItemDisplayContext.GUI, hudItemPose(7, 11), false));
+        contextual = wrapper.getOverrides().resolve(wrapper, stack, null, null, 0);
+        assertSame(EmptyModel.BAKED, contextual.applyTransform(ItemDisplayContext.GUI, copy(hotbar), false));
+        assertTrue(SoulSlabGuiFrame.takeClaim(stack, token, hotbar));
+    }
+
+    @Test
     void copiedFloatingStackCannotClaimRealCarriedRegistration() {
         ProbeModel resolved = new ProbeModel();
         var wrapper = new SoulSlabGuiModelWrapper(resolvingTo(resolved));
@@ -247,6 +263,18 @@ class SoulSlabGuiModelWrapperTest {
     private static PoseStack itemPose(int x, int y) {
         return SoulSlabGuiPose.itemModelPose(
                 SoulSlabGuiPose.slotOrigin(new PoseStack(), 20, 30), x, y);
+    }
+
+    private static PoseStack hudItemPose(int x, int y) {
+        return SoulSlabGuiPose.itemModelPose(new PoseStack(), x, y);
+    }
+
+    private static PoseStack hotbarItemPose(int x, int y) {
+        PoseStack current = new PoseStack();
+        current.translate(x + 8, y + 12, 0);
+        current.scale(0.8f, 1.1f, 1);
+        current.translate(-(x + 8), -(y + 12), 0);
+        return SoulSlabGuiPose.itemModelPose(current, x, y);
     }
 
     private static PoseStack floatingItemPose(int x, int y) {
