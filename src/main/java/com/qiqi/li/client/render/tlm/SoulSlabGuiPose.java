@@ -22,6 +22,11 @@ final class SoulSlabGuiPose {
         return result;
     }
 
+    /** 光标物品进入 renderFloatingItem 后的局部原点。 */
+    static PoseStack floatingOrigin(PoseStack containerPose) {
+        return copy(containerPose);
+    }
+
     static PoseStack copy(PoseStack source) {
         PoseStack result = new PoseStack();
         result.last().pose().set(source.last().pose());

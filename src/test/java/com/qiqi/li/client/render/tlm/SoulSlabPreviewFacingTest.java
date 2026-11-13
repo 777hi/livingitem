@@ -115,6 +115,19 @@ class SoulSlabPreviewFacingTest {
         assertEquals(90, right.body(1));
     }
 
+    @Test void cursorModeReturnsBodyAndHeadTowardCenter() {
+        var facing = new SoulSlabPreviewFacing();
+        facing.move(18, 18, 0, 18);
+        facing.look(20, 20, 500, -500, 1);
+        settle(facing);
+        facing.stopMoving();
+        facing.centerLook();
+        settle(facing);
+        assertEquals(180, facing.body(1), 0.03);
+        assertEquals(0, facing.headYaw(1), 0.03);
+        assertEquals(0, facing.headPitch(1), 0.03);
+    }
+
     @Test void nonMovementDoesNotResetBody() {
         var facing = new SoulSlabPreviewFacing();
         facing.move(18, 18, 0, 18);

@@ -19,6 +19,7 @@ import com.qiqi.li.living.domain.power.LivingWaxedCopperFunction;
 import com.qiqi.li.living.domain.power.LivingWaxedCopperTooltipComponent;
 import com.qiqi.li.living.domain.power.LivingWaxedGeneratorData;
 import com.qiqi.li.living.domain.power.GeneratorSegment;
+import com.qiqi.li.living.config.TlmClientConfig;
 import com.qiqi.li.living.util.WaxedCopperFamily;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.item.ItemProperties;
@@ -29,8 +30,10 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModContainer;
+import net.neoforged.fml.ModList;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.config.ModConfig;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.client.event.ModelEvent;
 import net.neoforged.neoforge.client.event.RegisterItemDecorationsEvent;
@@ -59,6 +62,10 @@ public class LivingItemClient {
 
     public LivingItemClient(IEventBus modEventBus, ModContainer container) {
         container.registerExtensionPoint(IConfigScreenFactory.class, ConfigurationScreen::new);
+        if (ModList.get().isLoaded("touhou_little_maid")) {
+            container.registerConfig(ModConfig.Type.CLIENT, TlmClientConfig.SPEC, TlmClientConfig.FILE_NAME);
+            TlmClientConfig.attach(modEventBus);
+        }
         LivingIconRegistry.registerAll();
     }
 

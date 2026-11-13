@@ -207,7 +207,7 @@ class SoulSlabGuiModelWrapperTest {
     void sameReferenceRegistrationsStayBoundToTheirOwnPositions() {
         ItemStack stack = new ItemStack(Items.PAPER);
         PoseStack firstPose = itemPose(0, 0);
-        PoseStack secondPose = itemPose(18, 0);
+        PoseStack secondPose = floatingItemPose(18, 0);
         var token = SoulSlabGuiFrame.begin();
         SoulSlabGuiFrame.register(stack, token, firstPose);
         SoulSlabGuiFrame.register(stack, token, secondPose);
@@ -216,6 +216,21 @@ class SoulSlabGuiModelWrapperTest {
         assertFalse(SoulSlabGuiFrame.takeClaim(stack, token, firstPose));
         assertTrue(SoulSlabGuiFrame.takeClaim(stack, token, secondPose));
         assertSame(token, SoulSlabGuiFrame.tokenFor(stack));
+    }
+
+    @Test
+    void copiedFloatingStackCannotClaimRealCarriedRegistration() {
+        ProbeModel resolved = new ProbeModel();
+        var wrapper = new SoulSlabGuiModelWrapper(resolvingTo(resolved));
+        ItemStack carried = new ItemStack(Items.PAPER);
+        PoseStack pose = floatingItemPose(7, 11);
+        var token = SoulSlabGuiFrame.begin();
+        SoulSlabGuiFrame.register(carried, token, pose);
+
+        assertSame(resolved, wrapper.getOverrides().resolve(wrapper, carried.copy(), null, null, 0));
+        BakedModel contextual = wrapper.getOverrides().resolve(wrapper, carried, null, null, 0);
+        assertSame(EmptyModel.BAKED, contextual.applyTransform(ItemDisplayContext.GUI, copy(pose), false));
+        assertTrue(SoulSlabGuiFrame.takeClaim(carried, token, pose));
     }
 
     private static ProbeModel resolvingTo(BakedModel resolved) {
@@ -232,6 +247,12 @@ class SoulSlabGuiModelWrapperTest {
     private static PoseStack itemPose(int x, int y) {
         return SoulSlabGuiPose.itemModelPose(
                 SoulSlabGuiPose.slotOrigin(new PoseStack(), 20, 30), x, y);
+    }
+
+    private static PoseStack floatingItemPose(int x, int y) {
+        PoseStack current = new PoseStack();
+        current.translate(20, 30, 232);
+        return SoulSlabGuiPose.itemModelPose(SoulSlabGuiPose.floatingOrigin(current), x, y);
     }
 
     private static PoseStack copy(PoseStack source) {

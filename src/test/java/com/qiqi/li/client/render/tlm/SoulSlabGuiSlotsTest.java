@@ -37,6 +37,29 @@ class SoulSlabGuiSlotsTest {
         assertFalse(SoulSlabGuiSlots.hasStableStackReference(slot, null));
     }
 
+    @Test
+    void hoverRequiresExactDisplayedSlotIdentity() {
+        SimpleContainer container = new SimpleContainer(new ItemStack(Items.PAPER));
+        Slot display = new Slot(container, 0, 18, 18);
+        assertTrue(SoulSlabGuiSlots.isHovered(display, display));
+
+        Slot alias = new Slot(container, 0, 18, 18);
+        assertFalse(SoulSlabGuiSlots.isHovered(display, alias),
+                "同容器同索引同坐标的另一个显示对象也不冒充本槽");
+        assertFalse(SoulSlabGuiSlots.isHovered(display, null));
+        assertFalse(SoulSlabGuiSlots.isHovered(null, display));
+    }
+
+    @Test
+    void onlyExactCarriedReferenceCanUseFloatingPreview() {
+        ItemStack carried = new ItemStack(Items.PAPER);
+        assertTrue(SoulSlabPreviewCache.isActualCarried(carried, carried, false));
+        assertFalse(SoulSlabPreviewCache.isActualCarried(carried.copy(), carried, false));
+        assertFalse(SoulSlabPreviewCache.isActualCarried(carried, carried, true));
+        assertFalse(SoulSlabPreviewCache.isActualCarried(ItemStack.EMPTY, ItemStack.EMPTY, false));
+        assertFalse(SoulSlabPreviewCache.isActualCarried(null, carried, false));
+    }
+
     private static StackCopySlot copySlot() {
         return new StackCopySlot(0, 0) {
             @Override protected ItemStack getStackCopy() { return new ItemStack(Items.PAPER); }

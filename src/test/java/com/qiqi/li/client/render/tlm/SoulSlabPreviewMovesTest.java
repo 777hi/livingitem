@@ -3,6 +3,7 @@ package com.qiqi.li.client.render.tlm;
 import com.qiqi.li.client.render.tlm.SoulSlabPreviewMoves.Position;
 import com.qiqi.li.client.render.tlm.SoulSlabPreviewMoves.Snapshot;
 import com.qiqi.li.living.domain.maid.LivingSoulSlabClock;
+import com.qiqi.li.living.domain.maid.LivingSoulSlabSitting;
 import com.qiqi.li.living.domain.maid.MaidComponents;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
@@ -31,6 +32,44 @@ class SoulSlabPreviewMovesTest {
     }
 
     @Test
+    void slotMovesToCursorWithoutAdjacency() {
+        Position source = position(0, 0, 0), cursor = Position.cursor(new Object());
+        assertEquals(Map.of(cursor, source), SoulSlabPreviewMoves.match(List.of(snapshot(source)), List.of(snapshot(cursor))));
+    }
+
+    @Test
+    void cursorMovesToArbitrarySlot() {
+        Object menu = new Object();
+        Position cursor = Position.cursor(menu), target = new Position(new Object(), 99, 200, 120);
+        assertEquals(Map.of(target, cursor), SoulSlabPreviewMoves.match(List.of(snapshot(cursor)), List.of(snapshot(target))));
+    }
+
+    @Test
+    void liveReferenceCanMoveBetweenNonAdjacentOwners() {
+        Position source = position(0, 0, 0);
+        Position target = new Position(new Object(), 8, 144, 72);
+        ItemStack stack = new ItemStack(Items.PAPER);
+        assertEquals(Map.of(target, source), SoulSlabPreviewMoves.match(
+                List.of(new Snapshot(source, stack.copy(), stack)),
+                List.of(new Snapshot(target, stack.copy(), stack))));
+    }
+
+    @Test
+    void unchangedPositionKeepsIdentity() {
+        Position same = position(0, 0, 0);
+        assertEquals(Map.of(same, same), SoulSlabPreviewMoves.match(List.of(snapshot(same)), List.of(snapshot(same))));
+    }
+
+    @Test
+    void liveReferenceWinsBeforeIdenticalSnapshots() {
+        Position left = position(0, 0, 0), right = position(2, 36, 0), cursor = Position.cursor(new Object());
+        ItemStack first = new ItemStack(Items.PAPER), second = new ItemStack(Items.PAPER);
+        List<Snapshot> removed = List.of(new Snapshot(left, first.copy(), first), new Snapshot(right, second.copy(), second));
+        List<Snapshot> added = List.of(new Snapshot(cursor, first.copy(), first));
+        assertEquals(Map.of(cursor, left), SoulSlabPreviewMoves.match(removed, added));
+    }
+
+    @Test
     void twoPossibleSourcesDoNotShareDestination() {
         Position left = position(0, 0, 0), right = position(2, 36, 0), target = position(1, 18, 0);
         assertTrue(SoulSlabPreviewMoves.match(List.of(snapshot(left), snapshot(right)), List.of(snapshot(target))).isEmpty());
@@ -51,11 +90,38 @@ class SoulSlabPreviewMovesTest {
     }
 
     @Test
+    void identicalSnapshotsSwappedByReferenceFollowTheirStacks() {
+        Position left = position(0, 0, 0), right = position(1, 18, 0);
+        ItemStack a = new ItemStack(Items.PAPER), b = new ItemStack(Items.PAPER);
+        List<Snapshot> removed = List.of(new Snapshot(left, a.copy(), a), new Snapshot(right, b.copy(), b));
+        List<Snapshot> added = List.of(new Snapshot(left, b.copy(), b), new Snapshot(right, a.copy(), a));
+        assertEquals(Map.of(left, right, right, left), SoulSlabPreviewMoves.match(removed, added));
+    }
+
+    @Test
+    void adjacentSwapCanFormTwoWayCycleByReference() {
+        Position left = position(0, 0, 0), right = position(1, 18, 0);
+        ItemStack a = new ItemStack(Items.PAPER), b = new ItemStack(Items.MAP);
+        List<Snapshot> removed = List.of(new Snapshot(left, a.copy(), a), new Snapshot(right, b.copy(), b));
+        List<Snapshot> added = List.of(new Snapshot(left, b.copy(), b), new Snapshot(right, a.copy(), a));
+        assertEquals(Map.of(left, right, right, left), SoulSlabPreviewMoves.match(removed, added));
+    }
+
+    @Test
     void physicalAliasesIgnoreDisplayCoordinates() {
         Position a = position(5, 0, 0), b = position(5, 100, 80);
         assertEquals(a, b);
         assertEquals(a.hashCode(), b.hashCode());
         assertNotEquals(a, new Position(new Object(), 5, 0, 0));
+    }
+
+    @Test
+    void cursorIdentityUsesMenuReference() {
+        Object menu = new Object();
+        assertEquals(Position.cursor(menu), Position.cursor(menu));
+        assertNotEquals(Position.cursor(menu), Position.cursor(new Object()));
+        assertTrue(Position.cursor(menu).isCursor());
+        assertFalse(position(0, 0, 0).isCursor());
     }
 
     @Test
@@ -79,16 +145,17 @@ class SoulSlabPreviewMovesTest {
     }
 
     @Test
-    void onlyOwnClockIsIgnoredWithoutMutatingStacks() {
-        var dimension = ResourceLocation.withDefaultNamespace("overworld");
+    void clockAndSittingAreIgnoredWithoutMutatingStacks() {
         ItemStack before = new ItemStack(Items.PAPER);
         before.set(MaidComponents.CLOCK.get(), LivingSoulSlabClock.initial());
+        before.set(MaidComponents.SITTING.get(), new LivingSoulSlabSitting(false));
         ItemStack after = before.copy();
         after.set(MaidComponents.CLOCK.get(), LivingSoulSlabClock.initial().afterFailure());
+        after.set(MaidComponents.SITTING.get(), new LivingSoulSlabSitting(true));
         assertFalse(ItemStack.matches(before, after));
         assertTrue(ItemStack.matches(SoulSlabPreviewMoves.stable(before), SoulSlabPreviewMoves.stable(after)));
         assertTrue(before.has(MaidComponents.CLOCK.get()));
-        assertTrue(after.has(MaidComponents.CLOCK.get()));
+        assertTrue(after.has(MaidComponents.SITTING.get()));
         after.set(DataComponents.CUSTOM_NAME, net.minecraft.network.chat.Component.literal("changed"));
         assertFalse(ItemStack.matches(SoulSlabPreviewMoves.stable(before), SoulSlabPreviewMoves.stable(after)));
     }

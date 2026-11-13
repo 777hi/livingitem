@@ -1,5 +1,6 @@
 package com.qiqi.li.client.render.tlm;
 
+import com.qiqi.li.client.render.LivingSoulSlabFloatingPreview;
 import com.qiqi.li.living.util.StaticCacheRegistry;
 import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
@@ -25,6 +26,7 @@ public final class LivingSoulSlabClientRegistration {
 
     public static void register() {
         SoulSlabPreviewCache cache = CACHE;
+        LivingSoulSlabFloatingPreview.install(cache::renderFloating);
         NeoForge.EVENT_BUS.addListener((ContainerScreenEvent.Render.Background event) ->
                 cache.beginFrame(event.getContainerScreen(), event.getGuiGraphics()));
         NeoForge.EVENT_BUS.addListener((ContainerScreenEvent.Render.Foreground event) ->

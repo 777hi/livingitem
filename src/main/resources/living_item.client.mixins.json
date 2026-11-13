@@ -5,6 +5,7 @@
   "refmap": "living_item.client.refmap.json",
   "client": [
     "AbstractContainerScreenAccessor",
+    "AbstractContainerScreenFloatingItemMixin",
     "AbstractContainerScreenMixin",
     "CreativeModeInventoryScreenMixin",
     "InventoryScreenMixin",

@@ -17,6 +17,10 @@
 
 ## 2026-11-12
 
+- 👀 **活魂符悬停乞食回应** —— 鼠标悬停魂符实际显示槽时，预览女仆纯客户端切TLM begging状态；不要求光标物品、不影响移动/好感/坐下。Background清零、仅Foreground实际claim后按Slot identity开启，模型越槽不扩大响应区，关闭/退化/取走零残留；Gecko/Bedrock复用原动作，YSM待验。→ [女仆 §2](../tech/living-maid-tech.md#2-宿主与客户端接缝)。
+
+- ⚙️ **首份联动专属配置：活魂符女仆预览缩放（D-maid-08）** —— 仅TLM存在时注册`CLIENT`文件`living_item-tlm-client.toml`，默认1.25（旧尺寸1.0，范围0.25～4.0）；每帧动态乘TLM模型scale/槽高度/投喂脉冲，热重载不重建预览；补通用配置界面双语与配置/公式守卫。→ [女仆 §2](../tech/living-maid-tech.md#2-宿主与客户端接缝)。
+
 - 🪑 **活魂符空光标右键坐下（D-maid-07）** —— GUI交互规则+空光标谓词toggle owned sitting组件；坐下行动零随机零写、I保持，被活塞推走仍坐；预览一行`setInSittingPose`复用TLM坐姿链，tooltip休息行取代概率行；+组件/handler/过滤/跳过/tooltip守卫，YSM与实机坐姿待验。→ [女仆 §0/§2](../tech/living-maid-tech.md) · [设计稿](../buffer/活魂符坐下互动设计.md)。
 
 - ✅ **活魂符换位玩法实机验收** —— 用户反馈"基本功能逻辑正常"；换位/供品/挡路核心链路通过，食物堆逐份消耗、活塞压制、超大堆叠等未逐项组合继续按设计稿验证点核对。→ [女仆 §4](../tech/living-maid-tech.md#4-验证状态与已知边界)。
@@ -37,6 +41,8 @@
 - 🧹 **入口进展残留清零 + §8 台账退出（第二轮减法）** —— AGENTS 子系统索引表的「2026-11-01 R3」行整行删除（进展流水且 changelog 已有同内容条目，索引表还原纯路由）；头部状态行删「活信标 Phase 4 完成」里程碑；README §8「已补（2026-09-16）」五项台账先守恒补录至本文件 09-16 节再删除（「43 条」「18,548 字符」等快照数字必漂）；README 头部补一行「砍系统前先跑 doc_check」。全部执行 D-doc-07 / D-doc-08 既有判据，无新决策。→ [文档规约](../README.md)
 
 - 🚫 **「文档版本」字段退出活跃层 + buffer**（D-doc-10）—— 31 份字段删除（含 buffer 5 + reference 1）；字段曾混装四种语义：文档自身版本（不可复算必漂，map-pearl 已至 v57 无处引用）/ 红电引擎修订指针（**保留**，glossary「修订历史块」补 vN 语义）/ 升格摘要（与头部「状态」行重复，不迁 changelog）/ 装饰递增。修正 invariants 两处指针错位（「AGENTS.md v19.1」→「红电 v19.1 系列」）；红电系统.md 锚点行改「修订基线： v19」实现门禁零例外；`doc_check` 第 17 项负向棘轮。→ [文档规约 §1](../README.md) · [D-doc-10](../decisions.md)
+
+- 🖱️ **活魂符真实carried女仆 + 环境/交互语音（D-maid-09/10）** —— 槽↔光标延续同一预览身份，触屏dragging、分堆/quick-craft副本与snapback保原图；恢复个人`SoundFreq`，待机改Mob式节奏与查看者环境声，拿起/坐起回应，投喂追加`MAID_ITEM_GET`，多枚独立发声。→ [女仆 §0/§2](../tech/living-maid-tech.md)
 
 ## 2026-11-11
 

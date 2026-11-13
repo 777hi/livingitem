@@ -44,14 +44,20 @@ src/test/java/com/qiqi/li/
 │   ├── LivingItemTooltipTest.java             # 活物品段标题恒在（2026-10-07 定稿）·零内容行仍输出标题/不适用功能同样保留/真实活桶只有标题无内容行/有内容行则空行+标题+行/多功能标题只一次且行序保持
 │   └── BeamColorSectionsTest.java             # 光束颜色分段·无玻璃单段白/玻璃纯色/空气加高/同色累计/异色平均/不透明截断/自定义默认色 + 默认白色完整 ARGB/实际原版内芯顶点 alpha=255、外晕=32（无观测/无玻璃/红玻璃/白玻璃）
 ├── client/render/tlm/
-│   ├── SoulSlabGuiModelWrapperTest.java       # 活魂符GUI模型握手·真实栈identity+槽位矩阵双匹配/同引用异位置不误隐藏/TLM原override先解析且null不篡改/仅GUI空模型+claim/非GUI与过期帧委托/多槽认领隔离
-│   ├── SoulSlabGuiPoseTest.java               # 活魂符GUI矩阵·复现容器槽guiLeft/guiTop+Z100及物品中心/Z150/16倍翻Y变换，辅助函数不污染Background pose
-│   ├── SoulSlabGuiSlotsTest.java              # 活魂符模型握手槽位准入·普通槽稳定引用/NeoForge StackCopySlot显式退化原图
+│   ├── SoulSlabGuiModelWrapperTest.java       # 活魂符GUI模型握手·真实栈identity+槽/光标矩阵双匹配/复制光标栈不claim/TLM原override/null语义/GUI空模型claim/非GUI与过期token/多位置隔离
+│   ├── SoulSlabGuiPoseTest.java               # 活魂符GUI矩阵·容器槽guiLeft/guiTop+Z100与光标现成Z232、物品中心/Z150/16倍翻Y，不污染调用方pose
+│   ├── SoulSlabGuiSlotsTest.java              # 槽位准入与光标分类·普通槽稳定引用/StackCopySlot退化；hover只认显示Slot identity；真实carried identity命中并拒绝snapback
 │   ├── SoulSlabFeedFeedbackTest.java          # 投喂反馈单调观察·首次只建基线/增长只触发一次/下降重置/非法负值归零
 │   ├── SoulSlabFeedPulseTest.java             # 投喂6tick缩放曲线·未激活为1/首尾归1/中点峰值1.12
+│   ├── SoulSlabAmbientScheduleTest.java       # Mob环境音后增计数·初值0/命中重置-120/负冷却不触发/隐藏复位
+│   ├── SoulSlabEnvironmentSoundTest.java      # 查看者环境选声·跨日晨夜取模/严格边界/雨雪冷热优先级/概率回退
+│   ├── SoulSlabBooleanFeedbackTest.java       # sitting同步边沿·首次只建基线/双向变化各触发一次/重复值静默
+│   ├── SoulSlabVoiceArbiterTest.java          # 单枚语音仲裁·投喂>回应>待机/低优先级不覆盖/实例间无全局状态/清理丢请求
+│   ├── SoulSlabMaidSettingsTest.java          # maid_info个人设置·气泡/语音频率默认值、保存值恢复、错型回退与0-1钳位
 │   ├── SoulSlabPreviewBubblesTest.java        # 图片气泡判定·可见/开关/已有气泡/原检查间隔与UUID相位/图片权重/零总权重/颜文字分支跳过，真实原气泡绘制实机验收
-│   ├── SoulSlabPreviewFacingTest.java         # 活魂符展示角度·初始正面/四向身体/停步保朝向/最短跨界插值/头身独立与光标限幅/背侧投影/实例隔离
-│   ├── SoulSlabPreviewMovesTest.java          # 活魂符预览唯一相邻迁移·物理宿主/槽身份、clock排除、快照歧义不共享、多枚独立；不代替实际女仆渲染验收
+│   ├── SoulSlabPreviewFacingTest.java         # 活魂符展示角度·初始正面/四向身体/停步保朝向/光标模式回正/最短插值/头部限幅/背侧投影/实例隔离
+│   ├── SoulSlabPreviewMovesTest.java          # 预览身份迁移·物理宿主/clock+sitting+pending排除/引用优先/槽↔光标/同快照交换/相邻兜底/歧义不共享
+│   ├── SoulSlabPreviewScaleTest.java          # 活魂符预览缩放公式·1.0还原旧8倍/默认1.25得10倍/TLM模型因子×可用高度×投喂脉冲各乘一次/非法输入拒绝
 │   └── SoulSlabPreviewVisibilityTest.java     # 活魂符预览可见帧·未绘制哨兵不因int溢出误判/当前至前2tick可见/更旧与tick极值不可见
 ├── client/util/
 │   └── LivingChestTabSearchTest.java          # 活箱子标签页搜索过滤纯函数·空搜索词原样返回(不清空栈)/非空词剔除空栈不改入参/中文名直配/拼音(全拼·首字母·部分)/英文名大小写/注册ID兜底/空物品+非空词⇒匹配(原守卫分支语义·实际路径不可达,钉住防漂)
@@ -92,6 +98,7 @@ src/test/java/com/qiqi/li/
 │   ├── ContainerBoundaryContractTest.java     # 容器边界契约 I-C3/I-C4/I-C7/**I-C11** 守卫：SlotIgnoringHandler(insertItem 丢 slot) + ExtractBlockedHandler(extract 被拦) ⇒ 写回落对槽/物品守恒/模拟真实同源（S2 后转绿 **+ I-C11：四种容器形态的列数都 ≥ 1（掉落物形态 = 1，它原先白嫖接口默认 9）**
 
 │   ├── GameplayConfigTest.java                 # 玩法开关的默认值（2026-10-24）·spec 能构建/**四个宿主锚点开关默认全关**（TNT 无锚点熄灭/不发电/不挖矿/不开光）（⚠️ 只测未加载配置时的静态字段，不测 ModConfigSpec 本身）
+│   ├── TlmClientConfigTest.java                # TLM客户端配置·spec/专属文件名/未加载默认1.25/0.25-4.0边界钳位/NaN与无穷回退默认/缓存热刷新不重建消费者
 │   ├── ContainerAnchorTest.java                # 容器世界锚点（2026-10-23 收编 4 份重复解析）·方块⇒AtBlock/玩家⇒AtPlayer(靠 getOwnerPlayer)/**实体容器⇒AtEntity（必须覆写，否则退化成没锚点）**/**掉落物⇒AtEntity（有实体，不是没锚点）**/物品形态⇒null/**getHostAnchor 与 getAnchor 刻意分开（物品形态有宿主值、非物品形态恒 null）**/roughPosition 三分支/退化不抛
 │   ├── ContainerViewersTest.java               # 「谁在看这个容器」唯一判定入口（2026-10-23 收编）·背包只发主人不门控(隐私红线)/末影箱开着 GUI 才发(第③次泄漏修复)/物品形态按菜单锚点认观众(开着别的容器不算)/位置为空⇒无观众/退化输入不抛（末影箱门控两条用例从流体轨与运行时轨合并迁入）
 │   ├── ContainerHandoffTest.java              # I-C9 **第三挂点「双向交接」**（2026-10-21，D-container-12）·宿主→物品：捕获→交接搬到目标/无捕获 no-op/空栈不搬且丢捕获/capture(null) 清残留/一个 Mover 抛异常不连累其它/discard + **物品→宿主：暂存→恢复调 moveIn / 暂存是副本（源栈 shrink 后仍能恢复）/无暂存或宿主空 no-op/stageRestore(EMPTY) 清残留** + **反射守卫：Mover 不得有 default 方法**（真机三连失败的真凶）

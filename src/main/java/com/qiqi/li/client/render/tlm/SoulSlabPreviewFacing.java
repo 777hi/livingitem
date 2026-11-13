@@ -35,6 +35,15 @@ final class SoulSlabPreviewFacing {
                 -HEAD_PITCH_LIMIT, HEAD_PITCH_LIMIT);
     }
 
+    void centerLook() {
+        targetHeadYaw = 0;
+        targetHeadPitch = 0;
+    }
+
+    void stopMoving() {
+        targetBody = FRONT;
+    }
+
     void tick() {
         oldBody = body;
         oldHeadYaw = headYaw;

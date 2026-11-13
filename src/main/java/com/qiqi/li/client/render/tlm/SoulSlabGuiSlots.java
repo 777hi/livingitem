@@ -10,4 +10,9 @@ final class SoulSlabGuiSlots {
     static boolean hasStableStackReference(Slot display, Slot physical) {
         return display != null && physical != null && !(physical instanceof StackCopySlot);
     }
+
+    /** 悬停按当前实际显示槽对象判定；物理别名或模型越界都不扩大hover区域。 */
+    static boolean isHovered(Slot display, Slot hovered) {
+        return display != null && display == hovered;
+    }
 }
