@@ -155,6 +155,8 @@ src/test/java/com/qiqi/li/
 │   ├── ExplosionParamsTest.java               # 爆炸参数·位图映射可逆与越界/有限正参数准入/自定义半径不钳制/受检面积与索引算术/巨型SUPER几何不依赖位图/宽区块边界不回绕/AABB∩球体与切线包含/负小数中心既有转换
 │   ├── ExplosionLedgerTest.java               # 普通位图账本·相交才进队列/圆外标记/卸载丢弃与自然加载补炸/分帧预算/混合模式重放水印/处理中登记保留/满额拒绝/位图存档往返
 │   ├── ExplosionSuperLedgerTest.java          # SUPER 参数与纪元·巨型无位图/保存恢复与重载防重放/新爆炸再破坏/固定旧水印与混合顺序/异常不提前提交/同坐标重入/FIFO等待与32坐标预算/只逐出旧SUPER/降级原READY身份与无未来加载/运行态清理/真实holder就绪查询/附件Codec往返
+│   ├── ExplosionBlockEntityCleanupTest.java   # 批量爆炸BE清理·Mixin accessor真实接线/pending-only DUMMY不实例化/live走原版移除链/HIGH仅清实际炸毁位置/SUPER并集清理且pending-only不误判no-op
+│   ├── ExplosionComponentHeightmapTest.java   # 真实高度图·SUPER四图归最低高度/不同世界高度/空section旧图修复/HIGH删除顶面与幸存地面/水树叶判据/未改列保留/packed NBT往返与实际发包前更新/单区块perf量测
 │   └── ExplosionComponentLightTest.java       # 爆炸后光照刷新·四入口顺序/天光柱高图先于重算/section 空态/sectionY≠索引/发光方块减光
 ├── living/domain/redstone/
 │   ├── RedstoneHandlerSetChangedTest.java     # 交互 handler 就地改写标脏（2026-10-27 审查 P2，与 IgniteHandler P3-4 同类）·拉杆切换成功 ⇒ setChanged 被调，否则开关态在「改完→下次落盘」窗口丢失（四 handler 同构逐一接线）
@@ -280,6 +282,8 @@ src/test/java/com/qiqi/li/
 │   ├── MechanicalReceiversTest.java          # 中立机械接收端口·按类去重/纯matches角色探测/首匹配独占/请求透传与q钳制/活塞解析非漏斗接收者/活箱子工具本体不展开/部分交付/拒抽/精确写扣减/插入违约恢复/余量与超大栈回滚
 │   ├── PlainSlotAccessorTest.java             # 普通槽回滚契约·空槽/同组件合并/异物品或满槽只报告；同item异组件模拟与真实均拒绝
 │   └── TransferTargetPolicyDispatchTest.java  # 传输目标策略分发（2026-11-01）·目标无接管 → 源侧探测+CONTINUE / REJECT 不触发探测（对齐旧 resolveTarget 时序）/ 接管路径不触发探测 / 跨容器 null=无接管回落
+├── living/perf/
+│   └── PerfMetricsTntTest.java                 # SUPER聚合指标·content/metadata/heightmap/no-op互斥分类/pending清理量/命中率与省包省光照汇总/清零后不跨报告窗口或存档残留
 ├── living/util/
 │   ├── BroadcastDedupTest.java                # 定向广播去重表的跨维度合并（2026-10-23 定，10-26 抽成共享工具）·**其它维度玩家的记录必须保留**（逐维度 flush 不能互清，旧写法每玩家每 tick 重发一包）/离线玩家淘汰/本维度新记录覆盖旧值（四个同步器共用一份实现，故只留这一份测试）
 │   ├── FailureThrottleTest.java               # tick 异常限频报告（2026-10-30，R-01）·同 key 窗口内只记一次其余计数 / 不同 key 各记一次 / 超窗口再报并重置计数 / key 上限 LRU 淘汰 / 汇总窗口推进

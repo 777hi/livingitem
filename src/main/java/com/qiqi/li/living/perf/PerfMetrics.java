@@ -1,6 +1,7 @@
 package com.qiqi.li.living.perf;
 
 import com.qiqi.li.logging.ModLog;
+import com.qiqi.li.living.util.StaticCacheRegistry;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -17,6 +18,7 @@ import java.util.concurrent.atomic.AtomicLongArray;
  *   <li><b>Teleport</b>：传送次数、区块加载耗时、总传送耗时</li>
  *   <li><b>Cache</b>：容器区块缓存大小、自清理移除数</li>
  *   <li><b>Transfer</b>：活漏斗传输成功/失败次数</li>
+ *   <li><b>TNT</b>：SUPER 实际清空 / 仅修高度图 / 完全 no-op 次数</li>
  * </ul>
  *
  * <h3>报告格式</h3>
@@ -46,6 +48,13 @@ public class PerfMetrics {
     private static final AtomicLong transferSuccess = new AtomicLong(0);
     private static final AtomicLong transferFail = new AtomicLong(0);
 
+    // ===== SUPER 爆炸应用结果 =====
+    private static final AtomicLong superContentChanged = new AtomicLong(0);
+    private static final AtomicLong superHeightmapOnly = new AtomicLong(0);
+    private static final AtomicLong superMetadataOnly = new AtomicLong(0);
+    private static final AtomicLong superNoOp = new AtomicLong(0);
+    private static final AtomicLong pendingBlockEntitiesCleared = new AtomicLong(0);
+
     // ===== processContext 分阶段耗时 =====
     private static final Map<String, PhaseStats> phaseStats = new ConcurrentHashMap<>();
 
@@ -68,6 +77,7 @@ public class PerfMetrics {
         for (int i = 0; i < P99_BUFFER_SIZE; i++) {
             p99Buffer.set(i, -1);
         }
+        StaticCacheRegistry.onServerStop(server -> reset());
     }
 
     private PerfMetrics() {}
@@ -121,6 +131,26 @@ public class PerfMetrics {
         }
     }
 
+    /** 每次 SUPER 区块应用归入且只归入一种结果。 */
+    public static void recordSuperExplosion(boolean contentChanged, boolean heightmapChanged,
+                                            int pendingCleared) {
+        pendingBlockEntitiesCleared.addAndGet(pendingCleared);
+        if (contentChanged) {
+            superContentChanged.incrementAndGet();
+        } else if (pendingCleared > 0) {
+            superMetadataOnly.incrementAndGet();
+        } else if (heightmapChanged) {
+            superHeightmapOnly.incrementAndGet();
+        } else {
+            superNoOp.incrementAndGet();
+        }
+    }
+
+    public static boolean hasSuperExplosionData() {
+        return superContentChanged.get() != 0 || superMetadataOnly.get() != 0
+            || superHeightmapOnly.get() != 0 || superNoOp.get() != 0;
+    }
+
     // ══════════════════════════════════════════════
     // processContext 分阶段耗时
     // ══════════════════════════════════════════════
@@ -151,6 +181,7 @@ public class PerfMetrics {
         printContainerSection();
         printCacheSection();
         printTransferSection();
+        printTntSection();
 
         ModLog.PERF.info("=== End of report ===");
 
@@ -208,6 +239,27 @@ public class PerfMetrics {
             String.format("%.1f", successRate), transferSuccess.get(), transferFail.get());
     }
 
+    private static void printTntSection() {
+        String summary = formatTntSummary();
+        if (summary != null) ModLog.PERF.info(summary);
+    }
+
+    static String formatTntSummary() {
+        long changed = superContentChanged.get();
+        long metadataOnly = superMetadataOnly.get();
+        long heightmapOnly = superHeightmapOnly.get();
+        long noOp = superNoOp.get();
+        long pendingCleared = pendingBlockEntitiesCleared.get();
+        long total = changed + metadataOnly + heightmapOnly + noOp;
+        if (total == 0) return null;
+
+        double noOpRate = noOp * 100.0 / total;
+        return String.format(
+            "[TNT/SUPER] applications=%d, contentChanged=%d, metadataOnly=%d, heightmapOnly=%d, noOp=%d (%.1f%%), pendingBlockEntitiesCleared=%d, skippedChunkPackets=%d, skippedLightRefreshes=%d",
+            total, changed, metadataOnly, heightmapOnly, noOp, noOpRate, pendingCleared,
+            noOp, noOp + metadataOnly + heightmapOnly);
+    }
+
     // ══════════════════════════════════════════════
     // P99 计算
     // ══════════════════════════════════════════════
@@ -257,11 +309,21 @@ public class PerfMetrics {
         cacheSelfCleanRemoves.set(0);
         transferSuccess.set(0);
         transferFail.set(0);
+        superContentChanged.set(0);
+        superHeightmapOnly.set(0);
+        superMetadataOnly.set(0);
+        superNoOp.set(0);
+        pendingBlockEntitiesCleared.set(0);
         phaseStats.clear();
         for (int i = 0; i < P99_BUFFER_SIZE; i++) {
             p99Buffer.set(i, -1);
         }
         p99Index.set(0);
+    }
+
+    static void resetForTest() {
+        reset();
+        lastReportTime = System.currentTimeMillis();
     }
 
     public static void resetReportTime() {

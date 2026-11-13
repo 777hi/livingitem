@@ -10,6 +10,8 @@ import java.util.Set;
 import java.util.function.Consumer;
 import com.mojang.datafixers.util.Pair;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.container.PendingBlockEntityAccess;
+import com.qiqi.li.living.perf.PerfMetrics;
 import it.unimi.dsi.fastutil.shorts.ShortOpenHashSet;
 import it.unimi.dsi.fastutil.shorts.ShortSet;
 import net.minecraft.core.BlockPos;
@@ -35,6 +37,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.lighting.LevelLightEngine;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -110,6 +113,11 @@ public class ExplosionComponent {
 
     /** > 此数量走超级爆炸模式（整区块清空）。 */
     private static final int SUPER_EXPLOSION_THRESHOLD = 54 * 64;
+
+    private static final Heightmap.Types[] RUNTIME_HEIGHTMAPS = {
+        Heightmap.Types.WORLD_SURFACE, Heightmap.Types.OCEAN_FLOOR,
+        Heightmap.Types.MOTION_BLOCKING, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES
+    };
 
     private ExplosionComponent() {}
 
@@ -562,6 +570,8 @@ public class ExplosionComponent {
         BlockState airState = Blocks.AIR.defaultBlockState();
         int minSection = chunk.getMinSection();
         int sectionCount = chunk.getSectionsCount();
+        boolean[] changedColumns = new boolean[256];
+        Set<BlockPos> blockEntityPositions = chunk.getBlockEntitiesPos();
 
         for (var entry : sectionUpdates.entrySet()) {
             SectionPos sectionPos = entry.getKey();
@@ -579,13 +589,13 @@ public class ExplosionComponent {
                     sectionPos.minBlockY() + localY,
                     sectionPos.minBlockZ() + localZ);
 
-                if (chunk.getBlockEntity(bePos) != null) {
-                    chunk.removeBlockEntity(bePos);
-                }
+                if (blockEntityPositions.contains(bePos)) removeBlockEntityData(chunk, bePos);
                 section.setBlockState(localX, localY, localZ, airState, false);
+                changedColumns[localX + localZ * 16] = true;
             }
         }
 
+        updateHeightmaps(chunk, changedColumns);
         chunk.setUnsaved(true);
         // ⚠️ 顺序：先发方块/渲染同步，再补光照。
         // 方块同步是**用户直接看得见**的那件事；光照刷新是入队的、且原版随后会用
@@ -609,15 +619,21 @@ public class ExplosionComponent {
     private static void deleteChunkContent(ServerLevel level, LevelChunk chunk) {
         ChunkPos chunkPos = chunk.getPos();
         BlockState airState = Blocks.AIR.defaultBlockState();
+        Set<BlockPos> blockEntityPositions = chunk.getBlockEntitiesPos();
+        boolean blockContentChanged = false;
+        int pendingBlockEntitiesCleared = 0;
 
-        for (BlockPos pos : new ArrayList<>(chunk.getBlockEntities().keySet())) {
-            chunk.removeBlockEntity(pos);
+        for (BlockPos pos : blockEntityPositions) {
+            BlockEntityRemoval removal = removeBlockEntityData(chunk, pos);
+            if (removal.live()) blockContentChanged = true;
+            if (removal.pending()) pendingBlockEntitiesCleared++;
         }
 
         LevelChunkSection[] sections = chunk.getSections();
         for (int i = 0; i < sections.length; i++) {
             LevelChunkSection section = sections[i];
             if (section == null || section.hasOnlyAir()) continue;
+            blockContentChanged = true;
             for (int x = 0; x < 16; x++) {
                 for (int y = 0; y < 16; y++) {
                     for (int z = 0; z < 16; z++) {
@@ -627,12 +643,74 @@ public class ExplosionComponent {
             }
         }
 
+        boolean heightmapChanged = resetHeightmaps(chunk);
+        boolean metadataChanged = pendingBlockEntitiesCleared > 0;
+        PerfMetrics.recordSuperExplosion(blockContentChanged, heightmapChanged, pendingBlockEntitiesCleared);
+        if (!blockContentChanged && !heightmapChanged && !metadataChanged) return;
+
         chunk.setUnsaved(true);
-        // 先方块同步、后光照刷新（理由同 applyHighYieldToChunk 里的顺序说明）。
+        notifyChunkClients(level, chunkPos, chunk);
+        if (!blockContentChanged) return;
+
+        // 方块内容改变后补光照；仅高度图修复不重复触发区块光照重算。
         // 超级爆炸把**整区块**清空 ⇒ 每个 section 都变成"空"，
         // 旧光数据会随 section 状态更新被丢弃，不需要逐个记录被炸掉的光源。
-        notifyChunkClients(level, chunkPos, chunk);
         refreshLightAfterBulkEdit(level, chunk, List.of());
+    }
+
+    record BlockEntityRemoval(boolean live, boolean pending) {
+        boolean changed() {
+            return live || pending;
+        }
+    }
+
+    /** 清除 loaded 区块中的 live BE 与尚未实例化的 packed NBT；绝不调用 getBlockEntity。 */
+    static BlockEntityRemoval removeBlockEntityData(LevelChunk chunk, BlockPos pos) {
+        boolean live = chunk.getBlockEntities().containsKey(pos);
+        boolean pending = ((PendingBlockEntityAccess) chunk).living_item$removePendingBlockEntity(pos);
+        if (live) chunk.removeBlockEntity(pos);
+        return new BlockEntityRemoval(live, pending);
+    }
+
+    /** 空区块的 packed 高度全为零；返回是否实际修正了任一运行时高度图。 */
+    static boolean resetHeightmaps(LevelChunk chunk) {
+        boolean changed = false;
+        long[] empty = new long[chunk.getOrCreateHeightmapUnprimed(Heightmap.Types.WORLD_SURFACE)
+            .getRawData().length];
+        for (Heightmap.Types type : RUNTIME_HEIGHTMAPS) {
+            Heightmap heightmap = chunk.getOrCreateHeightmapUnprimed(type);
+            boolean stale = false;
+            for (long word : heightmap.getRawData()) {
+                if (word != 0L) {
+                    stale = true;
+                    break;
+                }
+            }
+            if (stale) {
+                chunk.setHeightmap(type, empty);
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    /** 批量删除后的列修复；仍满足各图判据的旧顶面不得降低。 */
+    static void updateHeightmaps(LevelChunk chunk, boolean[] changedColumns) {
+        BlockState air = Blocks.AIR.defaultBlockState();
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        for (Heightmap.Types type : RUNTIME_HEIGHTMAPS) {
+            Heightmap heightmap = chunk.getOrCreateHeightmapUnprimed(type);
+            for (int column = 0; column < 256; column++) {
+                if (!changedColumns[column]) continue;
+                int x = column & 15;
+                int z = column >> 4;
+                int oldTop = heightmap.getFirstAvailable(x, z) - 1;
+                if (oldTop < chunk.getMinBuildHeight()) continue;
+                if (!type.isOpaque().test(chunk.getBlockState(pos.set(x, oldTop, z)))) {
+                    heightmap.update(x, oldTop, z, air);
+                }
+            }
+        }
     }
 
     // ══════════════════════════════════════════════

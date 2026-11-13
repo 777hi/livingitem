@@ -5,6 +5,7 @@
   "refmap": "living_item.refmap.json",
   "mixins": [
     "ItemStackMixin",
+    "LivingItemChunkAccessAccessor",
     "MapItemMixin",
     "ServerPlaceRecipeMixin",
     "BlockStateBaseMixin",

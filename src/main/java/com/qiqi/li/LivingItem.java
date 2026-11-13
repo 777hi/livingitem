@@ -401,6 +401,11 @@ public class LivingItem {
         // 待炸账本：按区块分帧推进爆炸破坏（已加载的按预算处理，未加载的等自然加载）
         ExplosionLedger.flushAll(server);
 
+        // TNT 可能在容器已消耗后继续兑现；无容器 tick 时也要让 60 秒聚合报告落盘。
+        if (PerfMetrics.hasSuperExplosionData() && PerfMetrics.shouldReport()) {
+            PerfMetrics.printReport();
+        }
+
         // 末影频道脏通道下发（2026-10-08 计划 ⑤）—— 原在 ContainerLivingItemHandler 的
         // 「每容器阶段 3」，现移到 L4 每 tick 收口：flushDirtyChannels 幂等（空则立即返回、
         // 刷完清空脏集），且不再随容器数量重复调用。

@@ -448,24 +448,49 @@ SUPER 无完成位图：不能凭当前已加载部分完成就退役，也不�
 
 守卫用例：`ExplosionComponentLightTest`（钉接线与顺序，真实光照计算属游戏内验证）。
 
-### ⚠️ 已知缺口：批量破坏未更新高度图
+### 批量破坏高度图修复
 
-`HIGH_YIELD` / `SUPER` 绕过 `LevelChunk.setBlockState()` ⇒ 原版在那里对**每个方块**
-调的 `heightmap.update(...)`（4 种高度图）同样被跳过了。
+**事故来源**：用户在炸空区域游历时，生物浮空生成并落入虚空。HIGH_YIELD / SUPER 直接改
+section 绕过原版高度图更新，服务端刷怪/高度查询及客户端包仍可能引用已消失的地面。
 
-**后果**：
-- `WORLD_SURFACE` / `MOTION_BLOCKING` 仍反映**炸之前**的地形 ⇒ 刷怪面、
-  `Level.getHeight` 类查询、雨雪高度会看到已经不存在的地面。
-- 这两张高度图**随区块包发给客户端**（`ClientboundLevelChunkPacketData` 的 `heightmaps`），
-  客户端 `LevelChunk.replaceWithPacketData` 会 `setHeightmap` ⇒ **客户端也拿到陈旧值**。
+**现行约束**：批量修改结束后、区块包构造前，必须更新 WORLD_SURFACE、OCEAN_FLOOR、
+MOTION_BLOCKING、MOTION_BLOCKING_NO_LEAVES 四种运行时高度图；不恢复逐方块邻居回调。
 
-**用户实测**：在炸空区域游历时，生物浮空生成，随后全部落入虚空。该现象与陈旧高度图
-吻合，用户已确认值得修复；本次规模化提交只记录缺口，高度图修复另行实施。
+- **SUPER**：经原版公开 `setHeightmap` 重置 packed 数据为零，即 `minBuildHeight`，不是 Y=0；
+  数组长度取当前高度图，不硬编码世界高度。即使 section 已空，执行清空路径时也修复旧图。
+  重叠 SUPER 命中已空且四图均正确的区块时，仅完成账本义务，不重复标脏、发完整区块包或
+  刷新光照；若只有高度图陈旧，则标脏并同步修正后的高度，但不重算未变化的方块光照。
+  该 no-op 分流不合并爆炸、不重排混合模式，也不跳过 epoch 水印；三态守卫已纳入
+  `ExplosionComponentHeightmapTest`。运行时每 60 秒随性能报告汇总一次，`logs/latest.log`
+  搜索 `[TNT/SUPER]`：`contentChanged`=真实清空，`metadataOnly`=仅清延迟方块实体 NBT，
+  `heightmapOnly`=仅修图同步，`noOp`=省去完整区块包与光照刷新；
+  `pendingBlockEntitiesCleared`=实际删除的 packed NBT 条数，`skippedChunkPackets` /
+  `skippedLightRefreshes` 是据此计算的避免费用。
+  统计单位是应用轮次（异常重试可重复同一区块），不是唯一空间区块数。
+- **HIGH_YIELD**：只记录实际删除列；每图旧顶面仍满足其原版判据时保留，否则由
+  `Heightmap.update` 向下找新的有效顶面，无有效方块时归到最低高度。不能把幸存抗爆地面、
+  水或树叶混用一套判据，也不能假定 `primeHeightmaps` 会清零无命中的旧列。
+- **NORMAL**：沿用原版逐方块更新。
 
-**修复约束**：使用原版公开的高度图接口；SUPER 空区块重置与 HIGH_YIELD 受影响列更新
-分别处理，不恢复逐方块邻居回调。`Heightmap.primeHeightmaps()` 不是唯一可用接口，且
-不能假定它会将找不到有效方块的旧高度清零；修复须验证空列、剩余地面、保存/重载与客户端值，
-并测量新增单区块成本。
+**验证入口**：`ExplosionComponentHeightmapTest` 使用真实区块/高度图守卫空列、负最低高度、
+不同世界高度、部分删除与幸存顶面、水/树叶判据、packed NBT 往返及实际区块包构造顺序。
+量测入口 `./gradlew test -Pperf --rerun --tests '*ExplosionComponentHeightmapTest'`。
+一次本机暖身量测（真实 section/高度图，计时区间不经过 Mockito 世界查询）：SUPER 重置约
+0.001 ms/区块，HIGH 单列约 0.15 ms，256 列都需从 Y=200 找到 Y=-20 的压力样例约
+6.6 ms。该结果只覆盖修复方法，不含破坏、发包或完整游戏 tick；HIGH 成本随改动列数和
+必要向下查找深度增长，不承诺全部整合包固定耗时。原光照守卫仍见 `ExplosionComponentLightTest`。
+
+**延迟方块实体边界**：频繁 SUPER 实测曾产生 6022 条 DUMMY 与 6029 条空气方块实体警告。
+原因是区块同时保存 live 方块实体和尚未实例化的 packed NBT，而原版公开 `removeBlockEntity`
+只清前者；读取/保存 pending 数据会尝试实例化，正是警告来源。现通过内部
+`LivingItemChunkAccessAccessor` 仅删除 pending map：HIGH_YIELD 只清实际炸毁位置，SUPER 清
+live + pending 位置并集；live 对象仍走原版 listener/ticker/aux-light 清理，全程不得调用
+`getBlockEntity()`。不回扫历史区块，新爆炸触及时才清理。修复后频繁 SUPER 实测四个窗口共清除
+8368 条 pending NBT，DUMMY / 空气方块实体警告均为 0，Mixin 接线错误为 0，实机通过。
+
+**边界**：不迁移旧数据、不扫全世界修历史空洞。已经被 SUPER 水印标记完成的区域不会
+因为安装补丁自动重算；实机验收须用新爆炸，检查刷怪、雨雪高度、剩余地面及极限规模流畅性。
+该项游戏内验证仍待用户反馈。
 
 **为什么是 54×64？**
 - 54 = 大箱子槽位数、64 = 最大堆叠数 ⇒ 54×64 = 3456 是一个大箱子能装下的最大活TNT数量
