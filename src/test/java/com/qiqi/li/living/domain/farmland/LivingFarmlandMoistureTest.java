@@ -27,10 +27,10 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 
 /**
- * 活耕地**湿润 BFS 与生长冷却门**（2026-10-28 补，审查测试缺口 #4）。
+ * 活耕地**湿润 BFS 与生长边沿门**（2026-10-28 补，审查测试缺口 #4）。
  *
  * <p>既有 `LivingFarmlandFunctionTest` 只覆盖 `tryOutputOnce`（产出合并丢物品），
- * 而「水源 → 相邻耕地 4 级 → 沿耕地每跳 -1」的传播、以及 200t 冷却门从未被测。
+ * 而「水源 → 相邻耕地 4 级 → 沿耕地每跳 -1」的传播、以及世界轴 200t 边沿门从未被测。
  * 两者都在 `tick()` 里，且 `computeMoisture` 是私有 ⇒ 走完整 tick + 假 FluidPresence。</p>
  *
  * <p>布局（27 槽 / 9 宽）：槽 1 是水；槽 0 与它相邻 ⇒ 4 级；槽 9 在 0 下方 ⇒ 3 级；
@@ -77,6 +77,20 @@ class LivingFarmlandMoistureTest {
         setRandom(level, RandomSource.create(1234L));
         when(level.getGameTime()).thenReturn(gameTime);
         return level;
+    }
+
+    /** 指定概率结果的 Level 替身：roll=0 必定成功，非 0 必定失败。 */
+    private static ServerLevel levelWithRoll(long gameTime, int roll) {
+        ServerLevel level = mock(ServerLevel.class);
+        RandomSource random = mock(RandomSource.class);
+        when(random.nextInt(anyInt())).thenReturn(roll);
+        setRandom(level, random);
+        when(level.getGameTime()).thenReturn(gameTime);
+        return level;
+    }
+
+    private static FarmlandPlantComponent growingWheat() {
+        return new FarmlandPlantComponent(Items.WHEAT_SEEDS, 3, 7, -1, List.of());
     }
 
     /** {@code Level.random} 是字段（不是 getter）⇒ 只能反射塞。 */
@@ -135,42 +149,53 @@ class LivingFarmlandMoistureTest {
     }
 
     @Test
-    @DisplayName("生长冷却门未到期（< 200t）⇒ 不写组件（稳态零写入）")
-    void growthGate_closed_doesNotWrite() {
+    @DisplayName("非节拍刻度（now % 200 != 0）⇒ 不进概率判定，组件零写入")
+    void growthGate_offBeat_noProbabilityRoll() {
         FakeContainerContext ctx = box();
         ItemStack farmland = livingFarmland();
-        FarmlandPlantComponent.set(farmland,
-            new FarmlandPlantComponent(Items.WHEAT_SEEDS, 3, 7, 0L, -1, List.of()));
+        FarmlandPlantComponent before = growingWheat();
+        FarmlandPlantComponent.set(farmland, before);
         ctx.set(9, farmland);
-        ServerLevel level = levelAt(100);   // now - last(0) = 100 < 200
+        ServerLevel level = levelWithRoll(100, 0);   // 概率必定成功
         TickContext tick = tickWithWaterAt();
 
         tickFarmland(ctx, level, tick, 9);
 
-        assertEquals(0L, FarmlandPlantComponent.of(ctx.getItem(9)).lastGrowthAttemptTick(),
-            "未到期不得推进时间戳（否则每 tick 都变成「刚试过」，永远轮不到生长）");
+        assertEquals(before, FarmlandPlantComponent.of(ctx.getItem(9)),
+            "非刻度 tick 不得改组件（节拍由世界时间现算，不写入物品）");
+        assertEquals(3, FarmlandPlantComponent.of(ctx.getItem(9)).age(),
+            "即便概率必定成功也不得生长 ⇒ 门没有放行");
     }
 
     @Test
-    @DisplayName("生长冷却门到期（≥ 200t）⇒ 推进时间戳（概率失败不改 age）")
-    void growthGate_open_stampsAttempt() {
+    @DisplayName("节拍刻度（now % 200 == 0）+ 概率失败 ⇒ 组件零写入")
+    void growthGate_onBeat_probabilityFailureNoWrite() {
         FakeContainerContext ctx = box();
         ItemStack farmland = livingFarmland();
-        FarmlandPlantComponent.set(farmland,
-            new FarmlandPlantComponent(Items.WHEAT_SEEDS, 3, 7, 0L, -1, List.of()));
+        FarmlandPlantComponent before = growingWheat();
+        FarmlandPlantComponent.set(farmland, before);
         ctx.set(9, farmland);
+        ServerLevel level = levelWithRoll(200, 1);   // != 0 ⇒ 概率判定失败
 
-        ServerLevel level = mock(ServerLevel.class);
-        RandomSource neverGrow = mock(RandomSource.class);
-        when(neverGrow.nextInt(anyInt())).thenReturn(1);   // != 0 ⇒ 概率判定失败
-        setRandom(level, neverGrow);
-        when(level.getGameTime()).thenReturn(200L);
-        TickContext tick = tickWithWaterAt();
+        tickFarmland(ctx, level, tickWithWaterAt(), 9);
 
-        tickFarmland(ctx, level, tick, 9);
+        assertEquals(before, FarmlandPlantComponent.of(ctx.getItem(9)),
+            "概率失败 ⇒ 不写不同步");
+        assertEquals(3, FarmlandPlantComponent.of(ctx.getItem(9)).age());
+    }
 
-        FarmlandPlantComponent after = FarmlandPlantComponent.of(ctx.getItem(9));
-        assertEquals(200L, after.lastGrowthAttemptTick(), "到期后应记下这次尝试");
-        assertEquals(3, after.age(), "概率失败不得推进 age");
+    @Test
+    @DisplayName("节拍刻度 + 概率成功 ⇒ age+1（门确实放行）")
+    void growthGate_onBeat_probabilitySuccessGrows() {
+        FakeContainerContext ctx = box();
+        ItemStack farmland = livingFarmland();
+        FarmlandPlantComponent.set(farmland, growingWheat());
+        ctx.set(9, farmland);
+        ServerLevel level = levelWithRoll(200, 0);
+
+        tickFarmland(ctx, level, tickWithWaterAt(), 9);
+
+        assertEquals(4, FarmlandPlantComponent.of(ctx.getItem(9)).age(),
+            "边界 tick 必须进入概率判定");
     }
 }

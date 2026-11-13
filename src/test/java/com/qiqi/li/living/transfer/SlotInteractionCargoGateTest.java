@@ -78,7 +78,7 @@ class SlotInteractionCargoGateTest {
     private static ItemStack livingFarmland(int age, int maxAge) {
         ItemStack stack = living(new ItemStack(Items.FARMLAND, 1));
         FarmlandPlantComponent.set(stack,
-            new FarmlandPlantComponent(Items.WHEAT_SEEDS, age, maxAge, 0L, -1, List.of()));
+            new FarmlandPlantComponent(Items.WHEAT_SEEDS, age, maxAge, -1, List.of()));
         return stack;
     }
 

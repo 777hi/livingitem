@@ -131,7 +131,7 @@ class CrossContainerTransferFertilizeTest {
         ItemStack stack = new ItemStack(Items.FARMLAND, 1);
         LivingItemManager.setLiving(stack, true);
         FarmlandPlantComponent.set(stack,
-            new FarmlandPlantComponent(Items.WHEAT_SEEDS, age, maxAge, 0L, -1, List.of()));
+            new FarmlandPlantComponent(Items.WHEAT_SEEDS, age, maxAge, -1, List.of()));
         return stack;
     }
 
@@ -139,7 +139,7 @@ class CrossContainerTransferFertilizeTest {
         ItemStack stack = new ItemStack(Items.FARMLAND, 1);
         LivingItemManager.setLiving(stack, true);
         FarmlandPlantComponent.set(stack, new FarmlandPlantComponent(
-            Items.WHEAT_SEEDS, 7, 7, 0L, 0, List.of(new ItemStack(Items.WHEAT))));
+            Items.WHEAT_SEEDS, 7, 7, 0, List.of(new ItemStack(Items.WHEAT))));
         return stack;
     }
 

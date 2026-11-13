@@ -35,7 +35,7 @@ class BonemealHandlerTest {
         ItemStack stack = new ItemStack(Items.FARMLAND);
         LivingItemManager.setLiving(stack, true);
         FarmlandPlantComponent.set(stack, new FarmlandPlantComponent(
-            Items.WHEAT_SEEDS, 0, 3, 0L, -1, List.of()));
+            Items.WHEAT_SEEDS, 0, 3, -1, List.of()));
         return stack;
     }
 

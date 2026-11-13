@@ -87,6 +87,7 @@
 | D-farmland-03 | 2026-09-16 | farmland | 放置时**一律种成幼苗**，不保留物品里的成熟度 | 简单优先 | 生效 | | `tech/living-farmland-tech.md` §3.5 |
 | D-farmland-04 | 2026-09-16 | farmland | 自动种植是**软逻辑**：种不上（含抛异常）必须静默，绝不影响原版放置流程 | 用户定调 | 生效 | | `tech/living-farmland-tech.md` §3.5 |
 | D-farmland-05 | 2026-09-16 | farmland | 耕地槽种子图标走 **`IItemDecorator`**（不再写容器 Mixin） | 快捷栏不经过该屏幕 | 生效 | | `system-design/icon-system.md`「种子图标改走装饰器路径」 |
+| D-farmland-06 | 2026-11-13 | farmland | **生长节拍改世界轴边沿门，`lastGrowthAttemptTick` 从物品组件删除**；同种子同阶段的生长期耕地可堆叠，成熟待产出态保持不可叠；接受种下后首次机会等 0~200t 与重进不补判定 | 生长节拍是世界时钟派生量，不写入物品组件；瞬态数据不影响物品堆叠（活熔炉同款判据） | 生效 | | `tech/living-farmland-tech.md` §0 / §2.1 / §5.1 / §11.18 · `LivingFarmlandFunctionTest` · `LivingFarmlandMoistureTest` |
 | D-power-01 | 2026-09-02 | power | 共振发生在**网络之间**，锈蚀级 = 共振「声部」；`R = 1+(N−1)s ∈ [1,4]` | 二值隔离无意义 | 生效 | | `tech/living-power-tech.md` §3.7 |
 | D-power-02 | 2026-09-02 | power | 解锁度 `u = 调谐效率 × (n/偏好周期)`；**移除规律度因子** | 玩家自由选难度 | 生效 | ← D-power-03 | `tech/living-power-tech.md` §3.1 |
 | D-power-03 | （历史） | power | ~~`合因子 = (log₂\|Δ\| × n)^(1+u)`，解锁度含「规律度」因子~~ | 因子数过多 | **已被取代** | → D-power-02 | `system-design/红电系统.md` 修订历史块 |

@@ -1,24 +1,32 @@
 package com.qiqi.li.living.domain.farmland;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.NbtOps;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
+import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.testutil.FakeContainerContext;
 
 /**
- * tryOutputOnce 输出合并回归守卫 —— 2026-09-14 终审发现的部分合并丢物品：
+ * 活耕地功能测试 —— 输出合并回归守卫 + 堆叠判定守卫。
  *
- * <p>生长槽有同种<b>部分堆叠</b>且剩余空间放不下整份产出时，旧实现塞入
- * {@code min(outputCount, space)} 即推进 outputIndex——{@code outputCount - toAdd}
- * 差额物品静默消失（玩家从生长槽拿走一半产物再等下一轮即触发）。
+ * <p>输出合并回归守卫（2026-09-14 终审）：生长槽有同种<b>部分堆叠</b>且剩余空间放不下整份产出时，
+ * 旧实现塞入 {@code min(outputCount, space)} 即推进 outputIndex——
+ * {@code outputCount - toAdd} 差额物品静默消失（玩家从生长槽拿走一半产物再等下一轮即触发）。
  * 修复：合并仅当 space ≥ outputCount，放不下就本 tick 等待（与「不同种占据」
  * 同一语义），零损失。</p>
+ *
+ * <p>堆叠判定守卫：生长节拍不写入物品组件，同种子同阶段的生长期耕地可叠；
+ * 成熟待产出态因 pendingDrops/outputIndex 参与比较而保持不可叠。</p>
  *
  * <p>纯逻辑测试：tryOutputOnce 不依赖 Level（只有 ctx 读写），FakeContainerContext
  * 内存数组即可驱动。产出来源（小麦 = 64 耕地堆叠 × 1 麦 = 64 份产出恰好整组）。</p>
@@ -32,7 +40,7 @@ class LivingFarmlandFunctionTest {
 
     private static FarmlandPlantComponent pendingWheat(int outputIndex) {
         // 小麦成熟冻结：产出 [麦×1, 种子×1]（留种后），outputIndex 待注入
-        return new FarmlandPlantComponent(Items.WHEAT_SEEDS, 7, 7, 0L, outputIndex,
+        return new FarmlandPlantComponent(Items.WHEAT_SEEDS, 7, 7, outputIndex,
             java.util.List.of(new ItemStack(Items.WHEAT), new ItemStack(Items.WHEAT_SEEDS)));
     }
 
@@ -87,7 +95,7 @@ class LivingFarmlandFunctionTest {
         ItemStack farmland = new ItemStack(Items.FARMLAND, 64);
         // 下界疣式：堆叠上限 64、单份产出 4 × 64 耕地 = 256 → 钳制 64
         FarmlandPlantComponent plant = new FarmlandPlantComponent(
-            Items.NETHER_WART, 3, 3, 0L, 0,
+            Items.NETHER_WART, 3, 3, 0,
             java.util.List.of(new ItemStack(Items.NETHER_WART, 4)));
 
         FarmlandPlantComponent out = LivingFarmlandFunction.tryOutputOnce(ctx, 1, farmland, plant, Blocks.NETHER_WART);
@@ -153,5 +161,67 @@ class LivingFarmlandFunctionTest {
             "produce 以槽位上限为预算 —— 旧实现 setItem(64) 后被 clampToSlotLimit 静默截断");
         assertEquals(1, out.outputIndex(),
             "actual > 0 ⇒ 按已交付记账推进（差额有 WARN 留痕）");
+    }
+
+    @Test
+    @DisplayName("同种子同阶段的两叠生长期耕地可堆叠（节拍不写入物品组件）")
+    void sameCropSameAge_stacks() {
+        FarmlandPlantComponent growing = new FarmlandPlantComponent(
+            Items.WHEAT_SEEDS, 3, 7, -1, java.util.List.of());
+        ItemStack a = livingFarmlandWith(growing);
+        ItemStack b = livingFarmlandWith(growing);
+
+        assertEquals(growing, FarmlandPlantComponent.of(b));
+        assertTrue(ItemStack.isSameItemSameComponents(a, b),
+            "同种子 / 同 age / 同 maxAge 的生长期耕地必须可堆叠");
+    }
+
+    @Test
+    @DisplayName("不同生长阶段的耕地仍不可叠（作物状态参与比较）")
+    void differentAge_doesNotStack() {
+        ItemStack a = livingFarmlandWith(new FarmlandPlantComponent(
+            Items.WHEAT_SEEDS, 3, 7, -1, java.util.List.of()));
+        ItemStack b = livingFarmlandWith(new FarmlandPlantComponent(
+            Items.WHEAT_SEEDS, 4, 7, -1, java.util.List.of()));
+
+        assertFalse(ItemStack.isSameItemSameComponents(a, b),
+            "age 是渲染数据源，不同阶段合并会吞掉生长进度");
+    }
+
+    @Test
+    @DisplayName("成熟待产出的耕地与生长期耕地不可堆叠（冻结产物不参与合并）")
+    void frozenMature_doesNotStackWithGrowing() {
+        ItemStack growing = livingFarmlandWith(new FarmlandPlantComponent(
+            Items.WHEAT_SEEDS, 3, 7, -1, java.util.List.of()));
+        ItemStack frozen = livingFarmlandWith(new FarmlandPlantComponent(
+            Items.WHEAT_SEEDS, 7, 7, 0,
+            java.util.List.of(new ItemStack(Items.WHEAT), new ItemStack(Items.WHEAT_SEEDS))));
+
+        assertFalse(ItemStack.isSameItemSameComponents(growing, frozen),
+            "成熟待产出态必须保持不可叠，否则合并会吞掉冻结的战利品");
+    }
+
+    @Test
+    @DisplayName("旧存档组件含 last_growth_attempt_tick ⇒ 多余键被忽略，解码不失败")
+    void legacyCodec_ignoresRemovedTimestamp() {
+        CompoundTag tag = new CompoundTag();
+        tag.putString("crop_seed", "minecraft:wheat_seeds");
+        tag.putInt("age", 3);
+        tag.putInt("max_age", 7);
+        tag.putLong("last_growth_attempt_tick", 12345L);
+        tag.putInt("output_index", -1);
+        tag.put("pending_drops", new ListTag());
+
+        var parsed = FarmlandPlantComponent.CODEC.parse(NbtOps.INSTANCE, tag);
+
+        assertTrue(parsed.result().isPresent(), "旧格式多余键应被忽略");
+        assertEquals(3, parsed.result().orElseThrow().age());
+    }
+
+    private static ItemStack livingFarmlandWith(FarmlandPlantComponent plant) {
+        ItemStack stack = new ItemStack(Items.FARMLAND, 1);
+        LivingItemManager.setLiving(stack, true);
+        FarmlandPlantComponent.set(stack, plant);
+        return stack;
     }
 }

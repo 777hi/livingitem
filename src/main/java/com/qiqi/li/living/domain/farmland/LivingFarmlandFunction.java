@@ -40,8 +40,9 @@ import org.slf4j.LoggerFactory;
  *       变相自动补种——种子不再全额掉落</li>
  *   <li><b>采后回退</b>：浆果丛对齐原版采摘语义（回 age=1，保留 2/3 进度），
  *       其余作物回 age=0 重新长</li>
- *   <li><b>生长节拍</b>：世界轴时间戳（level.getGameTime()），稳态零组件写入零同步；
- *       生长槽被占不影响生长（BLOCKED 语义已精简删除）</li>
+ *   <li><b>生长节拍</b>：世界轴边沿门（level.getGameTime() % 200），概率失败零组件写入零同步；
+ *       门位于湿润标志与输出阶段之后——二者不受节拍限制；生长槽被占不影响生长
+ *       （BLOCKED 语义已精简删除）</li>
  *   <li><b>湿润标志</b>：每 tick 检测（含未种植耕地），翻转才写
  *       LIVING_FARMLAND_MOIST + 主动同步——图标 moist/dry 变体切换数据源</li>
  * </ul></p>
@@ -185,9 +186,9 @@ public class LivingFarmlandFunction implements LivingItemFunction {
             plant = updated;
         }
 
-        // 【概率生长 tick】冷却门（200t 世界轴）——未到期零写入直接返回（稳态）
-        if (now - plant.lastGrowthAttemptTick() < GROWTH_INTERVAL_TICKS) return;
-        plant = plant.withLastGrowthAttemptTick(now);
+        // 【概率生长 tick】世界轴边沿门（每 200t 一次）——节拍由世界时间现算，不写入物品组件。
+        // ⚠️ 必须位于湿润标志与输出阶段之后，否则二者的每 tick 行为会被一并短路。
+        if (now % GROWTH_INTERVAL_TICKS != 0) return;
 
         // 概率判定：湿润传播等级 ≥1（含水源相邻的 4 级）→ f=3.0，否则 1.0
         float f = moistureLevel >= 1 ? 3.0F : 1.0F;

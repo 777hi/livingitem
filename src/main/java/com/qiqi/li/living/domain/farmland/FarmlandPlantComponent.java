@@ -24,27 +24,25 @@ import net.minecraft.world.item.component.TooltipProvider;
  * <ul>
  *   <li>{@code cropSeed}：种子类型记录（null = 未种植），不存库存；生存模式种植时消耗等量种子</li>
  *   <li>{@code age}/{@code maxAge}：生长阶段；maxAge 种植时从作物方块读取并冻结</li>
- *   <li>{@code lastGrowthAttemptTick}：世界轴时间戳（level.getGameTime()），冷却周期判定用——
- *       稳态（未到冷却周期）零组件写入零同步，替代每 tick 累加计数器</li>
  *   <li>{@code outputIndex}/{@code pendingDrops}：成熟后逐项产出。战利品表首次成熟时评估一次
  *       并冻结（避免每周期重掷导致 round-robin 取不稳），全部产出后清空归 -1</li>
  * </ul>
  *
  * <p>注意：本组件<b>不可</b>加入 getIgnoredComponentTypes——age/pendingDrops 是客户端
  * 作物渲染的数据源，进忽略集合会导致组件变化不触发容器同步（大箱快照坑，见
- * tooltip-system.md 坑清单第 3 条）。代价是组件全字段相等才能堆叠（一堆 = 一片同步生长的田）。</p>
+ * tooltip-system.md 坑清单第 3 条）。生长节拍由世界时间现算，不写入本组件；
+ * 成熟待产出态因 pendingDrops/outputIndex 参与比较而不可堆叠。</p>
  */
 public record FarmlandPlantComponent(
     @Nullable Item cropSeed,
     int age,
     int maxAge,
-    long lastGrowthAttemptTick,
     int outputIndex,
     List<ItemStack> pendingDrops
 ) implements TooltipProvider {
 
     public static final FarmlandPlantComponent DEFAULT = new FarmlandPlantComponent(
-        null, 0, 0, 0L, -1, List.of());
+        null, 0, 0, -1, List.of());
 
     public static final Codec<FarmlandPlantComponent> CODEC = RecordCodecBuilder.create(instance ->
         instance.group(
@@ -52,7 +50,6 @@ public record FarmlandPlantComponent(
                 .forGetter(FarmlandPlantComponent::cropSeed),
             Codec.INT.fieldOf("age").forGetter(FarmlandPlantComponent::age),
             Codec.INT.fieldOf("max_age").forGetter(FarmlandPlantComponent::maxAge),
-            Codec.LONG.fieldOf("last_growth_attempt_tick").forGetter(FarmlandPlantComponent::lastGrowthAttemptTick),
             Codec.INT.fieldOf("output_index").forGetter(FarmlandPlantComponent::outputIndex),
             ItemStack.OPTIONAL_CODEC.listOf().fieldOf("pending_drops")
                 .forGetter(FarmlandPlantComponent::pendingDrops)
@@ -69,7 +66,6 @@ public record FarmlandPlantComponent(
             CROP_SEED_CODEC, FarmlandPlantComponent::cropSeed,
             ByteBufCodecs.VAR_INT, FarmlandPlantComponent::age,
             ByteBufCodecs.VAR_INT, FarmlandPlantComponent::maxAge,
-            ByteBufCodecs.VAR_LONG, FarmlandPlantComponent::lastGrowthAttemptTick,
             ByteBufCodecs.VAR_INT, FarmlandPlantComponent::outputIndex,
             ItemStack.OPTIONAL_STREAM_CODEC.apply(ByteBufCodecs.list()), FarmlandPlantComponent::pendingDrops,
             FarmlandPlantComponent::new
@@ -93,25 +89,21 @@ public record FarmlandPlantComponent(
     }
 
     public FarmlandPlantComponent withCropSeed(@Nullable Item cropSeed, int maxAge) {
-        return new FarmlandPlantComponent(cropSeed, 0, maxAge, 0L, -1, List.of());
+        return new FarmlandPlantComponent(cropSeed, 0, maxAge, -1, List.of());
     }
 
     public FarmlandPlantComponent withAge(int age) {
-        return new FarmlandPlantComponent(cropSeed, age, maxAge, lastGrowthAttemptTick, outputIndex, pendingDrops);
+        return new FarmlandPlantComponent(cropSeed, age, maxAge, outputIndex, pendingDrops);
     }
 
     /** maxAge 重冻结 + age 钳制（存量数据自愈：注册表修正后旧组件里的过期 maxAge 痊愈） */
     public FarmlandPlantComponent withMaxAge(int newMaxAge) {
         return new FarmlandPlantComponent(cropSeed, Math.min(age, newMaxAge), newMaxAge,
-            lastGrowthAttemptTick, outputIndex, pendingDrops);
-    }
-
-    public FarmlandPlantComponent withLastGrowthAttemptTick(long tick) {
-        return new FarmlandPlantComponent(cropSeed, age, maxAge, tick, outputIndex, pendingDrops);
+            outputIndex, pendingDrops);
     }
 
     public FarmlandPlantComponent withOutput(int outputIndex, List<ItemStack> pendingDrops) {
-        return new FarmlandPlantComponent(cropSeed, age, maxAge, lastGrowthAttemptTick, outputIndex, pendingDrops);
+        return new FarmlandPlantComponent(cropSeed, age, maxAge, outputIndex, pendingDrops);
     }
 
     @Override

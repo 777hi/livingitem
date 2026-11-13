@@ -52,7 +52,7 @@ class LivingFarmlandPlacementTest {
         ItemStack stack = new ItemStack(Items.FARMLAND, 1);
         LivingItemManager.setLiving(stack, true);
         FarmlandPlantComponent.set(stack, new FarmlandPlantComponent(
-            Items.WHEAT_SEEDS, 5, 7, 0L, -1, List.of()));
+            Items.WHEAT_SEEDS, 5, 7, -1, List.of()));
         return stack;
     }
 
@@ -107,7 +107,7 @@ class LivingFarmlandPlacementTest {
         ItemStack livingDirt = new ItemStack(Items.DIRT, 1);
         LivingItemManager.setLiving(livingDirt, true);
         FarmlandPlantComponent.set(livingDirt, new FarmlandPlantComponent(
-            Items.WHEAT_SEEDS, 5, 7, 0L, -1, List.of()));
+            Items.WHEAT_SEEDS, 5, 7, -1, List.of()));
         assertFalse(LivingFarmlandPlacement.isPlantable(livingDirt),
             "非耕地（即使带种植组件）→ false");
     }

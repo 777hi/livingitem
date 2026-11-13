@@ -30,11 +30,11 @@
 > **功能需求的来源**与**行为对错的判据**。⚠️ **只写规则与语义**；数值与操作步骤归实现层。
 
 **语义**：**活耕地 = 容器内的虚拟农田**。把原版的「耕地 + 作物」二维系统**虚拟化到容器网格** ——
-在 GUI 里完成**获取 / 种植 / 催熟**，之后容器每 tick 自动推进生长，成熟后**逐项产出**到上方生长槽。
+在 GUI 里完成**获取 / 种植 / 催熟**，之后按世界节拍获得生长机会，成熟后**逐项产出**到上方生长槽。
 
 **获取**：活土（泥土 / 草方块 / 土径 + 砂土 / 缠根泥土）+ 活锄头右键 → 活耕地 / 活泥土。
 
-**核心循环**：活锄头耕地 → 活种子种植 → 容器 tick 概率生长（湿润 ×3 / 干燥 ×1）→
+**核心循环**：活锄头耕地 → 活种子种植 → 世界节拍概率生长（湿润 ×3 / 干燥 ×1）→
 `age = maxAge` → 冻结战利品表 → **逐项产出** → 生长槽。
 
 **规则**（违反即 bug）：
@@ -47,12 +47,19 @@
 | 4 | **BLOCKED 语义已删**：生长槽被占**只阻塞输出，生长照常** | 惩罚性「age 归 0」过重；生长与运输解耦更简单 |
 | 5 | **浆果丛采后回退 `age = 1`**（原版采摘语义） | 查证原版 `SweetBerryBushBlock`：右键采摘后重置 1（非清零 / 非保留 `maxAge`） |
 | 6 | **留种**：冻结时 `cropSeed` 产出项**总量 −1** | 变相自动补种（如小麦种子 2 → 1） |
-| 7 | **世界轴时间戳节拍**（`level.getGameTime()`，非每 tick 计数器） | 稳态零组件写入零同步；跨会话连续，与红电相位时钟同源 |
+| 7 | **生长机会按世界统一刻度给出**（每 200t 一次概率判定，节拍不写入物品组件） | 同种子同阶段的生长期耕地可堆叠；瞬态节拍不随物品迁移（活熔炉 `ContainerRuntimeCache` 同款判据） |
 | 8 | 湿润判定来自**邻接流体**（只需「槽位有无水流」） | 活耕地**不依赖水领域实现**（经契约层 `api/FluidPresence`） |
+
+**明确不做（边界，违反即 bug）**：
+
+| # | 边界 | 为什么 |
+|---|---|---|
+| 1 | **成熟 / 正在产出战利品的耕地不可堆叠** | `pendingDrops` / `outputIndex` 参与组件比较；合并只保留目标槽那份，会吞掉另一叠已冻结的随机产物 |
+| 2 | **种下后不立即判定，退出重进也不补判定** | 节拍锁在世界 200t 刻度上，首次机会需等 0~200t（约 10 秒）；这是「零物品状态」的既定代价，不是可修的 bug |
 
 **能力清单**：✅ 获取（活锄头耕地）· ✅ 种植（等量种子消耗 + 悬停提示）· ✅ 生长（概率 + 湿润 ×3）
 · ✅ round-robin 产出 + 留种 · ✅ 骨粉催熟 · ✅ 双槽渲染（种子图标 + 作物阶段大图）
-· ✅ 特殊作物（浆果丛语义）
+· ✅ 特殊作物（浆果丛语义）· ✅ 同种子同阶段的生长期耕地可堆叠
 
 **验证入口**：
 
@@ -60,6 +67,8 @@
 |---|---|
 | 1 等量种子消耗 · 种植 · 4 生长不受阻塞影响 | `LivingFarmlandFunctionTest` |
 | 2 / 3 round-robin 产出 · 合并 | `LivingFarmlandFunctionTest` · §12 验证清单 |
+| 7 世界统一节拍 · 非刻度零写入 · 边界刻度放行 | `LivingFarmlandMoistureTest` |
+| 7 同状态可叠 · 成熟态不可叠 · 旧格式解码 | `LivingFarmlandFunctionTest` |
 | 作物分类 / 准入 | `CropClassifierTest` · `TillablesTest` |
 | 骨粉催熟 | `FertilizeTransferTest` |
 | 放置交互 | `LivingFarmlandPlacementTest` |
@@ -72,7 +81,7 @@
 
 活耕地将原版的「耕地 + 作物」二维种植系统**虚拟化到容器网格**。玩家在容器 GUI 内完成
 获取（活锄头耕活土）、种植（活种子右键）、催熟（活骨粉）三个动作，之后含活耕地的
-被加载容器每 tick 自动推进作物生长，成熟后逐项产出作物到上方的「生长槽位」。
+被加载容器按世界 200t 刻度给出生长机会，成熟后逐项产出作物到上方的「生长槽位」。
 
 ```
 活耕地生存链路：
@@ -98,7 +107,7 @@
 | 4 | **BLOCKED 语义删除**：生长槽被占只阻塞输出，生长照常 | 惩罚性 age 归 0 过重；生长与运输解耦更简单 |
 | 5 | **浆果丛采后回退 age=1**（原版采摘语义） | 查证原版 SweetBerryBushBlock：右键采摘后 age 重置 1（非清零/非保留 maxAge）；产出由概率 tick 驱动模拟自动采摘 |
 | 6 | **留种**：冻结时 cropSeed 产出项总量 -1 | 种植消耗等量种子（第五轮），产出中的种子 -1 作为变相自动补种（如小麦种子 2→1）；多池掉同种种子也只扣一份 |
-| 7 | **世界轴时间戳节拍**：`level.getGameTime()` 而非每 tick 计数器 | 稳态（冷却未到）零组件写入零同步（熔炉燃烧标志同铁律）；跨会话连续，与红电相位时钟 `resolvePhaseClock` 同源 |
+| 7 | **世界轴边沿门**：`level.getGameTime() % 200 == 0` 才进入概率判定，节拍不写入物品组件 | 生长节拍是世界时钟的派生量；瞬态数据不影响物品堆叠（活熔炉 `ContainerRuntimeCache` 同款判据），概率失败时零组件写入零同步 |
 
 ### 1.3 数据流总览
 
@@ -107,7 +116,7 @@
 ─────────────────────────────────────────────────────────
 LivingFarmlandFunction.tick（每容器 tick）
   ├─ 分组扫描由框架完成（scanAndGroupLivingItems）
-  ├─ 冷却到期判定（getGameTime - lastGrowthAttemptTick ≥ 200）
+  ├─ 世界轴节拍门（getGameTime % 200 == 0 才继续）
   ├─ GROWING：湿润概率 → age++               ─┐
   ├─ MATURE：冻结/产出/推进/重置              ├─ 写组件 + syncSlotToClients
   └─ 输出放不下 → 本 tick 等待重试           ─┘   （脏槽批量同步）
@@ -117,6 +126,8 @@ LivingFarmlandFunction.tick（每容器 tick）
                                       render @TAIL 读组件 → blit
                                     （耕地小图 + 上方空槽大图）
 ```
+
+> 概念示意；槽内精确顺序（湿润标志 → 输出阶段 → 节拍门 → 概率判定）见 §5.1。
 
 ---
 
@@ -132,17 +143,20 @@ LivingFarmlandFunction.tick（每容器 tick）
 | `cropSeed` | `@Nullable Item` | 种子类型记录（null = 未种植），不存库存；生存模式种植时消耗与耕地堆叠数等量的种子，创造模式免消耗（§3.2） |
 | `age` | `int` | 当前生长阶段（0 ~ maxAge） |
 | `maxAge` | `int` | 总生长阶段（种植时从作物方块读取并**冻结**——防模组更新后错位） |
-| `lastGrowthAttemptTick` | `long` | 上次生长/产出尝试的世界轴时间戳（冷却节拍基准） |
 | `outputIndex` | `int` | round-robin 当前产出项索引（-1 = 未开始/已完成） |
 | `pendingDrops` | `List<ItemStack>` | 首次成熟时评估冻结的战利品列表（round-robin 数据源，Codec 用 `ItemStack.OPTIONAL_CODEC.listOf()`） |
 
+生长节拍**不写入本组件**——它是世界时钟的派生量，由
+`LivingFarmlandFunction` 从 `level.getGameTime() % 200` 现算（§5.1）。
+
 **不进 `getIgnoredComponentTypes()`**——age/pendingDrops 是客户端渲染数据源，进忽略
-集合会复现「大箱快照坑」（通用不变量见 [container-identity.md](../system-design/container-identity.md)）。代价：record **全字段相等**才可堆叠
-（作物类型 / age / maxAge / 冷却戳 / 产出索引 / 冻结产物）。`pendingDrops` 按列表自身的
+集合会复现「大箱快照坑」（通用不变量见 [container-identity.md](../system-design/container-identity.md)）。record **全字段相等**才可堆叠
+（作物类型 / age / maxAge / 产出索引 / 冻结产物）：生长期只有前三项有值 ⇒ 同种子同阶段必可叠；
+成熟待产出态因后两项有值而保持不可叠。`pendingDrops` 按列表自身的
 `equals` 比较，不能仅凭产物类型和数量一致就断言组件相等；其它物品组件也仍参与堆叠判定。
 
 **`setData` 移除语义安全**：`LivingItemManager.setData` 在组件等于 DEFAULT 时会 remove；
-已种植态 `cropSeed != null` 永不等 DEFAULT（`null,0,0,0L,-1,List.of()`），不受影响。
+已种植态 `cropSeed != null` 永不等 DEFAULT（`null,0,0,-1,List.of()`），不受影响。
 
 **网络编码细节**：`@Nullable Item` 用 `ByteBufCodecs.optional(ByteBufCodecs.registry(Registries.ITEM))`
 + `map` 桥接 Optional↔null（注意 StreamCodec.map 方向：factory 是 decode 侧
@@ -152,7 +166,7 @@ LivingFarmlandFunction.tick（每容器 tick）
 
 ```
 ┌──────────┐  种植种子  ┌──────────┐
-│  EMPTY    │─────────→│  GROWING │  age 0→max（概率 tick，200t 冷却门）
+│  EMPTY    │─────────→│  GROWING │  age 0→max（概率 tick，200t 边沿门）
 │ 未种植     │          └─────┬────┘
 └──────────┘                 │ age 达到 maxAge
                              ↓
@@ -378,7 +392,7 @@ age=1，保留 2/3 进度，概率 tick 从 1 长回 3 再产）；其余作物�
 
 ## 5. 生长逻辑
 
-### 5.1 双阶段节拍（2026-09-13 第四轮定稿）
+### 5.1 双阶段节拍（世界轴边沿门）
 
 tick 内每块活耕地按固定顺序走两阶段：
 
@@ -389,19 +403,21 @@ if (isMature && growthSlot >= 0 && !plant.pendingDrops().isEmpty()) {
     plant = tryOutputOnce(...);   // 放当前项/推进/产完重置
 }
 
-// 【概率生长 tick】冷却门 200t 世界轴——只节流概率判定，不节流输出：
-if (now - plant.lastGrowthAttemptTick() < GROWTH_INTERVAL_TICKS) return;
-plant = plant.withLastGrowthAttemptTick(now);
+// 【概率生长 tick】世界轴边沿门——只节流概率判定，不节流输出：
+// ⚠️ 必须位于湿润标志与输出阶段之后，否则二者的每 tick 行为会被一并短路。
+if (now % GROWTH_INTERVAL_TICKS != 0) return;
 // 概率成功（湿润 1/9 / 干燥 1/26）：
 //   未成熟 → age+1
 //   成熟且待输出为空 → tryFreezeDrops（此刻才获取战利品表——成熟不着急）
 ```
 
-世界轴与红电相位时钟同源决策：跨会话连续，不受容器本地 tickCounter 重进重置影响。
-旧设计「每 tick growthCooldown++」会让一片 27 格耕地每 tick 27 次组件写入+网络包。
+节拍由 `level.getGameTime()` 现算，是世界时钟的派生量，**不写入物品组件**：
+同种子同阶段的生长期耕地因此可堆叠（§0 规则 7）；概率失败时组件不变，
+`updatePlant` 的 equals 守卫让本 tick 零写入零同步。
 
-**首拍即时**：种植时戳为 0，`now - 0 ≥ 200` 恒真 → 种下后第一次冷却判定立即发生
-（然后按 200t 节奏），玩家反馈更快。
+**代价（既定，见 §0 明确不做）**：节拍锁在世界 200t 刻度上，种下后第一次生长机会需等
+0~200t（约 10 秒）；退出重进也不补判定。首拍给的本就是一次概率判定，
+玩家反馈主要来自 §3.2 的种植悬停提示与种子图标。
 
 ### 5.2 湿润传播（原版式水分扩散，2026-09-13 第五轮定稿）
 
@@ -509,7 +525,7 @@ FD 下部方块表只掉种子本身（`rice.json` → 稻谷×1、`budding_toma
 ### 6.2 逐项产出（每 tick 不限速，2026-09-13 第四轮定稿）
 
 ```java
-// 【输出阶段】每 tick（在概率冷却门之前，不受 200t 节流）：
+// 【输出阶段】每 tick（在概率节拍门之前，不受 200t 节流）：
 ItemStack drop = pendingDrops.get(outputIndex);
 int count = Math.min(farmlandCount * drop.getCount(), drop.getMaxStackSize());
 growthSlot 空 → 放入；同种且剩余空间 ≥ 整份 → 合并；空间不足/不同种 → 本 tick 放不进
@@ -780,7 +796,8 @@ find src/main/java/com/qiqi/li/living/domain/farmland -name "*.java"
 |------|------|
 | `InteractionRegistryTest`（7 项） | 两趟优先级：精确不被通配遮蔽（骨粉→bonemeal）、非精确回退通配（种子→plant_crop）、精确要求活触发器、无匹配 null、非活目标不匹配、triggerFilter 数量门槛（种子不足不拦截原版交换）、triggerFilter 非种子不匹配 |
 | `CropClassifierTest`（10 项） | 火把花 maxAge=2 超属性值域 + displayStateFor 成熟回退花/未成熟照常/超熟钳制、普通作物 displayStateFor 直通无回归、瓶子草准入（Block 白名单）+ maxAge=4 + 成熟态 HALF=LOWER、HARVEST_BLOCKS 原版条目解析、柱状段未注册空表/属性覆盖应用（HALF 翻转+同 age）/属性缺失静默跳过 |
-| `LivingFarmlandFunctionTest`（5 项） | 输出合并回归（2026-09-14 终审）：部分合并等待不丢物品、整份合并推进、空槽全放、堆叠上限钳制、边界含等号 |
+| `LivingFarmlandFunctionTest` | 输出合并回归（2026-09-14 终审）：部分合并等待不丢物品、整份合并推进、空槽全放、堆叠上限钳制、边界含等号；堆叠判定守卫：同种子同阶段可叠 / 不同阶段不可叠 / 成熟待产出不可叠；旧格式（含已删时间戳键）解码不失败 |
+| `LivingFarmlandMoistureTest` | 湿润 BFS（水源相邻 4 级 → 沿耕地每跳 -1、普通耕地阻断）+ 边沿门：非刻度不进概率判定且零写入、刻度概率失败零写入、刻度概率成功 age+1（`computeMoisture` 私有 ⇒ 走完整 tick + 假 FluidPresence） |
 | `FertilizeTransferTest`（6 项） | 自动施肥语义（2026-09-15）：未成熟 age+1 扣粉、已冻结零空转不消耗、非活耕地/未种植/非骨粉拒绝；`tryFertilize` 本身不做货物准入（政策在漏斗侧） |
 | `CrossContainerTransferFertilizeTest`（15 项） | 槽位交互分发（2026-09-15）：拉取方向入口（邻居骨粉 → 本容器耕地 age+1 且扣邻居 1 粉、空槽跳过命中后面的粉堆、邻居无粉不误伤、冻结耕地零空转不烧粉、非活/未种植拒绝）+ 已知货物入口（生效真扣 1 粉、冻结不真扣、非骨粉/空目标槽不接管）+ `canInteract` 廉价筛选谓词 + 推送方向（普通骨粉照常插入、活骨粉不入空槽、活骨粉不与同种普通堆合并、活熔炉全拒）+ **活骨粉三个入口全被拒** |
 | `SlotInteractionCargoGateTest`（5 项） | 货物准入唯一定义点 `isEligibleCargo`（2026-09-15 用户定案）：真值表（普通物品/活箱子/活末影箱合法，活骨粉/活熔炉非法）、工厂同口径返回 null、**活骨粉 + 活耕地不施肥不扣货**、普通骨粉端到端无回归 |
@@ -1092,6 +1109,34 @@ KC（KaleidoscopeCookery）水稻成熟形态是**三格柱**，活耕地里第�
 **教训**：凡是「这个物品属于某一类」的判定，优先找**语义化能力**（ItemAbility / 标签 /
 DataComponent），不要枚举物品清单——清单每多一个模组就失效一次。
 
+### 11.18 把世界节拍存进物品组件 = 同状态耕地无法堆叠（2026-11-13 定案）
+
+**现象**：两块同种子、同生长阶段的已种植活耕地在背包 / 容器里无法合并。
+
+**根因**：`FARMLAND_PLANT` 是 `persistent + networkSynchronized` 的 record，且不进
+`getIgnoredComponentTypes()`（age/pendingDrops 是客户端渲染数据源，进忽略集合会复现
+大箱快照坑）⇒ 组件全字段相等才可堆叠。旧字段 `lastGrowthAttemptTick` 让每叠田记住
+自己的判定时刻（elapsed 冷却 `now - last >= 200`），两块分别种下的田相位永不重合；
+`pendingDrops` 各自掷骰冻结、`outputIndex` 游标也会造成差异。玩家只看得见作物与 age，
+组件里其余状态不可见 ⇒ 表现为「看起来一样却叠不了」。
+
+**修复**：删掉该字段（Codec / StreamCodec / DEFAULT / withXxx 同步收敛），概率生长改
+世界轴边沿门 `now % 200 == 0`；生长期组件只剩田自身状态 ⇒ 同种子同 age 必可叠，
+成熟待产出态仍因 pendingDrops/outputIndex 保持不可叠。
+
+**否决过的方案**：整个组件加进 ignored（会吞掉作物类型、age 与产物，且客户端同步失明）；
+拆成「语义组件 + 运行时组件」或新增堆叠比较器钩子（为一个写错的值引入新机制，
+违背「新增机制前先找对应物」）。项目早有成文判据 —— 活熔炉
+`ContainerRuntimeCache`「瞬态数据不影响物品堆叠」、活侦测器 / 活活塞「运行态不跟物品迁移」，
+活海绵 / 活信标的 `getGameTime() % N` 边沿门则是无存储先例。
+
+**代价（用户确认接受）**：节拍锁在世界 200t 刻度 ⇒ 种下后首次生长机会等 0~200t
+（约 10 秒），退出重进不再补判定；写入 §0「明确不做」边界。
+
+**教训**：判断一个值该不该进组件，问「复制或搬走这个物品时，它还属于这块田吗」——
+世界时钟的读数答案是否定的。**别把实现机制写进 §0 玩法契约**：旧规则 7 把
+「世界轴时间戳节拍」升格成规则，之后所有讨论都被它绑住。
+
 ---
 
 ## 12. 验证清单
@@ -1163,8 +1208,13 @@ DataComponent），不要枚举物品清单——清单每多一个模组就失�
 - [ ] **活骨粉不给漏斗施肥**（准入规则）：源槽放活骨粉 → 四个方向都不施肥、
       不入槽、不与普通骨粉堆合并（活物品不作货物）；活骨粉改到 GUI 右键用 → 正常催熟
 - [ ] **跨容器拉取施肥后 GUI 即时刷新**：方向 ② 下耕地 tooltip 的 age 立刻 +1
-      （分支内主动 syncSlotToClients，不等 200t 冷却）
+      （分支内主动 syncSlotToClients，不等生长节拍）
 - [ ] **湿润图标**：邻格倒水成源 → 耕地图标变深（farmland_moist）；汲走/挤没后，周围流体退去且无其它湿润路径时变浅
+- [ ] **同种子同阶段的生长期耕地可堆叠**：两块分别种下、age 相同的已种植耕地
+      拖到一起 → 合并成一堆；之后同步生长、产出按堆叠数放大
+- [ ] **成熟 / 正在产出的耕地不可叠**：已冻结战利品表的耕地与生长期耕地不合并
+- [ ] **种下后不再立即判定**：首次生长机会最多等约 10 秒（概率失败时无可见变化）；
+      退出重进不额外补一次机会
 
 ### 12.3 渲染
 

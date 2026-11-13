@@ -41,7 +41,7 @@ class FertilizeTransferTest {
         ItemStack stack = new ItemStack(Items.FARMLAND, 1);
         LivingItemManager.setLiving(stack, true);
         FarmlandPlantComponent.set(stack,
-            new FarmlandPlantComponent(Items.WHEAT_SEEDS, age, maxAge, 0L, -1, java.util.List.of()));
+            new FarmlandPlantComponent(Items.WHEAT_SEEDS, age, maxAge, -1, java.util.List.of()));
         return stack;
     }
 
@@ -64,7 +64,7 @@ class FertilizeTransferTest {
         ItemStack farmland = new ItemStack(Items.FARMLAND, 1);
         LivingItemManager.setLiving(farmland, true);
         FarmlandPlantComponent.set(farmland, new FarmlandPlantComponent(
-            Items.WHEAT_SEEDS, 7, 7, 0L, 0,
+            Items.WHEAT_SEEDS, 7, 7, 0,
             java.util.List.of(new ItemStack(Items.WHEAT))));
         ItemStack bonemeal = new ItemStack(Items.BONE_MEAL, 16);
 
