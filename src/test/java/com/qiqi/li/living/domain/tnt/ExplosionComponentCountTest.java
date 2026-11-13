@@ -1,7 +1,10 @@
 package com.qiqi.li.living.domain.tnt;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -9,6 +12,9 @@ import org.junit.jupiter.api.Test;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.testutil.FakeContainerContext;
 
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
@@ -54,6 +60,30 @@ class ExplosionComponentCountTest {
         assertTrue(ctx.getItem(0).isEmpty(), "活 TNT 被清空");
         assertEquals(8, ctx.getItem(1).getCount(), "普通 TNT 不受影响");
         assertEquals(5, ctx.getItem(2).getCount(), "非 TNT 物品不受影响");
+    }
+
+    @Test
+    @DisplayName("无效基础半径先拒绝，活 TNT 不消耗也不访问爆炸世界")
+    void invalidRadius_preservesTnt() {
+        for (float radius : new float[] { 0, -1, Float.NaN, Float.POSITIVE_INFINITY, Float.MAX_VALUE }) {
+            FakeContainerContext ctx = new FakeContainerContext(27, 9).withBlockPos(new BlockPos(8, 64, 8));
+            ctx.setItem(0, livingTnt(1));
+            ServerLevel level = mock(ServerLevel.class);
+
+            assertFalse(ExplosionComponent.ignite(ctx, level, radius, true), "radius=" + radius);
+            assertEquals(1, ctx.getItem(0).getCount(), "拒绝参数不能吞 TNT，radius=" + radius);
+            verifyNoInteractions(level);
+        }
+    }
+
+    @Test
+    @DisplayName("非服务端入口拒绝并保留活 TNT")
+    void nonServerLevel_preservesTnt() {
+        FakeContainerContext ctx = new FakeContainerContext(27, 9).withBlockPos(new BlockPos(8, 64, 8));
+        ctx.setItem(0, livingTnt(2));
+
+        assertFalse(ExplosionComponent.ignite(ctx, mock(Level.class), 4, true));
+        assertEquals(2, ctx.getItem(0).getCount());
     }
 
     @Test

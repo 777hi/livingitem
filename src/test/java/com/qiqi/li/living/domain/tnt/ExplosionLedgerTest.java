@@ -7,7 +7,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.BiPredicate;
 
 import org.junit.jupiter.api.DisplayName;
@@ -56,16 +58,39 @@ class ExplosionLedgerTest {
         Mockito.when(level.dimension()).thenReturn(Level.OVERWORLD);
 
         ServerChunkCache source = Mockito.mock(ServerChunkCache.class);
+        Map<ChunkPos, LevelChunk> chunks = new HashMap<>();
+        Map<ChunkPos, Long> epochs = new HashMap<>();
         Mockito.when(source.getChunkNow(Mockito.anyInt(), Mockito.anyInt())).thenAnswer(inv -> {
             int x = inv.getArgument(0, Integer.class);
             int z = inv.getArgument(1, Integer.class);
             if (!loaded.test(x, z)) return null;
-            LevelChunk chunk = Mockito.mock(LevelChunk.class);
-            Mockito.when(chunk.getPos()).thenReturn(new ChunkPos(x, z));
-            return chunk;
+            ChunkPos pos = new ChunkPos(x, z);
+            return chunks.computeIfAbsent(pos, cp -> {
+                LevelChunk chunk = Mockito.mock(LevelChunk.class);
+                Mockito.when(chunk.getPos()).thenReturn(cp);
+                Mockito.when(chunk.getExistingDataOrNull(TntComponents.EXPLOSION_EPOCH)).thenAnswer(call -> epochs.get(cp));
+                Mockito.when(chunk.setData(Mockito.eq(TntComponents.EXPLOSION_EPOCH), Mockito.anyLong()))
+                    .thenAnswer(call -> epochs.put(cp, call.getArgument(1, Long.class)));
+                return chunk;
+            });
         });
         Mockito.when(level.getChunkSource()).thenReturn(source);
         return level;
+    }
+
+    private static void flush(ExplosionLedger ledger, ServerLevel level, ExplosionLedger.ChunkApplier applier) {
+        ledger.flush(level, applier, new ExplosionLedger.VisibleChunks() {
+            @Override
+            public Iterable<ChunkPos> snapshot() {
+                return ledger.remainingChunks();
+            }
+
+            @Override
+            public ExplosionLedger.VisibleChunk lookup(ChunkPos pos) {
+                LevelChunk chunk = level.getChunkSource().getChunkNow(pos.x, pos.z);
+                return new ExplosionLedger.VisibleChunk(chunk, chunk);
+            }
+        });
     }
 
     /** 记录"实际破坏"落到了哪些区块。 */
@@ -110,7 +135,7 @@ class ExplosionLedgerTest {
         ExplosionLedger ledger = new ExplosionLedger();
         ledger.schedule(params(16), Level.OVERWORLD);
 
-        ledger.flush(noneLoaded(), (l, p, c) -> fail("未加载的区块不该被应用"));
+        flush(ledger, noneLoaded(), (l, p, c) -> fail("未加载的区块不该被应用"));
 
         assertEquals(0, ledger.pendingCheckCount(Level.OVERWORLD),
             "未加载 → 丢弃（否则每 tick 都要重扫几百个未加载区块）；靠 ChunkEvent.Load 重新登记");
@@ -123,7 +148,7 @@ class ExplosionLedgerTest {
     void droppedChunk_isAppliedAfterNaturalLoad() {
         ExplosionLedger ledger = new ExplosionLedger();
         ledger.schedule(params(16), Level.OVERWORLD);
-        ledger.flush(noneLoaded(), (l, p, c) -> fail("未加载时不应用"));
+        flush(ledger, noneLoaded(), (l, p, c) -> fail("未加载时不应用"));
         assertEquals(0, ledger.pendingCheckCount(Level.OVERWORLD));
 
         // 模拟 ChunkEvent.Load → onChunkLoaded 只登记坐标
@@ -131,7 +156,7 @@ class ExplosionLedgerTest {
         ledger.scheduleCheck(Level.OVERWORLD, target);
 
         Recorder recorder = new Recorder();
-        ledger.flush(allLoaded(), recorder);
+        flush(ledger, allLoaded(), recorder);
 
         assertEquals(List.of(target), recorder.applied, "玩家走过去 → 区块加载 → 破坏补上");
         assertEquals(8, ledger.remainingOf(0), "位图推进一位");
@@ -150,7 +175,7 @@ class ExplosionLedgerTest {
             "用例前提：受影响区块要多于预算，实测 " + affected);
 
         Recorder first = new Recorder();
-        ledger.flush(allLoaded(), first);
+        flush(ledger, allLoaded(), first);
 
         assertEquals(ExplosionLedger.MAX_CHUNKS_PER_TICK, first.applied.size(),
             "单 tick 只处理预算内的区块（限速安全阀）");
@@ -164,7 +189,7 @@ class ExplosionLedgerTest {
         int applied = first.applied.size();
         for (int pass = 0; pass < 8 && ledger.entryCount() > 0; pass++) {
             Recorder next = new Recorder();
-            ledger.flush(allLoaded(), next);
+            flush(ledger, allLoaded(), next);
             applied += next.applied.size();
         }
 
@@ -186,15 +211,19 @@ class ExplosionLedgerTest {
             ExplosionParams.Mode.NORMAL, true), Level.OVERWORLD);
         assertEquals(2, ledger.entryCount());
 
+        ServerLevel level = allLoaded();
         Recorder recorder = new Recorder();
-        for (int pass = 0; pass < 6 && ledger.entryCount() > 0; pass++) {
-            ledger.flush(allLoaded(), recorder);
+        for (int pass = 0; pass < 6 && ledger.pendingCheckCount(Level.OVERWORLD) > 0; pass++) {
+            flush(ledger, level, recorder);
         }
 
         long centerHits = recorder.applied.stream().filter(new ChunkPos(0, 0)::equals).count();
         assertEquals(2, centerHits,
             "重叠区块对每条条目各应用一次 —— 破坏必须幂等（第二次看到的已是空气）");
-        assertEquals(0, ledger.entryCount(), "两场爆炸都应各自收敛");
+        assertEquals(1, ledger.entryCount(), "SUPER 持续保留，普通位图完成后移除");
+        ledger.scheduleCheck(Level.OVERWORLD, new ChunkPos(0, 0));
+        flush(ledger, level, recorder);
+        assertEquals(2, recorder.applied.stream().filter(new ChunkPos(0, 0)::equals).count());
     }
 
     @Test
@@ -207,12 +236,12 @@ class ExplosionLedgerTest {
         ExplosionLedger.ChunkApplier registering = (l, p, c) ->
             ledger.scheduleCheck(Level.OVERWORLD, late); // 模拟"处理过程中又引爆一场"
 
-        ledger.flush(allLoaded(), registering);
+        flush(ledger, allLoaded(), registering);
 
         assertEquals(1, ledger.pendingCheckCount(Level.OVERWORLD),
             "flush 期间新登记的区块必须还在队列里 —— 它已加载、不会再触发 ChunkEvent.Load，丢了就永远不炸");
 
-        ledger.flush(allLoaded(), new Recorder());
+        flush(ledger, allLoaded(), new Recorder());
         assertEquals(0, ledger.pendingCheckCount(Level.OVERWORLD), "下一 tick 消化掉（不在任何条目范围内 → 直接出队）");
     }
 
@@ -235,7 +264,7 @@ class ExplosionLedgerTest {
     void saveLoad_roundTrip() {
         ExplosionLedger ledger = new ExplosionLedger();
         ledger.schedule(params(64), Level.OVERWORLD);
-        ledger.flush(allLoaded(), new Recorder()); // 处理掉一批，制造"部分完成"的状态
+        flush(ledger, allLoaded(), new Recorder()); // 处理掉一批，制造"部分完成"的状态
         int remainingBefore = ledger.remainingOf(0);
         int pendingBefore = ledger.pendingCheckCount(Level.OVERWORLD);
 
@@ -251,7 +280,7 @@ class ExplosionLedgerTest {
             for (ChunkPos cp : restored.remainingChunks()) {
                 restored.scheduleCheck(Level.OVERWORLD, cp);
             }
-            restored.flush(allLoaded(), rest);
+            flush(restored, allLoaded(), rest);
         }
         assertEquals(remainingBefore, rest.applied.size(), "恢复后能恰好补完剩余区块，不多不少");
         assertTrue(pendingBefore > 0);

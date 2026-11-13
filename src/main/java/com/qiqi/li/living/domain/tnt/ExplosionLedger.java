@@ -1,73 +1,39 @@
 package com.qiqi.li.living.domain.tnt;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import com.qiqi.li.logging.ModLog;
+import com.qiqi.li.living.util.StaticCacheRegistry;
 
-import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
-import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ChunkHolder;
+import net.minecraft.server.level.ChunkMap;
+import net.minecraft.server.level.ChunkResult;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.saveddata.SavedData;
-import com.qiqi.li.living.util.StaticCacheRegistry;
 
-/**
- * 待炸账本 —— 「未观测的地形变更推迟到观测时」（原版 TNT 引信模型的**爆炸范围**版本）。
- *
- * <p>背景与完整推导见 {@code docs/system-design/living-item-infrastructure.md} §3.2.2。</p>
- *
- * <h3>它解决什么</h3>
- * 爆炸半径可达 235 格（跨几十上百个区块），其中一部分可能未加载。若在爆炸瞬间去读那些区块，
- * 就会走 {@code getChunk(requireChunk=true)} ⇒ 强制加载（单次 289 区块足迹、主线程阻塞、
- * 票据钉住）。若直接跳过，爆炸语义就残缺。
- *
- * <p><b>原版给的答案</b>：原版 TNT 的引信在未 tick 的区块里**冻结**，玩家回来才续走爆炸
- * （{@code PrimedTnt.fuse} 随区块 NBT 持久化，实体只在 ticking 区块 tick）。即
- * 「世界只在被观测的地方演化」。本账本把这条原则应用到**爆炸范围**上：</p>
- * <ul>
- *   <li>爆炸时只登记参数（{@link ExplosionParams}）+ 位图，**不读任何方块**</li>
- *   <li>区块**已加载** → 在 tick 阶段按预算分帧应用破坏</li>
- *   <li>区块**未加载** → 什么都不做；它将来**自然加载**时（{@code ChunkEvent.Load}）登记，
- *       下一 tick 应用 ⇒ 玩家走过去看到的是"已经炸过"的地形</li>
- * </ul>
- *
- * <h3>两条红线（与 ContainerChunkCache 同款，别违反）</h3>
- * <ol>
- *   <li>{@link #onChunkLoaded} 在区块加载任务**内部**被回调 ⇒ <b>只登记坐标，不碰世界</b>
- *       （见 {@code ContainerChunkCache.onChunkLoad} 的说明）。</li>
- *   <li>{@link #flush} 是唯一允许读方块/改方块的地方 —— 它在 {@code ServerTickEvent.Pre} 里被调用，
- *       主线程不在任何区块任务内部。</li>
- * </ol>
- */
+/** 待炸账本：普通模式保存完成位图，SUPER 保存参数与纪元；破坏只在 tick 内按区块预算执行。 */
 public class ExplosionLedger extends SavedData {
-
-    /** 存档内的数据名。 */
     private static final String DATA_ID = "living_item_pending_explosions";
-
-    /** 待炸条目上限 —— 防御异常累积（每条最大约 130 字节位图）。 */
-    static final int MAX_ENTRIES = 256;
-
-    /** 单 tick 最多应用多少个区块（分帧预算）—— 见 §3.2.2「限速」安全阀。 */
+    static final int MAX_ENTRIES = 4096;
     static final int MAX_CHUNKS_PER_TICK = 32;
 
-    static {
-        // static 缓存清理：登记与清理方法同文件（见 StaticCacheRegistry 类注释「登记位置」）
-        // ⚠️ 只清**内存调度表**（条目本身随存档走，不需要清）
-        StaticCacheRegistry.onServerStop(ExplosionLedger::clearAllRuntimeState);
-    }
-
     private static final String KEY_ENTRIES = "entries";
+    private static final String KEY_LAST_EPOCH = "lastEpoch";
+    private static final String KEY_EPOCH = "epoch";
     private static final String KEY_X = "cx";
     private static final String KEY_Y = "cy";
     private static final String KEY_Z = "cz";
@@ -75,54 +41,72 @@ public class ExplosionLedger extends SavedData {
     private static final String KEY_MODE = "mode";
     private static final String KEY_DROPS = "drops";
     private static final String KEY_DONE = "done";
-
     private static final SavedData.Factory<ExplosionLedger> FACTORY =
         new SavedData.Factory<>(ExplosionLedger::new, ExplosionLedger::load);
 
-    /** 实际破坏的执行者 —— 抽成参数是为了让记账逻辑可以脱离世界单测。 */
+    static {
+        StaticCacheRegistry.onServerStop(ExplosionLedger::clearAllRuntimeState);
+    }
+
     @FunctionalInterface
     public interface ChunkApplier {
         void apply(ServerLevel level, ExplosionParams params, LevelChunk chunk);
     }
 
-    /** 待炸条目（随存档持久化）。 */
-    private final List<Entry> entries = new ArrayList<>();
+    /** 仅观察可见 holder；null holder = 未加载，null chunk = FULL 尚未就绪。 */
+    record VisibleChunk(Object holder, LevelChunk chunk) {}
 
-    /**
-     * 待检查区块队列（按维度）—— **只写内存，不持久化**。
-     *
-     * <p>它只是"下一 tick 去看一眼"的调度表，丢了会自动补上：区块已在内存的条目，
-     * 每 tick 的处理预算会继续推进（见 {@link #flush} 的 carryOver）；区块未加载的，
-     * 将来加载时会再登记一次。</p>
-     *
-     * <p>⚠️ <b>有界性不变量</b>：队列规模 ≈ <b>已加载区块数</b>（几百），不会无界膨胀 ——
-     * 因为 {@link #flush} 每 pass 都把**未加载**的区块**丢弃**掉。**这个"丢弃"不是偷懒，
-     * 是队列有界的前提**：若改成"保留未加载的以便重试"，队列会随"玩家在未探索区连续引爆"
-     * 无界增长，每 tick 重扫几十万个区块 ⇒ 服务端冻结。改动前先想清楚。</p>
-     */
-    private final Map<ResourceKey<Level>, Set<ChunkPos>> pendingChecks = new Object2ObjectOpenHashMap<>();
-
-    public ExplosionLedger() {}
-
-    /** 取（或创建）该维度的账本。 */
-    public static ExplosionLedger get(ServerLevel level) {
-        return level.getDataStorage().computeIfAbsent(FACTORY, DATA_ID);
+    interface VisibleChunks {
+        Iterable<ChunkPos> snapshot();
+        VisibleChunk lookup(ChunkPos pos);
     }
 
-    // ═══════════════════════════════════════════════════════════
-    //  条目
-    // ═══════════════════════════════════════════════════════════
+    static VisibleChunks visibleChunks(ServerLevel level) {
+        return visibleChunks(level.getChunkSource() == null ? null : level.getChunkSource().chunkMap);
+    }
 
-    /** 一条待炸记录：参数 + 完成位图。 */
-    static final class Entry {
+    static VisibleChunks visibleChunks(ChunkMap map) {
+        return new VisibleChunks() {
+            @Override
+            public Iterable<ChunkPos> snapshot() {
+                List<ChunkPos> positions = new ArrayList<>();
+                if (map != null) {
+                    for (ChunkHolder holder : map.getChunks()) positions.add(holder.getPos());
+                }
+                return positions;
+            }
+
+            @Override
+            public VisibleChunk lookup(ChunkPos pos) {
+                if (map == null) return new VisibleChunk(null, null);
+                ChunkHolder holder = map.getVisibleChunkIfPresent(pos.toLong());
+                if (holder == null) return new VisibleChunk(null, null);
+                ChunkResult<LevelChunk> result = holder.getFullChunkFuture().getNow(null);
+                return new VisibleChunk(holder, result == null ? null : result.orElse(null));
+            }
+        };
+    }
+
+    private abstract static class Entry {
         final ExplosionParams params;
+        final long epoch;
+
+        Entry(ExplosionParams params, long epoch) {
+            this.params = params;
+            this.epoch = epoch;
+        }
+    }
+
+    private static final class BitmapEntry extends Entry {
         final long[] done;
         int remaining;
 
-        Entry(ExplosionParams params) {
-            this.params = params;
-            this.done = new long[(params.chunkCount() + 63) >> 6];
-            this.remaining = params.chunkCount();
+        BitmapEntry(ExplosionParams params, long epoch) {
+            super(params, epoch);
+            params.validateBitmapLayout();
+            int count = params.chunkCount();
+            done = new long[(int) (((long) count + 63L) >> 6)];
+            remaining = count;
         }
 
         boolean isDone(int bit) {
@@ -136,238 +120,342 @@ public class ExplosionLedger extends SavedData {
         }
     }
 
-    // ═══════════════════════════════════════════════════════════
-    //  建档（爆炸瞬间）
-    // ═══════════════════════════════════════════════════════════
-
-    /**
-     * 登记一次爆炸。**不读任何方块** —— 只做几何计算与记账。
-     *
-     * @return 是否登记成功（超出上限时返回 false）
-     */
-    public static boolean schedule(ServerLevel level, ExplosionParams params) {
-        return get(level).schedule(params, level.dimension());
+    private static final class SuperEntry extends Entry {
+        SuperEntry(ExplosionParams params, long epoch) {
+            super(params, epoch);
+        }
     }
 
-    /** 核心记账逻辑（实例级，便于单测直接 new 出来验证）。 */
+    /** 拒绝的 SUPER 仅作用于建档时 READY 的同一 holder/chunk；每个 job 有限，不另设 job 数量上限。 */
+    private static final class FallbackJob extends Entry {
+        final Map<ChunkPos, VisibleChunk> eligible = new LinkedHashMap<>();
+
+        FallbackJob(ExplosionParams params, long epoch) {
+            super(params, epoch);
+        }
+    }
+
+    private final List<Entry> entries = new ArrayList<>();
+    private long lastEpoch;
+    private final Map<ResourceKey<Level>, LinkedHashSet<ChunkPos>> pendingChecks = new LinkedHashMap<>();
+    private final List<FallbackJob> fallbackJobs = new ArrayList<>();
+    private boolean bootstrapRequired;
+    private ResourceKey<Level> activeDimension;
+    private ChunkPos activePosition;
+    private boolean activeUnloaded;
+
+    public ExplosionLedger() {}
+
+    public static ExplosionLedger get(ServerLevel level) {
+        return level.getDataStorage().computeIfAbsent(FACTORY, DATA_ID);
+    }
+
+    /** 返回 false 的 SUPER 已排入仅已加载部分的预算队列，调用方不能再同步执行。 */
+    public static boolean schedule(ServerLevel level, ExplosionParams params) {
+        return get(level).schedule(params, level.dimension(), visibleChunks(level));
+    }
+
     boolean schedule(ExplosionParams params, ResourceKey<Level> dim) {
-        if (entries.size() >= MAX_ENTRIES) {
-            ModLog.CONTAINER.warn("待炸账本已满（{} 条），本次爆炸（中心 {} {} {} 半径 {}）不再补齐未加载区块",
-                MAX_ENTRIES, params.centerX(), params.centerY(), params.centerZ(), params.radius());
+        return schedule(params, dim, null);
+    }
+
+    boolean schedule(ExplosionParams params, ResourceKey<Level> dim, VisibleChunks visible) {
+        boolean isSuper = params.mode() == ExplosionParams.Mode.SUPER;
+        if (!isSuper) params.validateBitmapLayout();
+        if (entries.size() >= MAX_ENTRIES && !isSuper) {
+            warnFull(params);
             return false;
         }
-
-        Entry entry = new Entry(params);
-        // 圆形作用范围之外的区块不需要处理 → 直接标记完成（位图仍占位，保证索引稳定）
-        for (int bit = 0; bit < params.chunkCount(); bit++) {
-            if (!params.affects(params.chunkAt(bit))) entry.markDone(bit);
+        long epoch = Math.incrementExact(lastEpoch);
+        Entry entry = isSuper ? new SuperEntry(params, epoch) : new BitmapEntry(params, epoch);
+        lastEpoch = epoch;
+        setDirty();
+        if (entries.size() >= MAX_ENTRIES && !evictOldestSuper()) {
+            warnFull(params);
+            FallbackJob job = new FallbackJob(params, epoch);
+            if (visible != null) {
+                for (ChunkPos cp : visible.snapshot()) {
+                    if (!params.affects(cp)) continue;
+                    VisibleChunk state = visible.lookup(cp);
+                    if (state.holder() != null && state.chunk() != null) {
+                        job.eligible.put(cp, state);
+                        scheduleCheck(dim, cp);
+                    }
+                }
+            }
+            if (!job.eligible.isEmpty()) fallbackJobs.add(job);
+            return false;
+        }
+        if (entry instanceof BitmapEntry bitmap) {
+            for (int bit = 0; bit < params.chunkCount(); bit++) {
+                ChunkPos cp = params.chunkAt(bit);
+                if (!params.affects(cp)) bitmap.markDone(bit);
+                else if (visible == null) scheduleCheck(dim, cp);
+            }
         }
         entries.add(entry);
-        setDirty();
-
-        // 登记所有"还没完成"的区块 → 下一 tick 起按预算推进
-        for (int bit = 0; bit < params.chunkCount(); bit++) {
-            if (!entry.isDone(bit)) scheduleCheck(dim, params.chunkAt(bit));
+        if (visible != null) {
+            for (ChunkPos cp : visible.snapshot()) {
+                if (params.affects(cp)) scheduleCheck(dim, cp);
+            }
         }
         return true;
     }
 
-    /** 登记一个待检查区块（包级可见：既是 {@code ChunkEvent.Load} 的落点，也是单测的 seam）。 */
-    void scheduleCheck(ResourceKey<Level> dim, ChunkPos pos) {
-        pendingChecks.computeIfAbsent(dim, k -> new ObjectOpenHashSet<>()).add(pos);
+    private boolean evictOldestSuper() {
+        int oldest = -1;
+        for (int i = 0; i < entries.size(); i++) {
+            if (entries.get(i) instanceof SuperEntry &&
+                (oldest < 0 || entries.get(i).epoch < entries.get(oldest).epoch)) oldest = i;
+        }
+        if (oldest < 0) return false;
+        Entry entry = entries.remove(oldest);
+        setDirty();
+        ModLog.CONTAINER.warn("待炸账本已满（{} 条），逐出最旧 SUPER 纪元 {}，其未完成部分不再补齐",
+            MAX_ENTRIES, entry.epoch);
+        return true;
     }
 
-    // ═══════════════════════════════════════════════════════════
-    //  事件：区块加载（红线 —— 只登记，不碰世界）
-    // ═══════════════════════════════════════════════════════════
+    private static void warnFull(ExplosionParams params) {
+        ModLog.CONTAINER.warn("待炸账本已满（{} 条），本次爆炸（中心 {} {} {} 半径 {}）仅处理已加载部分",
+            MAX_ENTRIES, params.centerX(), params.centerY(), params.centerZ(), params.radius());
+    }
 
-    /**
-     * 区块自然加载时登记 —— <b>唯一允许的调用是纯 getter</b>。
-     *
-     * <p>与 {@code ContainerChunkCache.onChunkLoad} 同款红线：本方法在区块 FULL 任务**内部**
-     * 被回调，做任何世界交互都可能触发同步区块加载 ⇒ 主线程自等自。真正的破坏交给
-     * {@link #flush}（tick 阶段）。</p>
-     */
+    void scheduleCheck(ResourceKey<Level> dim, ChunkPos pos) {
+        pendingChecks.computeIfAbsent(dim, k -> new LinkedHashSet<>()).add(pos);
+    }
+
+    /** 加载任务内部只登记坐标，不查询 FULL 或操作世界。 */
     public static void onChunkLoaded(ServerLevel level, ChunkPos pos) {
         ExplosionLedger ledger = get(level);
-        if (ledger.entries.isEmpty()) return; // 绝大多数情况下账本是空的，连登记都省了
-        ledger.scheduleCheck(level.dimension(), pos);
+        if (!ledger.entries.isEmpty()) ledger.scheduleCheck(level.dimension(), pos);
     }
 
-    // ═══════════════════════════════════════════════════════════
-    //  执行（tick 阶段 —— 唯一允许读/改方块的地方）
-    // ═══════════════════════════════════════════════════════════
+    public static void onChunkUnloaded(ServerLevel level, ChunkPos pos) {
+        get(level).forgetChunk(level.dimension(), pos);
+    }
 
-    /** 遍历所有维度推进（由 {@code ServerTickEvent.Pre} 调用）。 */
+    void forgetChunk(ResourceKey<Level> dim, ChunkPos pos) {
+        LinkedHashSet<ChunkPos> pending = pendingChecks.get(dim);
+        if (pending != null) pending.remove(pos);
+        for (FallbackJob job : fallbackJobs) job.eligible.remove(pos);
+        fallbackJobs.removeIf(job -> job.eligible.isEmpty());
+        if (dim.equals(activeDimension) && pos.equals(activePosition)) activeUnloaded = true;
+    }
+
     public static void flushAll(MinecraftServer server) {
-        for (ServerLevel level : server.getAllLevels()) {
-            get(level).flush(level);
-        }
+        for (ServerLevel level : server.getAllLevels()) get(level).flush(level);
     }
 
-    /** 推进本维度（生产路径：实际破坏走 {@link ExplosionComponent#applyToChunk}）。 */
     public void flush(ServerLevel level) {
         flush(level, ExplosionComponent::applyToChunk);
     }
 
-    /**
-     * 推进本维度：把"已加载且未完成"的区块应用掉，每 tick 限量 {@value #MAX_CHUNKS_PER_TICK} 个。
-     *
-     * <p>三种出队情形要分清（写错会丢爆炸）：</p>
-     * <ul>
-     *   <li>区块**未加载**（{@code getChunkNow} 为 null）→ <b>丢弃</b>，等它将来加载时由
-     *       {@link #onChunkLoaded} 重新登记。**不能留着轮询**（否则每 tick 扫几百个未加载区块）。</li>
-     *   <li>**预算用尽** → <b>留到下一 tick</b>（carryOver）。这些区块已经加载了，不会再触发
-     *       {@code ChunkEvent.Load}，丢了就永远不炸。</li>
-     *   <li>条目全部完成 → 移除（账本自动收敛）。</li>
-     * </ul>
-     *
-     * <p>⚠️ <b>多场爆炸叠加时不变量</b>：一个区块可能落在多条条目的范围内 ⇒ 会对每条条目各处理一次
-     * （破坏是**幂等**的：第二次看到的已是空气）。队列只移除"本 tick 处理过的"区块，
-     * <b>不整体替换</b> —— 否则同 tick 新登记的区块会被覆盖丢失（见方法内注释）。</p>
-     *
-     * @param applier 实际破坏的执行者（生产 = {@code ExplosionComponent::applyToChunk}）
-     */
     void flush(ServerLevel level, ChunkApplier applier) {
-        Set<ChunkPos> pending = pendingChecks.get(level.dimension());
-        if (pending == null || pending.isEmpty()) return;
+        flush(level, applier, visibleChunks(level));
+    }
 
-        // 遍历**快照**：applier 若间接引发新的登记（同 tick 内又引爆一场），不能边遍历边改集合。
+    void flush(ServerLevel level, ChunkApplier applier, VisibleChunks visible) {
+        ResourceKey<Level> dim = level.dimension();
+        if (bootstrapRequired) {
+            bootstrapRequired = false;
+            for (ChunkPos cp : visible.snapshot()) {
+                if (hasPersistentWork(cp)) scheduleCheck(dim, cp);
+            }
+        }
+        LinkedHashSet<ChunkPos> pending = pendingChecks.get(dim);
+        if (pending == null || pending.isEmpty()) return;
         List<ChunkPos> snapshot = new ArrayList<>(pending);
         int budget = MAX_CHUNKS_PER_TICK;
-        boolean dirty = false;
-
         for (ChunkPos cp : snapshot) {
-            LevelChunk chunk = level.getChunkSource().getChunkNow(cp.x, cp.z);
-            if (chunk == null) {
-                pending.remove(cp); // 未加载 → 丢弃，等自然加载时重新登记（见 javadoc）
-                continue;
+            if (budget == 0) break;
+            // 出队先于执行；执行期间同坐标的新登记必须留到下一 tick。
+            pending.remove(cp);
+            activeDimension = dim;
+            activePosition = cp;
+            activeUnloaded = false;
+            try {
+                VisibleChunk state = visible.lookup(cp);
+                if (state.holder() == null) {
+                    forgetChunk(dim, cp);
+                    continue;
+                }
+                pruneFallback(cp, state);
+                if (state.chunk() == null) {
+                    pending.add(cp);
+                    continue;
+                }
+                budget--;
+                if (!applyRound(level, cp, state, applier, visible) && !activeUnloaded) pending.add(cp);
+            } catch (RuntimeException ex) {
+                if (!activeUnloaded) pending.add(cp);
+                ModLog.CONTAINER.warn("待炸账本: 区块 {} 应用失败，保留本轮重试", cp, ex);
+            } finally {
+                activeDimension = null;
+                activePosition = null;
+                activeUnloaded = false;
             }
-            if (budget <= 0) {
-                continue; // 预算用尽 → **留在队列里**（carryOver），下一 tick 继续
-            }
-            budget--;
+        }
+        if (pending.isEmpty()) pendingChecks.remove(dim);
+        if (entries.removeIf(entry -> entry instanceof BitmapEntry bitmap && bitmap.remaining <= 0)) setDirty();
+        fallbackJobs.removeIf(job -> job.eligible.isEmpty());
+    }
 
-            for (Entry entry : List.copyOf(entries)) {
+    private boolean applyRound(ServerLevel level, ChunkPos cp, VisibleChunk state,
+                               ChunkApplier applier, VisibleChunks visible) {
+        LevelChunk chunk = state.chunk();
+        Long savedEpoch = chunk.getExistingDataOrNull(TntComponents.EXPLOSION_EPOCH);
+        long oldW = savedEpoch == null ? 0L : savedEpoch;
+        long newW = oldW;
+        List<Entry> round = new ArrayList<>(entries);
+        round.addAll(fallbackJobs);
+        round.sort(Comparator.comparingLong(entry -> entry.epoch));
+        for (Entry entry : round) {
+            if (activeUnloaded || !sameReady(state, visible.lookup(cp))) return false;
+            if (entry instanceof BitmapEntry bitmap) {
                 int bit = entry.params.bitIndexOf(cp);
-                if (bit < 0 || entry.isDone(bit) || !entry.params.affects(cp)) continue;
+                if (bit < 0 || bitmap.isDone(bit) || !entry.params.affects(cp)) continue;
                 applier.apply(level, entry.params, chunk);
-                entry.markDone(bit);
-                dirty = true;
+                bitmap.markDone(bit);
+                setDirty();
+            } else if (entry instanceof FallbackJob job) {
+                VisibleChunk eligible = job.eligible.get(cp);
+                if (eligible == null || !sameReady(eligible, state)) continue;
+                applier.apply(level, job.params, chunk);
+                job.eligible.remove(cp);
+            } else if (entry.epoch > oldW && entry.params.affects(cp)) {
+                applier.apply(level, entry.params, chunk);
+                newW = Math.max(newW, entry.epoch);
             }
-            pending.remove(cp); // 已处理 → 出队
         }
-
-        // ⚠️ 只移除**本 tick 处理过的**区块，绝不整体替换/清空队列 —— 否则本 tick 期间新登记的
-        // 区块（同 tick 又引爆了一场）会被一起丢掉；而它们已经加载、不会再触发 ChunkEvent.Load，
-        // 丢了就永远不炸。
-        if (pending.isEmpty()) {
-            pendingChecks.remove(level.dimension());
-        }
-
-        int before = entries.size();
-        entries.removeIf(e -> e.remaining <= 0);
-        if (entries.size() != before) {
-            dirty = true;
-            ModLog.CONTAINER.info("待炸账本: {} 条爆炸已补齐完成（剩余 {} 条）", before - entries.size(), entries.size());
-        }
-        if (dirty) setDirty();
+        // 水印只覆盖快照内成功完成的持久 SUPER；降级 job 不读写水印。
+        if (activeUnloaded || !sameReady(state, visible.lookup(cp))) return false;
+        if (newW > oldW) chunk.setData(TntComponents.EXPLOSION_EPOCH, newW);
+        return true;
     }
 
-    // ═══════════════════════════════════════════════════════════
-    //  生命周期
-    // ═══════════════════════════════════════════════════════════
+    private static boolean sameReady(VisibleChunk expected, VisibleChunk actual) {
+        return expected.holder() == actual.holder() && expected.chunk() != null && expected.chunk() == actual.chunk();
+    }
 
-    /**
-     * 清空**所有维度**的内存调度表（服务端关闭时调用）。
-     *
-     * <p>条目本身随存档保存、不需要清；但 {@link #pendingChecks} 是静态可及的内存状态，
-     * 单人游戏「退出存档 → 进另一个存档」不重启 JVM ⇒ 不清会把上一个维度的调度表带过来。
-     * 这正是旧 {@code PENDING_SUPER_EXPLOSIONS} 漏做的清理。</p>
-     */
+    private void pruneFallback(ChunkPos cp, VisibleChunk state) {
+        for (FallbackJob job : fallbackJobs) {
+            VisibleChunk eligible = job.eligible.get(cp);
+            if (eligible != null && (eligible.holder() != state.holder() ||
+                (state.chunk() != null && eligible.chunk() != state.chunk()))) job.eligible.remove(cp);
+        }
+    }
+
+    private boolean hasPersistentWork(ChunkPos cp) {
+        for (Entry entry : entries) {
+            if (entry instanceof BitmapEntry bitmap) {
+                int bit = entry.params.bitIndexOf(cp);
+                if (bit >= 0 && !bitmap.isDone(bit) && entry.params.affects(cp)) return true;
+            } else if (entry.params.affects(cp)) return true;
+        }
+        return false;
+    }
+
     public static void clearAllRuntimeState(MinecraftServer server) {
-        for (ServerLevel level : server.getAllLevels()) {
-            get(level).pendingChecks.clear();
-        }
+        for (ServerLevel level : server.getAllLevels()) get(level).clearRuntimeState();
     }
 
-    /** 供调试与测试：待炸条目数。 */
+    void clearRuntimeState() {
+        pendingChecks.clear();
+        fallbackJobs.clear();
+        bootstrapRequired = true;
+        activeDimension = null;
+        activePosition = null;
+        activeUnloaded = false;
+    }
+
     public int entryCount() {
         return entries.size();
     }
 
-    /** 供调试与测试：待检查区块数（指定维度）。 */
     public int pendingCheckCount(ResourceKey<Level> dim) {
-        Set<ChunkPos> set = pendingChecks.get(dim);
-        return set == null ? 0 : set.size();
+        LinkedHashSet<ChunkPos> pending = pendingChecks.get(dim);
+        return pending == null ? 0 : pending.size();
     }
 
-    /** 供调试与测试：某条爆炸的剩余区块数。 */
     int remainingOf(int index) {
-        return entries.get(index).remaining;
+        return entries.get(index) instanceof BitmapEntry bitmap ? bitmap.remaining : -1;
     }
 
-    /** 供调试与测试：所有条目里尚未完成、且在圆形作用范围内的区块。 */
+    /** 仅位图族有剩余网格；SUPER 不枚举覆盖面积。 */
     List<ChunkPos> remainingChunks() {
         List<ChunkPos> out = new ArrayList<>();
-        for (Entry e : entries) {
-            for (int bit = 0; bit < e.params.chunkCount(); bit++) {
-                if (e.isDone(bit)) continue;
-                ChunkPos cp = e.params.chunkAt(bit);
-                if (e.params.affects(cp)) out.add(cp);
+        for (Entry entry : entries) {
+            if (!(entry instanceof BitmapEntry bitmap)) continue;
+            for (int bit = 0; bit < entry.params.chunkCount(); bit++) {
+                if (bitmap.isDone(bit)) continue;
+                ChunkPos cp = entry.params.chunkAt(bit);
+                if (entry.params.affects(cp)) out.add(cp);
             }
         }
         return out;
     }
 
-    // ═══════════════════════════════════════════════════════════
-    //  持久化
-    // ═══════════════════════════════════════════════════════════
-
     @Override
     public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries) {
         ListTag list = new ListTag();
-        for (Entry e : entries) {
+        for (Entry entry : entries) {
             CompoundTag t = new CompoundTag();
-            t.putDouble(KEY_X, e.params.centerX());
-            t.putDouble(KEY_Y, e.params.centerY());
-            t.putDouble(KEY_Z, e.params.centerZ());
-            t.putDouble(KEY_RADIUS, e.params.radius());
-            t.putString(KEY_MODE, e.params.mode().name());
-            t.putBoolean(KEY_DROPS, e.params.vanillaDrops());
-            t.putLongArray(KEY_DONE, e.done);
+            t.putDouble(KEY_X, entry.params.centerX());
+            t.putDouble(KEY_Y, entry.params.centerY());
+            t.putDouble(KEY_Z, entry.params.centerZ());
+            t.putDouble(KEY_RADIUS, entry.params.radius());
+            t.putString(KEY_MODE, entry.params.mode().name());
+            t.putBoolean(KEY_DROPS, entry.params.vanillaDrops());
+            t.putLong(KEY_EPOCH, entry.epoch);
+            if (entry instanceof BitmapEntry bitmap) t.putLongArray(KEY_DONE, bitmap.done);
             list.add(t);
         }
+        tag.putLong(KEY_LAST_EPOCH, lastEpoch);
         tag.put(KEY_ENTRIES, list);
         return tag;
     }
 
-    /** 反序列化（包级可见：单测直接验证往返）。 */
     static ExplosionLedger load(CompoundTag tag, HolderLookup.Provider registries) {
         ExplosionLedger ledger = new ExplosionLedger();
+        ledger.lastEpoch = Math.max(0L, tag.getLong(KEY_LAST_EPOCH));
+        ledger.bootstrapRequired = true;
         ListTag list = tag.getList(KEY_ENTRIES, Tag.TAG_COMPOUND);
         for (int i = 0; i < list.size(); i++) {
             CompoundTag t = list.getCompound(i);
-            ExplosionParams.Mode mode;
             try {
-                mode = ExplosionParams.Mode.valueOf(t.getString(KEY_MODE));
-            } catch (IllegalArgumentException ex) {
-                ModLog.CONTAINER.warn("待炸账本: 未知模式 '{}'，跳过该条", t.getString(KEY_MODE));
-                continue;
+                ExplosionParams.Mode mode = ExplosionParams.Mode.valueOf(t.getString(KEY_MODE));
+                ExplosionParams params = new ExplosionParams(t.getDouble(KEY_X), t.getDouble(KEY_Y),
+                    t.getDouble(KEY_Z), t.getDouble(KEY_RADIUS), mode, t.getBoolean(KEY_DROPS));
+                long epoch = t.getLong(KEY_EPOCH);
+                if (epoch <= 0) throw new IllegalArgumentException("nonpositive epoch");
+                ledger.lastEpoch = Math.max(ledger.lastEpoch, epoch);
+                if (ledger.entries.size() >= MAX_ENTRIES &&
+                    (mode != ExplosionParams.Mode.SUPER || !ledger.evictOldestSuper())) {
+                    warnFull(params);
+                    continue;
+                }
+                Entry entry;
+                if (mode == ExplosionParams.Mode.SUPER) {
+                    entry = new SuperEntry(params, epoch);
+                } else {
+                    BitmapEntry bitmap = new BitmapEntry(params, epoch);
+                    long[] saved = t.getLongArray(KEY_DONE);
+                    System.arraycopy(saved, 0, bitmap.done, 0, Math.min(saved.length, bitmap.done.length));
+                    for (int bit = 0; bit < params.chunkCount(); bit++) {
+                        if (!params.affects(params.chunkAt(bit))) bitmap.markDone(bit);
+                    }
+                    bitmap.remaining = 0;
+                    for (int bit = 0; bit < params.chunkCount(); bit++) {
+                        if (!bitmap.isDone(bit)) bitmap.remaining++;
+                    }
+                    if (bitmap.remaining <= 0) continue;
+                    entry = bitmap;
+                }
+                ledger.entries.add(entry);
+            } catch (IllegalArgumentException | ArithmeticException ex) {
+                ModLog.CONTAINER.warn("待炸账本: 无效条目 {}，跳过", i, ex);
             }
-            ExplosionParams params = new ExplosionParams(
-                t.getDouble(KEY_X), t.getDouble(KEY_Y), t.getDouble(KEY_Z),
-                t.getDouble(KEY_RADIUS), mode, t.getBoolean(KEY_DROPS));
-
-            Entry entry = new Entry(params);
-            long[] saved = t.getLongArray(KEY_DONE);
-            System.arraycopy(saved, 0, entry.done, 0, Math.min(saved.length, entry.done.length));
-            // 重算剩余数：位图是唯一真相，别信存档里的计数
-            entry.remaining = 0;
-            for (int bit = 0; bit < params.chunkCount(); bit++) {
-                if (!entry.isDone(bit)) entry.remaining++;
-            }
-            if (entry.remaining > 0) ledger.entries.add(entry);
         }
         return ledger;
     }

@@ -27,6 +27,8 @@ import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.testutil.FakeContainerContext;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.player.Player;
@@ -131,6 +133,31 @@ class LivingTntConsumeTest {
         assertTrue(ctx.getItem(3).isEmpty(), "引爆的那颗必须消失");
         assertTrue(ctx.getItem(5).isEmpty(),
             "ignite 一次消耗容器里**所有**活 TNT ⇒ 没轮到的那颗也不能被写回复活");
+    }
+
+    @Test
+    @DisplayName("五满槽超过旧网格溢出阈值：真实引爆消耗全部并只保存 SUPER 参数")
+    void oversizedTnt_ignitionPersistsWithoutBitmap() {
+        FakeContainerContext ctx = new FakeContainerContext(27, 9).withBlockPos(POS);
+        List<SlotEntry> entries = new java.util.ArrayList<>();
+        for (int slot = 0; slot < 5; slot++) {
+            ItemStack stack = livingTnt(new ExplosionData(true, 0), Integer.MAX_VALUE);
+            ctx.set(slot, stack);
+            entries.add(new SlotEntry(slot, stack));
+        }
+        ServerLevel level = explodingLevel();
+        ExplosionLedger ledger = ExplosionLedger.get(level);
+
+        new LivingTntFunction().tick(entries, ctx, new TickContext(ctx), level);
+
+        for (int slot = 0; slot < 5; slot++) assertTrue(ctx.getItem(slot).isEmpty(), "slot=" + slot);
+        assertEquals(1, ledger.entryCount(), "同容器只形成一场爆炸");
+        CompoundTag saved = ledger.save(new CompoundTag(), null);
+        CompoundTag entry = saved.getList("entries", Tag.TAG_COMPOUND).getCompound(0);
+        assertEquals("SUPER", entry.getString("mode"));
+        assertEquals(4 * Math.sqrt(5L * Integer.MAX_VALUE), entry.getDouble("r"));
+        assertTrue(entry.getLong("epoch") > 0);
+        assertFalse(entry.contains("done"), "巨大 SUPER 不得保存完成位图");
     }
 
     @Test

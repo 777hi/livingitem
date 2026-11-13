@@ -1,7 +1,9 @@
 package com.qiqi.li.living.domain.tnt;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.HashMap;
@@ -125,5 +127,157 @@ class ExplosionParamsTest {
         assertEquals(2, params(16.1).chunkRadius());
         assertEquals(2, params(32).chunkRadius());   // 64 TNT ⇒ radius 32 ⇒ 5×5 区块
         assertEquals(15, params(235).chunkRadius()); // 3456 TNT ⇒ radius 235 ⇒ 31×31 区块
+    }
+
+    @Test
+    @DisplayName("参数准入：有限中心、有限正半径、非空模式")
+    void constructor_rejectsInvalidParameters() {
+        for (double invalid : new double[] { Double.NaN, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY }) {
+            assertThrows(IllegalArgumentException.class,
+                () -> new ExplosionParams(invalid, 64, 8, 16, ExplosionParams.Mode.NORMAL, true));
+            assertThrows(IllegalArgumentException.class,
+                () -> new ExplosionParams(8, invalid, 8, 16, ExplosionParams.Mode.NORMAL, true));
+            assertThrows(IllegalArgumentException.class,
+                () -> new ExplosionParams(8, 64, invalid, 16, ExplosionParams.Mode.NORMAL, true));
+            assertThrows(IllegalArgumentException.class, () -> params(invalid));
+        }
+        for (double invalid : new double[] { -1, 0, -0.0 }) {
+            assertThrows(IllegalArgumentException.class, () -> params(invalid));
+        }
+        assertThrows(NullPointerException.class, () -> new ExplosionParams(8, 64, 8, 16, null, true));
+        assertEquals(1, params(Double.MIN_VALUE).chunkRadius());
+        assertDoesNotThrow(() -> params(Double.MAX_VALUE));
+    }
+
+    @Test
+    @DisplayName("自定义半径：不受 961 位或默认当量档限制，不改变模式")
+    void bitmapLayout_acceptsCustomRadii() {
+        for (ExplosionParams.Mode mode : ExplosionParams.Mode.values()) {
+            ExplosionParams p = new ExplosionParams(8, 64, 8, 1024, mode, true);
+            assertDoesNotThrow(p::validateBitmapLayout);
+            assertEquals(64, p.chunkRadius());
+            assertEquals(129, p.side());
+            assertEquals(16641, p.chunkCount());
+            assertEquals(mode, p.mode());
+            assertEquals(p.chunkCount() - 1, p.bitIndex(64, 64));
+            assertEquals(p.chunkCount() - 1, p.bitIndexOf(p.chunkAt(p.chunkCount() - 1)));
+        }
+    }
+
+    @Test
+    @DisplayName("位图算术：半径、边长、面积越过 int 时明确拒绝，不回绕")
+    void bitmapArithmetic_rejectsOverflow() {
+        ExplosionParams maxRadius = params(Integer.MAX_VALUE * 16.0);
+        assertEquals(Integer.MAX_VALUE, maxRadius.chunkRadius());
+        assertThrows(ArithmeticException.class, maxRadius::side);
+        assertThrows(ArithmeticException.class, () -> params((Integer.MAX_VALUE + 1.0) * 16.0).chunkRadius());
+        assertThrows(ArithmeticException.class, () -> params(Double.MAX_VALUE).chunkRadius());
+
+        ExplosionParams maxSide = params(((Integer.MAX_VALUE - 1L) / 2L) * 16.0);
+        assertEquals(Integer.MAX_VALUE, maxSide.side());
+        assertThrows(ArithmeticException.class, maxSide::chunkCount);
+
+        ExplosionParams largestArea = params(23169 * 16.0);
+        assertEquals(2147302921, largestArea.chunkCount());
+        assertDoesNotThrow(largestArea::validateBitmapLayout);
+        assertEquals(largestArea.chunkCount() - 1, largestArea.bitIndex(23169, 23169));
+        assertEquals(largestArea.chunkCount() - 1,
+            largestArea.bitIndexOf(largestArea.chunkAt(largestArea.chunkCount() - 1)));
+
+        ExplosionParams overflowingArea = params(23170 * 16.0);
+        assertEquals(46341, overflowingArea.side());
+        assertThrows(ArithmeticException.class, overflowingArea::chunkCount);
+        assertThrows(ArithmeticException.class, overflowingArea::validateBitmapLayout);
+        assertThrows(ArithmeticException.class, () -> overflowingArea.bitIndex(0, 0));
+        assertThrows(ArithmeticException.class, () -> overflowingArea.chunkAt(0));
+    }
+
+    @Test
+    @DisplayName("位图下标与偏移必须在网格内，极端 int 偏移不能回绕成有效位")
+    void bitMapping_rejectsInvalidOffsetsAndIndices() {
+        ExplosionParams p = params(32);
+        for (int outside : new int[] { -3, 3, Integer.MIN_VALUE, Integer.MAX_VALUE }) {
+            assertThrows(IndexOutOfBoundsException.class, () -> p.bitIndex(outside, 0));
+            assertThrows(IndexOutOfBoundsException.class, () -> p.bitIndex(0, outside));
+        }
+        for (int outside : new int[] { -1, p.chunkCount(), Integer.MIN_VALUE, Integer.MAX_VALUE }) {
+            assertThrows(IndexOutOfBoundsException.class, () -> p.chunkAt(outside));
+        }
+        assertEquals(0, p.bitIndex(-2, -2));
+        assertEquals(p.chunkCount() - 1, p.bitIndex(2, 2));
+        assertEquals(-1, p.bitIndexOf(new ChunkPos(Integer.MIN_VALUE, 0)));
+        assertEquals(-1, p.bitIndexOf(new ChunkPos(0, Integer.MIN_VALUE)));
+        assertEquals(-1, p.bitIndexOf(new ChunkPos(Integer.MAX_VALUE, Integer.MIN_VALUE)));
+    }
+
+    @Test
+    @DisplayName("位图准入拒绝不可表示的方块中心；有限远端中心仍可用于几何判定")
+    void bitmapLayout_rejectsUnrepresentableCenters() {
+        for (double outside : new double[] { Integer.MIN_VALUE - 1.0, Integer.MAX_VALUE + 1.0, Double.MAX_VALUE }) {
+            assertThrows(ArithmeticException.class,
+                () -> new ExplosionParams(outside, 64, 8, 16, ExplosionParams.Mode.NORMAL, true).validateBitmapLayout());
+            assertThrows(ArithmeticException.class,
+                () -> new ExplosionParams(8, outside, 8, 16, ExplosionParams.Mode.NORMAL, true).validateBitmapLayout());
+            assertThrows(ArithmeticException.class,
+                () -> new ExplosionParams(8, 64, outside, 16, ExplosionParams.Mode.NORMAL, true).validateBitmapLayout());
+        }
+        assertDoesNotThrow(() -> new ExplosionParams(Integer.MIN_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE,
+            16, ExplosionParams.Mode.NORMAL, true).validateBitmapLayout());
+    }
+
+    @Test
+    @DisplayName("中心区块保持既有浮点转 int 规则，不顺带改变负数小数中心")
+    void centerChunks_preserveExistingConversion() {
+        ExplosionParams p = new ExplosionParams(-0.5, 64, -16.5, 16, ExplosionParams.Mode.NORMAL, true);
+        assertEquals(0, p.centerChunkX());
+        assertEquals(-1, p.centerChunkZ());
+        assertEquals(0, p.bitIndexOf(p.chunkAt(0)));
+    }
+
+    @Test
+    @DisplayName("几何判定保持 AABB 的最小/最大方块坐标与圆周相切包含性")
+    void affects_preservesInclusiveAabbAndCircleBoundary() {
+        ChunkPos target = new ChunkPos(1, 1);
+        ExplosionParams tangent = new ExplosionParams(13, 64, 12, 5, ExplosionParams.Mode.SUPER, true);
+        assertTrue(tangent.affects(target));
+        assertFalse(new ExplosionParams(13, 64, 12, Math.nextDown(5.0), ExplosionParams.Mode.SUPER, true)
+            .affects(target));
+        assertTrue(new ExplosionParams(31, 64, 31, Double.MIN_VALUE, ExplosionParams.Mode.SUPER, true)
+            .affects(target));
+        assertFalse(new ExplosionParams(31.5, 64, 31, 0.25, ExplosionParams.Mode.SUPER, true)
+            .affects(target));
+    }
+
+    @Test
+    @DisplayName("几何判定使用宽区块边界，极端区块坐标不能回绕到原点")
+    void affects_usesWidenedChunkBounds() {
+        ChunkPos far = new ChunkPos(Integer.MAX_VALUE, Integer.MIN_VALUE);
+        double x = (long) far.x * 16L + 8L;
+        double z = (long) far.z * 16L + 8L;
+        ExplosionParams p = new ExplosionParams(x, 64, z, 1, ExplosionParams.Mode.SUPER, true);
+        assertTrue(p.affects(far));
+        assertFalse(p.affects(new ChunkPos(far.x - 1, far.z)));
+        assertFalse(p.affects(new ChunkPos(0, 0)));
+        assertFalse(params(16).affects(far));
+        assertFalse(params(16).affects(new ChunkPos(Integer.MIN_VALUE, 0)));
+    }
+
+    @Test
+    @DisplayName("SUPER 几何不依赖位图半径或面积，巨型有限半径与中心不做平方溢出比较")
+    void affects_isIndependentOfBitmapLimits() {
+        ExplosionParams huge = new ExplosionParams(8, 64, 8, Double.MAX_VALUE, ExplosionParams.Mode.SUPER, true);
+        assertThrows(ArithmeticException.class, huge::chunkCount);
+        assertTrue(huge.affects(new ChunkPos(Integer.MAX_VALUE, Integer.MIN_VALUE)));
+
+        ExplosionParams areaOverflow = new ExplosionParams(8, 64, 8, 23170 * 16.0,
+            ExplosionParams.Mode.SUPER, true);
+        assertThrows(ArithmeticException.class, areaOverflow::chunkCount);
+        assertTrue(areaOverflow.affects(new ChunkPos(20000, 0)));
+        assertFalse(areaOverflow.affects(new ChunkPos(30000, 0)));
+
+        ExplosionParams farCenter = new ExplosionParams(1e200, 64, 0, 1e190, ExplosionParams.Mode.SUPER, true);
+        assertFalse(farCenter.affects(new ChunkPos(0, 0)));
+        ExplosionParams farCovering = new ExplosionParams(1e200, 64, 0, 1e200, ExplosionParams.Mode.SUPER, true);
+        assertTrue(farCovering.affects(new ChunkPos(0, 0)));
     }
 }

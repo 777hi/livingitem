@@ -150,6 +150,7 @@ public class LivingItem {
         // ⚠️ 必须在【构造阶段】挂 —— 早于 commonSetup 的领域注册（那里太晚，总线已错过注册窗口）。
         com.qiqi.li.living.domain.ender.EnderComponents.REG.register(modEventBus);
         com.qiqi.li.living.domain.tnt.TntComponents.REG.register(modEventBus);
+        com.qiqi.li.living.domain.tnt.TntComponents.ATTACH_REG.register(modEventBus);
         com.qiqi.li.living.domain.farmland.FarmlandComponents.REG.register(modEventBus);
         com.qiqi.li.living.domain.furnace.FurnaceComponents.REG.register(modEventBus);
         com.qiqi.li.living.domain.brewing.BrewingStandComponents.REG.register(modEventBus);
@@ -910,6 +911,7 @@ public class LivingItem {
     @SubscribeEvent
     public void onChunkUnload(ChunkEvent.Unload event) {
         if (event.getLevel() instanceof ServerLevel serverLevel) {
+            ExplosionLedger.onChunkUnloaded(serverLevel, event.getChunk().getPos());
             EnderChannelRegistry.getInstance()
                 .onChunkUnload(serverLevel, event.getChunk().getPos());
         }

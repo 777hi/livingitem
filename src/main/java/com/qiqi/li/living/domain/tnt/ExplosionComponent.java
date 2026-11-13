@@ -195,30 +195,35 @@ public class ExplosionComponent {
                 "[活TNT] TNT 计数异常（应为正数），放弃爆炸且保留物品：count={}", totalTntCount);
             return false;
         }
-        clearLivingTnt(containerCtx);
         if (!(level instanceof ServerLevel serverLevel)) return false;
 
         double radius = baseRadius * Math.sqrt(totalTntCount);
         ExplosionParams.Mode mode = totalTntCount <= NORMAL_THRESHOLD ? ExplosionParams.Mode.NORMAL
             : totalTntCount <= SUPER_EXPLOSION_THRESHOLD ? ExplosionParams.Mode.HIGH_YIELD
             : ExplosionParams.Mode.SUPER;
-        ExplosionParams params = new ExplosionParams(center.x, center.y, center.z, radius, mode, vanillaDrops);
+        ExplosionParams params;
+        try {
+            params = new ExplosionParams(center.x, center.y, center.z, radius, mode, vanillaDrops);
+            if (mode != ExplosionParams.Mode.SUPER) params.validateBitmapLayout();
+        } catch (IllegalArgumentException | ArithmeticException ex) {
+            com.qiqi.li.logging.ModLog.CONTAINER.warn(
+                "[活TNT] 爆炸参数不可用，放弃爆炸且保留物品：radius={}，原因={}", radius, ex.getMessage());
+            return false;
+        }
+        clearLivingTnt(containerCtx);
 
         com.qiqi.li.logging.ModLog.CONTAINER.info(
-            "爆炸触发: TNT数量={}, radius={}, 位置=({},{},{}), 模式={}, 掉落模式={}, 覆盖区块={}",
+            "爆炸触发: TNT数量={}, radius={}, 位置=({},{},{}), 模式={}, 掉落模式={}",
             totalTntCount, String.format("%.1f", radius), center.x, center.y, center.z,
-            mode, vanillaDrops ? "原版衰减" : "100%掉落", params.chunkCount());
+            mode, vanillaDrops ? "原版衰减" : "100%掉落");
 
         // ── 立即部分：声光 + 实体伤害（都不碰方块）──
         playExplosionEffects(serverLevel, center, radius);
         applyExplosionDamage(level, center.x, center.y, center.z, radius);
 
         // ── 方块破坏：登记进账本，按区块分帧执行 ──
-        if (!ExplosionLedger.schedule(serverLevel, params)) {
-            // 账本已满（极端：在未探索区域连续引爆数百次且从未回去过）。
-            // **不能什么都不做** —— 声光和实体伤害已经生效，方块却没坏，玩家会以为模组坏了。
-            // 降级为"只炸当前已加载的世界"：语义有缺口（未加载部分残缺），但有 WARN 日志说明，
-            // 且**绝不**为此强制加载区块。
+        if (!ExplosionLedger.schedule(serverLevel, params) && mode != ExplosionParams.Mode.SUPER) {
+            // 普通档保持已加载部分降级；SUPER 降级由账本按同一预算执行。
             applyToLoadedChunks(serverLevel, params);
         }
         return true;

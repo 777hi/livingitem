@@ -23,7 +23,7 @@
 | [framework-evolution-plan.md](framework-evolution-plan.md) | 提案（buffer）——未定案、未排期，别当现状读**。 |
 | [gui-interaction-redesign.md](gui-interaction-redesign.md) | 设计稿（已定案未实施）—— E2 交互设计，不是现状。 |
 | [living-axe-strip-design.md](living-axe-strip-design.md) | 设计提案 —— 本文供审阅，不是已生效玩法或执行授权。 |
-| [living-tnt-explosion-design.md](living-tnt-explosion-design.md) | 设计稿（局部定案，整体实施方案待确认）—— TNT 爆炸规模化提案，不是现状，也 |
+| [living-tnt-explosion-design.md](living-tnt-explosion-design.md) | 设计稿（设计已确认，供实施与验收）—— 保留规模化论证与决策来源，不是完成报告。 |
 | [living-weapon-design.md](living-weapon-design.md) | 设计探讨层（buffer）。⚠️ 描述的是**计划 / 未决**，不是现状。 |
 | [open-plan.md](open-plan.md) | 未定案** —— 对外开放计划探讨稿，别当现状读。 |
 | [redstone-evolution-roadmap.md](redstone-evolution-roadmap.md) | 路线图 —— 红电架构演进探讨稿，别当现状读。 |

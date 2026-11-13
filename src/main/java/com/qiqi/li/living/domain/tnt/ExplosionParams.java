@@ -1,5 +1,7 @@
 package com.qiqi.li.living.domain.tnt;
 
+import java.util.Objects;
+
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.ChunkPos;
 
@@ -35,19 +37,47 @@ public record ExplosionParams(double centerX, double centerY, double centerZ,
         SUPER
     }
 
-    /** 受影响区块的半径（区块数）。 */
+    public ExplosionParams {
+        if (!Double.isFinite(centerX) || !Double.isFinite(centerY) || !Double.isFinite(centerZ)) {
+            throw new IllegalArgumentException("Explosion center must be finite");
+        }
+        if (!Double.isFinite(radius) || radius <= 0) {
+            throw new IllegalArgumentException("Explosion radius must be finite and positive");
+        }
+        Objects.requireNonNull(mode, "mode");
+    }
+
+    /** 受影响区块的半径（区块数）；超出 int 范围时拒绝位图计算。 */
     public int chunkRadius() {
-        return (int) Math.ceil(radius / 16.0);
+        double chunks = Math.ceil(radius / 16.0);
+        if (chunks > Integer.MAX_VALUE) throw new ArithmeticException("Chunk radius exceeds int range");
+        return Math.toIntExact(Math.max(1L, (long) chunks));
     }
 
     /** 受影响区块方格网的边长（区块数）。 */
     public int side() {
-        return 2 * chunkRadius() + 1;
+        return Math.toIntExact(Math.addExact(Math.multiplyExact((long) chunkRadius(), 2L), 1L));
     }
 
-    /** 位图长度 = 方格网区块总数。 */
+    /** 位图长度 = 方格网区块总数；必须能由 int 下标寻址。 */
     public int chunkCount() {
-        return side() * side();
+        long side = side();
+        return Math.toIntExact(Math.multiplyExact(side, side));
+    }
+
+    /** 位图准入检查：网格规模与全部区块坐标必须可表示。 */
+    void validateBitmapLayout() {
+        if (centerX < Integer.MIN_VALUE || centerX > Integer.MAX_VALUE
+                || centerY < Integer.MIN_VALUE || centerY > Integer.MAX_VALUE
+                || centerZ < Integer.MIN_VALUE || centerZ > Integer.MAX_VALUE) {
+            throw new ArithmeticException("Bitmap center exceeds block coordinate range");
+        }
+        chunkCount();
+        int cr = chunkRadius();
+        Math.toIntExact((long) centerChunkX() - cr);
+        Math.toIntExact((long) centerChunkX() + cr);
+        Math.toIntExact((long) centerChunkZ() - cr);
+        Math.toIntExact((long) centerChunkZ() + cr);
     }
 
     public int centerChunkX() {
@@ -58,47 +88,48 @@ public record ExplosionParams(double centerX, double centerY, double centerZ,
         return SectionPos.blockToSectionCoord((int) centerZ);
     }
 
-    /** 偏移 → 位图下标。 */
+    /** 偏移 → 位图下标；偏移必须在网格内。 */
     public int bitIndex(int dx, int dz) {
-        return (dx + chunkRadius()) * side() + (dz + chunkRadius());
+        int cr = chunkRadius();
+        chunkCount();
+        if (dx < -cr || dx > cr || dz < -cr || dz > cr) {
+            throw new IndexOutOfBoundsException("Chunk offset outside bitmap grid");
+        }
+        long row = (long) dx + cr;
+        long column = (long) dz + cr;
+        return Math.toIntExact(Math.addExact(Math.multiplyExact(row, (long) side()), column));
     }
 
-    /** 位图下标 → 区块坐标（{@link #bitIndex} 的逆）。 */
+    /** 位图下标 → 区块坐标（{@link #bitIndex} 的逆）；下标必须在网格内。 */
     public ChunkPos chunkAt(int bit) {
         int cr = chunkRadius();
-        return new ChunkPos(centerChunkX() + bit / side() - cr,
-                            centerChunkZ() + bit % side() - cr);
+        int side = side();
+        if (bit < 0 || bit >= chunkCount()) {
+            throw new IndexOutOfBoundsException("Bit index outside bitmap grid");
+        }
+        return new ChunkPos(Math.toIntExact((long) centerChunkX() + bit / side - cr),
+                            Math.toIntExact((long) centerChunkZ() + bit % side - cr));
     }
 
     /** 指定区块在方格网里的位图下标；不在网内返回 -1。 */
     public int bitIndexOf(ChunkPos cp) {
-        int dx = cp.x - centerChunkX();
-        int dz = cp.z - centerChunkZ();
-        if (Math.abs(dx) > chunkRadius() || Math.abs(dz) > chunkRadius()) return -1;
-        return bitIndex(dx, dz);
+        long dx = (long) cp.x - centerChunkX();
+        long dz = (long) cp.z - centerChunkZ();
+        int cr = chunkRadius();
+        chunkCount();
+        if (dx < -cr || dx > cr || dz < -cr || dz > cr) return -1;
+        return bitIndex(Math.toIntExact(dx), Math.toIntExact(dz));
     }
 
     /**
-     * 该区块是否与爆炸的**球体**相交（决定"要不要炸"）。
-     *
-     * <p>⚠️ 判据是「<b>区块 AABB 与圆相交</b>」，<b>不是</b>「区块中心落在半径内」
-     * （2026-09-22 修）。区块是 16×16 的方块，"中心在半径外、边缘却落在球内"的区块大量存在 ——
-     * 按中心判定会把它们<b>整块跳过</b>（建档时就标记完成、永不处理），表现为
-     * <b>坑不圆、边缘残留一整块区块形状的地形</b>。</p>
-     *
-     * <p>注：只判水平方向即可 —— 区块是贯穿整个世界高度的柱体，只要 (x,z) 与球体的水平投影
-     * （半径 r 的圆）相交，块内就一定有落在球体里的方块。</p>
+     * 该区块是否与爆炸球体的水平投影相交；不依赖位图规模。
+     * 区块 AABB 包含最小与最大方块坐标，圆周相切也命中。
      */
     public boolean affects(ChunkPos cp) {
-        int dx = cp.x - centerChunkX();
-        int dz = cp.z - centerChunkZ();
-        if (Math.abs(dx) > chunkRadius() || Math.abs(dz) > chunkRadius()) return false;
-
-        // 区块 AABB 上离爆心最近的点（爆心落在区块内时，最近点就是爆心本身 ⇒ 距离 0）
-        double nearestX = Math.max(cp.getMinBlockX(), Math.min(centerX, cp.getMaxBlockX()));
-        double nearestZ = Math.max(cp.getMinBlockZ(), Math.min(centerZ, cp.getMaxBlockZ()));
-        double ddx = nearestX - centerX;
-        double ddz = nearestZ - centerZ;
-        return ddx * ddx + ddz * ddz <= radius * radius;
+        long minX = (long) cp.x * 16L;
+        long minZ = (long) cp.z * 16L;
+        double nearestX = Math.max(minX, Math.min(centerX, minX + 15L));
+        double nearestZ = Math.max(minZ, Math.min(centerZ, minZ + 15L));
+        return Math.hypot(nearestX - centerX, nearestZ - centerZ) <= radius;
     }
 }
