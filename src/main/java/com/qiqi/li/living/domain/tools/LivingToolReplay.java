@@ -8,6 +8,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.api.LivingMod;
 
 import net.minecraft.commands.arguments.EntityAnchorArgument;
 import net.minecraft.core.BlockPos;
@@ -34,7 +35,10 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.common.CommonHooks;
+import net.neoforged.neoforge.event.entity.player.SweepAttackEvent;
 
 /**
  * 活工具记忆回放（{@code L-d}）—— 把录下的「左键 / 右键操作」在宿主身上重放一遍。
@@ -58,6 +62,7 @@ import net.neoforged.neoforge.common.CommonHooks;
  * 这里给 FakePlayer 一份<b>副本</b>，破坏后由调用方写回容器
  * （{@code LivingToolFunction} 会比对是否变化再决定是否写回）。
  */
+@EventBusSubscriber(modid = LivingMod.ID)
 public final class LivingToolReplay {
 
     /**
@@ -377,7 +382,9 @@ public final class LivingToolReplay {
      *
      * <p>⭐ <b>活武器不实现任何攻击逻辑</b>：这里只负责「代玩家出手」，
      * 打多少伤害、触发什么效果全由 {@code fake.attack(entity)} 走原版管线决定
-     * （锋利 / 击退 / 火焰附加 / 横扫 / 暴击 / 耐久<b>自动生效</b>）。</p>
+     * （锋利 / 击退 / 火焰附加 / 暴击 / 耐久<b>自动生效</b>）；
+     * 唯一的例外是<b>横扫被守卫整段关闭</b>（见 {@link #onSweepAttack}）——
+     * 出手原点 = 载体位置，横扫必扫到载体自己。</p>
      *
      * <p>⭐ 攻击节奏为 <b>per-weapon</b>（2026-09-30 二次修正）：按【该武器自己】的
      * 上次攻击记录 + 攻速属性算缩放，经 setAttackStrengthScale 注入假玩家 ——
@@ -503,6 +510,32 @@ public final class LivingToolReplay {
         wielder.fake().attack(target);
 
         return new AttackResult(wielder.held(), Outcome.ATTACKED);
+    }
+
+    /**
+     * 假玩家出手【不做横扫】—— 出手语义是「直连目标各打一刀」，溅射不在管线承诺内。
+     *
+     * <p>原版横扫会伤害目标包围盒外扩 1 格内的所有「非友军」生物
+     * （{@code Player#attack} 的 sweep 段，过滤条件只有 {@code isAlliedTo}）。
+     * {@link LivingToolFakePlayer#isAlliedTo} 已豁免所有玩家（2026-10-23 收口 ②），
+     * 但结盟判定是<b>队伍制</b>，表达不了「这个非玩家实体是我的载体」——
+     * 而出手原点 = 宿主位置（{@code prepareWielder} 把假玩家摆在载体眼睛），
+     * 补刀时载体贴着目标 ⇒ <b>必在横扫框内</b>：女仆被自己背包武器的横扫打伤，
+     * 主人的宠物 / 周围村民同理。</p>
+     *
+     * <p>⭐ 官方挂点 {@link SweepAttackEvent}：被扫伤害 / 扫击音效 / 横扫粒子是
+     * 同一个 if 块，拦伤害事件拦不住后两者 ⇒ 只能在这里整段关。</p>
+     *
+     * <p>⚠️ 原版横扫条件被出手架设<b>恒满足</b>：{@code prepareWielder} 恒
+     * {@code setOnGround(true)} + 冷却闸门保证满充能 + 剑类支持 {@code SWORD_SWEEP}
+     * ⇒ 不关就是每刀必扫。重锤冲击（{@code MaceItem} 的落地 AoE）不走本事件，
+     * 与玩家豁免同依赖 {@code isAlliedTo} ⇒ 载体仍会被重锤波及，属已知边界。</p>
+     */
+    @SubscribeEvent
+    public static void onSweepAttack(SweepAttackEvent event) {
+        if (event.getEntity() instanceof LivingToolFakePlayer) {
+            event.setSweeping(false);
+        }
     }
 
     /**

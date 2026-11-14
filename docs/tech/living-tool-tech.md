@@ -538,11 +538,14 @@ NeoForge 对此的防御是双层的：`FakePlayer.tick()` 与其连接器的 `t
 |---|---|---|---|
 | ① | `Player#aiStep:564-586` 实体接触环：包围盒 `inflate(1.0, 0.5, 1.0)` 内 `getEntities` → `playerTouch`（掉落物 / 经验球 / 箭各一条拾取路径，终点 `getInventory().add` + 物品实体 discard） | 玩家身边的掉落物被吸进假玩家**不可见的背包** ⇒ 对玩家即"消失"；**玩家自己背包满不满毫无关系**（小偷是假玩家）。群友实测：刷塔打怪，女巫掉的水瓶/红石粉/萤石粉"一下就没了" | `aiStep()` 覆写：tick 期间临时换成**底界之外的退化包围盒**（`NO_BODY`）⇒ 接触环查不到任何实体，一处收口**全部** `playerTouch` 路径（掉落物/经验球有 NeoForge 事件，**箭没有**，模组还可能自己实现 ⇒ 事件路线天然漏），顺带屏蔽 `pushEntities` 对玩家身边实体的推挤 |
 | ② | `Player#attack:1312-1334` 横扫 / `MaceItem:161-194` 重锤冲击的 AoE 过滤 `!attacker.isAlliedTo(victim)` —— 而 `Entity#isAlliedTo` 是**队伍制**（比 scoreboard team），假玩家无队伍 ⇒ 一律不豁免 | 贴身在怪旁的玩家被自己的活武器横扫打死；死亡信息显示"自己打死自己"（FakePlayer 的 UUID/名字就是主人的） | `isAlliedTo(Entity)` 覆写：`entity instanceof Player \|\| super.isAlliedTo(entity)` ⇒ AoE 过滤整体跳过玩家（伤害/击退/火焰附加点燃是同一 if 块的整体，拦伤害事件拦不住后两者） |
+| ③ | `Player#attack:1312-1334` 横扫对**非玩家**实体不豁免 —— ② 的 `isAlliedTo` 覆写只认 Player，而队伍制表达不了「这个实体是我的载体」 | 载体（女仆等实体宿主）被自己背包武器的横扫伤害/击退：出手原点 = 载体眼睛位置，补刀时贴着目标 ⇒ **必在横扫框内**；主人的宠物 / 周围村民同理（2026-11-14 用户实测） | 官方挂点 `SweepAttackEvent`：出手者 instanceof `LivingToolFakePlayer` ⇒ `setSweeping(false)` 整段关（被扫伤害/扫击音效/横扫粒子同块）。出手语义 = **直连一刀**，溅射不在承诺内；原版横扫条件被 `prepareWielder`（恒 onGround + 满充能 + 剑类 `SWORD_SWEEP`）恒满足 ⇒ 不关必扫。重锤冲击不走本事件，载体仍会被落地 AoE 波及，属已知边界 |
 
 > ⭐ 与 `isAttackableByLivingWeapon`「活武器不打任何玩家（无 PVP）」同口径，主人与其他玩家一视同仁。
 > ⚠️ ① 只有活武器会触发：`driveWielderTick` 全项目仅 `replayAttack` 一处调用
 > （挖掘 / 交互路径不驱动 tick）⇒ 群友「只有用活剑才吸物品」的控制变量结论正对应此。
-> 复算：`Player.java:564-586`（接触环）/ `:1312-1334`（横扫）/ `MaceItem.java:161-194`（重锤）。
+> ② / ③ 同理只有武器会走到（只有 `attack` 才有横扫 / 重锤 AoE）；工具的挖掘 / 交互零变化。
+> 复算：`Player.java:564-586`（接触环）/ `:1312-1334`（横扫）/ `MaceItem.java:161-194`（重锤）/
+> `SweepAttackEvent.java`（③ 的官方挂点，`CommonHooks.fireSweepAttack` 在 `Player#attack` 内触发）。
 > ⭐ **推论（武器有 / 工具没有的原因）**：两个覆写对**活工具是死代码** ——
 > 工具不驱动 tick（`aiStep` 不跑 ⇒ 接触环/pushEntities 无从触发）、不调 `attack`
 > （`isAlliedTo` 不被问）⇒ 挖掘 / 交互行为零变化。反过来也别给工具补真链：
@@ -1885,6 +1888,16 @@ BreakSpeed 的本地记录；要做得新增协议字段，判定偏复杂暂缓
 方块容器是**地点**不是携带者 ⇒ **无环**（辅助工具在方块容器里维持不显示，只有主动模式
 悬浮模型）；物品形态嵌套（`hostSlot ≥ 0`，女仆身上活背包里的辅助武器）也不进环——
 与补刀收集同口径（只收直接槽位，展开活背包缓办，见 TODO 实体宿主节）。
+
+**攻击环同款分流**：环成员按各自 `LivingToolAction` 戳分流（`splitByAction`——与
+本机攻击环 / 远程玩家 ⑤ **唯一同源判据**）。女仆（等实体宿主）打中生物触发补刀时，
+服务端写好的动作戳同步到客户端后**由这条路径消费**：刚出手的武器飞到最新目标处
+（缩放脉冲、剑尖朝圆心），其余（含冷却中的）留在背后环。曾整体只画静态环不读动作戳，
+表现为"女仆打怪、环上武器纹丝不动"。
+
+**挖掘动画不在实体宿主环路径**：无记忆工具不替宿主挖掘（宿主侧挖掘语义是缓办的
+C 批，见 TODO 实体宿主节）——没有挖掘活动就没有动画可画。有记忆工具走回放 +
+`renderOne`（挖掘转圈 / 攻击脉冲），不受此限。
 
 ---
 

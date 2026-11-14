@@ -39,6 +39,7 @@ src/test/java/com/qiqi/li/
 │   ├── LivingFarmlandSeedDecoratorTest.java   # 种子图标装饰器守卫·普通/未种植/已种植/非耕地
 │   ├── LivingPistonOverlayTest.java           # 活活塞叠加层准入与取数·仅活活塞/组件方向/背包槽按container身份判/缓存双路路由含miss/进度键前缀防同号互串（绘制本体不可单测，实机验收）
 │   ├── LivingToolModelRendererAnimTest.java   # 活工具动画时钟·转圈(速度/回绕/大时钟量级不退化)+脉冲(首见冻结起点·同步延迟折算·陈旧不重播·gameTime抖动不影响进度)+过窗剪枝（2026-10-29 换源回归）
+│   ├── LivingToolModelRendererSplitTest.java  # 攻击环分流唯一判据(本机/远程玩家/实体宿主三路共用)·无戳全待机/刚出手进环且目标=动作目标/陈旧戳待机/target==null不算出手/各打各的冷却不跟飞且环心取最新戳/脉冲窗内中段胀出过窗回1（2026-11-13 实体宿主环回归）
 │   ├── LivingBrewingStandDecoratorTest.java  # 酿造白幕·守卫(原版/非活/未酿造不画)+堆叠时长折算(400/N·与 stepFor 同源)+比例时间线(clamp)+动画起点(首次记/播完不删/新批次重播/跨存档清)
 │   ├── ProgressBarDecoratorTest.java          # 通用进度条·守卫(null/比例≤0 不画)+横竖几何(黑底/彩条·原版 Math.round)+燃料刻度(1 次=1px)+越界 clamp
 │   ├── LivingItemTooltipTest.java             # 活物品段标题恒在（2026-10-07 定稿）·零内容行仍输出标题/不适用功能同样保留/真实活桶只有标题无内容行/有内容行则空行+标题+行/多功能标题只一次且行序保持
@@ -144,6 +145,7 @@ src/test/java/com/qiqi/li/
 │   ├── LivingToolHostSyncDimensionTest.java  # K2 跨维度铁律（2026-10-27 审查）·PLAYER 宿主上报在玩家循环（维度循环之前）⇒ **登记表不得在 flush 里抽干**：两维度背包宿主各收各的（旧实现首维度抽干全表 ⇒ 地狱/末地条目全丢）/ 方块宿主**显式按上报维度隔离**（不再依赖抽干顺序）/ beginTick 清残留（取走背包⇒发空包清客户端）/ 稳态零发包（flush 只读去重仍生效）（替身结构同 BeaconPlayerHostSyncTest）
 │   ├── LivingToolAssistTest.java             # 辅助挖掘**速度分层**（2026-10-27 用户定，真机翻车那层的回归）·顶层相加+背包只取最高（3+4+9=16，背包另一把 5 不加）/ 空列表⇒0 / 只有背包条目⇒取最高（含客户端 S2C 补的条目）
 │   ├── LivingWeaponAssistTest.java           # 活武器辅助的**实体宿主触发判据**（2026-11-12，D-container-25）·准入实体宿主⇒触发（临时 Provider）/ 无准入实体 / ServerPlayer（含 FakePlayer 结构上落不进实体判据）/ null ⇒ 不触发；出手循环（无敌帧压制/直连目标/写回）依赖 ServerLevel+FakePlayer 链 ⇒ 实机清单
+│   ├── LivingToolReplaySweepTest.java        # 假玩家出手**不做横扫**（2026-11-14，收口③）·SweepAttackEvent 出手者=LivingToolFakePlayer⇒setSweeping(false)（被扫伤害/扫击音效/横扫粒子同块）/ 真玩家横扫保持原版 / 原版不扫的出手不反被打开；横扫链（真 hurt/音效/粒子）依赖 ServerLevel+FakePlayer ⇒ 实机清单
 │   ├── CarriedLivingItemsTest.java              # 「随身携带」判据（2026-10-27，物品形态）·顶层工具收（innerSlot=-1）/ 已活化容器展开一层（outerSlot=宿主格、innerSlot=内容格）/ **未活化容器不展开**（活化门槛即性能闸门）/ skipMainHand（主手工具不收）/**skipMainHand 仍展开主手背包内容**（原版计入的是手持工具不是手持容器的内容；连展开一起跳 ⇒ 手持背包两端不同源）/ **槽位顺序**（容器条目紧跟宿主槽位，E6 掉落归属取最靠前）/ **写回容器走 setStackInSlot**（否则背包里的工具白干活不掉耐久）/**客户端 S2C 补的条目仍算容器内**（否则两端分层不一致 ⇒ 方块破坏又恢复）/ 写回守卫（目标格被换走⇒放弃不覆盖 / 槽位越界⇒不抛）
 │   └── LivingToolMemoryTest.java                # 工具记忆（2026-10-29）·射线/攻击 offset 逐位保留 + 宿主起点回放 / EntityType 匹配 / with/without 只动目标字段 / Codec + StreamCodec 往返
 ├── living/domain/tnt/

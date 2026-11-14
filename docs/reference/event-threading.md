@@ -51,6 +51,7 @@
 | `LivingMapEventHandler` | `onContainerOpen`(`Open`) `onPlayerLoggedOut`(`PlayerLoggedOutEvent`) `onPlayerTick`(`Post`) `onRightClickItem`(`RightClickItem`) `onServerStopped`(`ServerStoppedEvent`) |
 | `LivingToolAssist` | `onBlockDrops`(`BlockDropsEvent`) `onBreakSpeed`(`BreakSpeed`) `onHarvestCheck`(`HarvestCheck`) |
 | `LivingToolRecorder` | `onBlockBreak`(`BreakEvent`) `onLeftClickBlock`(`LeftClickBlock`) `onLivingDamage`(`Post`) `onPlayerLoggedOut`(`PlayerLoggedOutEvent`) `onRightClickItem`(`RightClickItem`) `onServerStopped`(`ServerStoppedEvent`) `onToolModify`(`BlockToolModificationEvent`) |
+| `LivingToolReplay` | `onSweepAttack`(`SweepAttackEvent`) |
 | `LivingWeaponAssist` | `onIncomingDamage`(`LivingIncomingDamageEvent`) `onKnockback`(`LivingKnockBackEvent`) `onWielderDamage`(`Post`) |
 | `PhaseDataMigration` | `onBlockDrops`(`BlockDropsEvent`) `onBlockPlace`(`EntityPlaceEvent`) |
 | ▸ **客户端包 `com/qiqi/li/client/`（客户端侧，不在服务器 tick 线程）** | |
@@ -61,7 +62,7 @@
 | `LivingItemTooltip` | `onItemTooltip`(`ItemTooltipEvent`) |
 | `LivingSoulSlabSlotPreview` | `onClientSetup`(`FMLClientSetupEvent`) `onRegisterReloadListeners`(`RegisterClientReloadListenersEvent`) |
 
-**共 60 个处理器**。本名单不含线程判断 —— 想知道某个处理器在哪个线程、能不能碰共享状态，看上方三条硬规则与 §2 的例外清单；名单里查不到的约束就是**没写过的约束**，不等于「无约束」。
+**共 61 个处理器**。本名单不含线程判断 —— 想知道某个处理器在哪个线程、能不能碰共享状态，看上方三条硬规则与 §2 的例外清单；名单里查不到的约束就是**没写过的约束**，不等于「无约束」。
 <!-- rosters:end -->
 
 ---

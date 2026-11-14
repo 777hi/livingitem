@@ -545,12 +545,15 @@ public final class LivingToolModelRenderer {
 
         // ③′ 实体宿主的背后环 —— 环心 = 载体身后（用载体的水平朝向定向），与玩家背后环同款几何。
         //    无「排除自己」：工具在女仆（等实体宿主）身上，本机物品栏里没有 ⇒ 本机也画。
+        //    ⭐ 刚出手的武器分流去攻击环（与 ⑤ 其它玩家同款）——服务端补刀写好的动作戳
+        //       到了客户端必须有人消费，否则女仆打怪时环上武器纹丝不动。
         for (Map.Entry<UUID, List<ItemStack>> ring : entityRings.entrySet()) {
             Entity carrier = HostOrigin.findEntity(level, ring.getKey());
             if (carrier == null || carrier.distanceToSqr(cameraPos) > MAX_DISTANCE * MAX_DISTANCE) {
                 continue;   // 载体不在渲染集 / 太远 ⇒ 跳过（与 ⑤ 其它玩家同口径）
             }
-            renderBackRing(mc, poseStack, buffers, level, cameraPos, partialTick, carrier, ring.getValue());
+            renderEntityRing(mc, poseStack, buffers, level, cameraPos, partialTick, now,
+                carrier, ring.getValue());
         }
 
         // ④/④′ 挖掘环 + 攻击环 —— 各自只画「正在干活」的那部分；
@@ -708,22 +711,49 @@ public final class LivingToolModelRenderer {
     private static List<ItemStack> renderAttackRing(Minecraft mc, PoseStack poseStack, MultiBufferSource buffers,
                                                     ClientLevel level, Vec3 cameraPos, float partialTick, double now,
                                                     List<ItemStack> weapons) {
-        // ── ① 按【每把武器自己】的 action 分组（2026-09-25 修正）──────────────────
-        //    ⚠️ 曾是「组内有任意一把刚出手 ⇒ 全体飞过去」—— 而辅助攻击每把有<b>独立冷却</b>
-        //       （剑 12.5 tick，见 replayAttack）⇒ 冷却中的那把也会被带着飞出去，观感不对
-        //       （用户实测）。现在：只有<b>自己刚出手</b>的进攻击环，其余（含冷却中的）
-        //       交还调用方进背后环。
-        //    ⭐ 辅助攻击是"全部朝同一目标各打一次"（docs/idea.md §1.7）⇒ 环心取
-        //       attacking 里最新那把的目标即可（通常全体相同）。
+        // ── ① 按【每把武器自己】的动作戳分流（口径只有一份，见 {@link #splitByAction}）────
+        ActionSplit split = splitByAction(weapons, now, level.getGameTime());
+
+        // ── ② 没出手的交还调用方，与待机工具【合并进同一圈背后环】─────────────────
+        if (split.target() == null) {
+            return split.idle();
+        }
+
+        // ── ③④ 攻击环：目标生物处，环面朝玩家 + 缩放脉冲（与挖掘环同款取法）───────
+        drawAttackRing(mc, poseStack, buffers, level, cameraPos, now, split);
+        return split.idle();
+    }
+
+    /**
+     * 攻击环分流结果 —— 三条环路径（本机 / 远程玩家 / 实体宿主）共用的唯一口径。
+     *
+     * <p>⭐ 按【每把武器自己】的动作戳分组（2026-09-25 修正）：曾是「组内有任意一把刚出手
+     * ⇒ 全体飞过去」—— 而辅助攻击每把有<b>独立冷却</b>（剑 12.5 tick，见 replayAttack）
+     * ⇒ 冷却中的那把也会被带着飞出去，观感不对。现在：只有<b>自己刚出手</b>的进攻击环，
+     * 其余（含冷却中的）进背后环。</p>
+     *
+     * <p>⭐ 辅助攻击是"全部朝同一目标各打一次"（docs/idea.md §1.7）⇒ {@link #target} 取
+     * 最新出手那把的目标（通常全体相同）。</p>
+     */
+    record ActionSplit(List<ItemStack> attacking, List<ItemStack> idle,
+                       long latestTick, @Nullable BlockPos target) {
+    }
+
+    /**
+     * 按【每把武器自己】的动作戳分流攻击环 / 背后环 —— 判据只有这一份。
+     *
+     * <p>起点在首见该动作戳时冻结（见 {@code pulseElapsed}）⇒ gameTime 每秒的同步跳变
+     * 不再撕扯窗口。</p>
+     */
+    static ActionSplit splitByAction(List<ItemStack> weapons, double now, long gameTime) {
         List<ItemStack> attacking = new ArrayList<>();
         List<ItemStack> idle = new ArrayList<>();
         long latest = Long.MIN_VALUE;
         BlockPos target = null;
         for (ItemStack weapon : weapons) {
             LivingToolAction action = ToolRenderState.of(weapon).action();
-            // 起点在首见该动作戳时冻结（见 pulseElapsed）⇒ gameTime 每秒的同步跳变不再撕扯窗口
             double pulseAge = action == null || action.target() == null
-                ? Double.MAX_VALUE : pulseElapsed(action.tick(), now, level.getGameTime());
+                ? Double.MAX_VALUE : pulseElapsed(action.tick(), now, gameTime);
             if (pulseAge < ATTACK_RING_TICKS) {
                 attacking.add(weapon);
                 if (action.tick() > latest) {
@@ -734,30 +764,56 @@ public final class LivingToolModelRenderer {
                 idle.add(weapon);
             }
         }
+        return new ActionSplit(attacking, idle, latest, target);
+    }
 
-        // ── ② 没出手的交还调用方，与待机工具【合并进同一圈背后环】─────────────────
-        if (target == null) {
-            return idle;
+    /**
+     * 画攻击环：目标格处，环面朝观察者，出手瞬间缩放脉冲（胀一下再回落），
+     * 剑尖朝圆心（{@code inward}）。
+     *
+     * <p>⚠️ 每把武器的辅助冷却(~12.5 tick) <b>长于</b> 存活窗口(6 tick) ⇒ 每次出手在目标处
+     * 脉冲约 6 tick，随后回背后环等下一次出手 —— 不是"留在原地反复脉冲"。</p>
+     */
+    private static void drawAttackRing(Minecraft mc, PoseStack poseStack, MultiBufferSource buffers,
+                                       ClientLevel level, Vec3 cameraPos, double now, ActionSplit split) {
+        if (split.target() == null) {
+            return;
         }
+        Vec3 center = Vec3.atCenterOf(split.target());
+        Vec3 toViewer = new Vec3(cameraPos.x - center.x, 0.0, cameraPos.z - center.z);
+        Vec3 normal = toViewer.lengthSqr() < 1.0E-6 ? lastRingFlat : toViewer.normalize();
+        drawRing(mc, poseStack, buffers, level, cameraPos, center, normal, split.attacking(),
+            0.0F, pulseScaleOf(split.latestTick(), now, level.getGameTime()), true);
+    }
 
-        // ── ③ 攻击环：目标生物处，环面朝玩家（与挖掘环同款取法）───────────────────
-        Vec3 center = Vec3.atCenterOf(target);
-        Vec3 toPlayer = new Vec3(cameraPos.x - center.x, 0.0, cameraPos.z - center.z);
-        Vec3 normal = toPlayer.lengthSqr() < 1.0E-6 ? lastRingFlat : toPlayer.normalize();
-
-        // ── ④ 缩放脉冲：出手瞬间胀一下再回落（复用交互脉冲的时长与力度）─────────────
-        //    ⚠️ 冷却(~12 tick) &lt; 存活窗口(20 tick) ⇒ 连续攻击时环【留在原地反复脉冲】，
-        //       不会"飞出去又收回"地闪。
-        float scale = 1.0F;
-        float age = (float) pulseElapsed(latest, now, level.getGameTime());
-        if (age < PULSE_TICKS) {
-            float t = age / PULSE_TICKS;
-            scale = 1.0F + PULSE_SCALE * (float) Math.sin(Math.PI * Mth.clamp(t, 0.0F, 1.0F));
+    /** 出手瞬间的缩放脉冲：{@code age} 进窗内按正弦胀出，过窗回落 1.0。 */
+    static float pulseScaleOf(long latestTick, double now, long gameTime) {
+        float age = (float) pulseElapsed(latestTick, now, gameTime);
+        if (age >= PULSE_TICKS) {
+            return 1.0F;
         }
+        float t = age / PULSE_TICKS;
+        return 1.0F + PULSE_SCALE * (float) Math.sin(Math.PI * Mth.clamp(t, 0.0F, 1.0F));
+    }
 
-        drawRing(mc, poseStack, buffers, level, cameraPos, center, normal, attacking,
-            0.0F, scale, true);
-        return idle;
+    /**
+     * 实体宿主（女仆等）环成员的分流渲染 —— 与 ⑤ 其它玩家同款：
+     * 刚出手的武器 → 攻击环，其余 → 背后环。
+     *
+     * <p>🔴 曾整体只画静态背后环、从不读 {@code LivingToolAction} ⇒ 女仆补刀时环上武器
+     * 纹丝不动（服务端写好并同步过来的动作戳没人消费）。</p>
+     *
+     * <p>⚠️ 挖掘动画不在本路径：无记忆工具不替实体宿主挖掘（宿主侧挖掘语义是缓办的
+     * C 批，见 TODO 实体宿主节）—— 没有挖掘活动，就没有挖掘动画可画。</p>
+     */
+    private static void renderEntityRing(Minecraft mc, PoseStack poseStack, MultiBufferSource buffers,
+                                         ClientLevel level, Vec3 cameraPos, float partialTick, double now,
+                                         Entity carrier, List<ItemStack> tools) {
+        ActionSplit split = splitByAction(tools, now, level.getGameTime());
+        if (!split.idle().isEmpty()) {
+            renderBackRing(mc, poseStack, buffers, level, cameraPos, partialTick, carrier, split.idle());
+        }
+        drawAttackRing(mc, poseStack, buffers, level, cameraPos, now, split);
     }
 
     /**
@@ -780,10 +836,7 @@ public final class LivingToolModelRenderer {
                                                Player owner, UUID playerId, List<ItemStack> tools,
                                                Set<String> seen) {
         Vec3 origin = HostOrigin.forPlayer(owner, partialTick);
-        List<ItemStack> attacking = new ArrayList<>();
-        List<ItemStack> idle = new ArrayList<>();
-        long latest = Long.MIN_VALUE;
-        BlockPos target = null;
+        List<ItemStack> assistWeapons = new ArrayList<>();
         for (int i = 0; i < tools.size(); i++) {
             ItemStack stack = tools.get(i);
             if (!LivingToolRecorder.isAssistItem(stack)) {
@@ -792,37 +845,15 @@ public final class LivingToolModelRenderer {
                     origin, owner, stack, "o" + playerId + "_" + i, seen);
                 continue;
             }
-            LivingToolAction action = ToolRenderState.of(stack).action();
-            if (action != null && action.target() != null
-                && pulseElapsed(action.tick(), now, level.getGameTime()) < ATTACK_RING_TICKS) {
-                attacking.add(stack);
-                if (action.tick() > latest) {
-                    latest = action.tick();
-                    target = action.target();
-                }
-            } else {
-                idle.add(stack);
-            }
+            assistWeapons.add(stack);
         }
 
-        if (!idle.isEmpty()) {
-            renderBackRing(mc, poseStack, buffers, level, cameraPos, partialTick, owner, idle);
+        // ── 环成员按各自的动作戳分流（与本机攻击环 / 实体宿主环同一份判据）──────────
+        ActionSplit split = splitByAction(assistWeapons, now, level.getGameTime());
+        if (!split.idle().isEmpty()) {
+            renderBackRing(mc, poseStack, buffers, level, cameraPos, partialTick, owner, split.idle());
         }
-
-        if (target != null) {
-            Vec3 center = Vec3.atCenterOf(target);
-            Vec3 toViewer = new Vec3(cameraPos.x - center.x, 0.0, cameraPos.z - center.z);
-            Vec3 normal = toViewer.lengthSqr() < 1.0E-6 ? lastRingFlat : toViewer.normalize();
-
-            float scale = 1.0F;
-            float age = (float) pulseElapsed(latest, now, level.getGameTime());
-            if (age < PULSE_TICKS) {
-                float t = age / PULSE_TICKS;
-                scale = 1.0F + PULSE_SCALE * (float) Math.sin(Math.PI * Mth.clamp(t, 0.0F, 1.0F));
-            }
-            drawRing(mc, poseStack, buffers, level, cameraPos, center, normal, attacking,
-                0.0F, scale, true);
-        }
+        drawAttackRing(mc, poseStack, buffers, level, cameraPos, now, split);
     }
 
     /**
