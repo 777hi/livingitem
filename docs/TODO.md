@@ -18,6 +18,7 @@
 7. **坐下互动** —— ~~已拍板未实施~~ ✅ 已实装（2026-11-12：空光标右键toggle；坐下跳过行动、I不变；被动位移保持坐姿；owned组件；预览复用TLM坐姿；tooltip休息行，D-maid-07）。实机核对右键拦截、Gecko/Bedrock坐姿、YSM响应及活塞推走保持坐姿，见 [buffer/活魂符坐下互动设计.md](buffer/活魂符坐下互动设计.md)。
 8. **光标预览与语音互动** —— ~~真实carried退回魂符图标、个人语音频率未恢复、待机固定10～30秒~~ ✅ 已实装（2026-11-12：槽↔真实carried延续同一预览，触屏/分堆/quick-craft/snapback保原图；个人`SoundFreq`、Mob式环境待机、拿起/坐起回应、投喂`MAID_ITEM_GET`，D-maid-09/10）。实机组合见[技术文档 §4](tech/living-maid-tech.md#4-验证状态与已知边界)。
 9. **HUD快捷栏连续预览** —— ~~HUD九格/副手退回魂符、关容器必重建~~ ✅ 已实装（2026-11-13：原版HUD真实槽短token握手；GUI槽↔carried↔HUD同一实例，跨表面settle；全部可见HUD女仆完整沿用D-maid-10，不限选中槽、不共享节流，D-maid-11）。待实机核对十枚、pop/数量/耐久/decorator、冷却、聊天/F1/旁观、第三方HUD与真实性能，见[技术文档 §4](tech/living-maid-tech.md#4-验证状态与已知边界)。
+10. **女仆 GUI 里活按钮缺失（2026-11-14 记，未修）** —— `AbstractContainerScreenMixin` 在 `AbstractContainerScreen.init` 的 TAIL 注入并添加 `LivingButton`，而 TLM `AbstractMaidContainerGui.init()` 在 `super.init()` **之后**调 `this.clearWidgets()` ⇒ 刚加的按钮被清掉；`containerTick` 的位置变化检查因 `previousLeftPos` 已被设成当前值不会补加。修法方向：TLM 存在时在 `AbstractMaidContainerGui` init 之后重新挂载（或改挂 `MaidContainerGuiEvent.Init`）。与流体渲染无关（那次的根因是 Z，见 `D-container-27`），本次不扩范围。
 
 ## 实体宿主行为兼容（2026-11-12 拍板；批次 A/B/A2 已落地，C 批缓办）
 

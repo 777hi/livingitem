@@ -141,8 +141,16 @@
   `MenuSlotOwnersTest.coreDoesNotReflectThirdPartyMethod` +
   `SophisticatedMenuResolverTest.ignoresForeignPackageWithSameMethod`）。
 - ⚠️ **不要试图用 handler 实例反查位置**：第三方容器的能力面 handler 与 GUI 槽的 handler
-  可能隔了多层包装（精妙背包隔三层），而 NeoForge 的 `SlotItemHandler` 内部 `container`
-  是**每槽一个匿名实例**，与任何东西都比不上。⇒ 必须走注册式解析器。
+  可能隔了多层包装（精妙背包隔三层），而 NeoForge 的 `SlotItemHandler` 的 `container`
+  是**一个静态共享的 `SimpleContainer(0)`**（21.1.219 源码：`private static Container
+  emptyInventory`）⇒ 所有 `SlotItemHandler` 槽的 `slot.container` 都相等，既不能用来认容器，
+  也不能用来分组。⇒ 必须走注册式解析器 / 宿主身份，不能按 `slot.container` 反查。
+- 🔴 **实体容器是位置口径的例外**（`D-container-26`，2026-11-13）：`entity_<uuid>` 的
+  **viewer 匹配不按位置** —— 实体会移动、且多个实体可共格（女仆坐在箱船上），按位置匹配
+  会把 A 的流体 / 运行时快照发给正在看 B 的玩家。`ContainerViewers.of` 改为从键解出实体
+  UUID、按 UUID 从玩家所在 `ServerLevel` 取宿主，再用 `EntityContainers.menuPhysicalSlot`
+  逐槽确认菜单里真有它的存储格；`positions` 参数对该分支无效（与 `ITEM_FORM` 同）。
+  位置口径仍适用于**世界方块容器**，不变。
 - ✅ **实体宿主：键是 UUID，位置每 tick 现取**（`D-container-10`，2026-10-21）——
   实体每 tick 在动 ⇒ 位置键会漂 ⇒ 熔炉进度被洗掉。位置不进键，而是每 tick 由快照提供
   （实体 ctx **每 tick 新建**，与掉落物 ctx 同范式 ⇒ 快照即当前 tick，不存在陈旧）。

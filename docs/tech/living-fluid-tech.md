@@ -732,6 +732,25 @@ slot/level/fromSlot）→ 客户端 `FluidFlowClientCache` → `ContainerFluidOv
   不能用 `isViewing` 匹配菜单槽位 ⇒ 专用判据 `ContainerContexts.isViewingEnderChest`
   （`menu instanceof ChestMenu && getContainer() instanceof PlayerEnderChestContainer`），
   与 BE 路径同构；不发时也要 `return`（末影箱无关联 BE，不能落到 BE 匹配分支）；
+- 🔴 **实体容器按宿主实体 UUID 认 viewer，不按位置**（2026-11-13 真机，`D-container-26`）：
+  `entity_<uuid>` 原先和世界方块一起走 `isViewingPositions` ⇒ 女仆坐在箱船上（两者
+  `blockPosition()` 同格）时，女仆背包的快照被派给**正在看箱船界面**的玩家，客户端单份
+  `getChestLike()` 就照槽号把水画到箱船槽上；女仆自己的界面反而不渲染。
+  现由 `ContainerViewers.of` 为 `ContainerKind.ENTITY` 从键解出 UUID、按 UUID 从玩家所在
+  `ServerLevel` 取宿主，再用 `EntityContainers.menuPhysicalSlot` 逐槽确认菜单里真有它的**存储格**
+  ⇒ 共格 / 移动 / 换维度都不串台，装备饰品槽与其它实体也不冒领；与 `syncWorldContainer`
+  的实体分支同源。`ContainerViewersTest` 守同格两实体互不串台、空/null 位置可用、宿主不在本世界不发。
+- 🔴 **叠加层必须自抬 Z，不能停在 Z=0**（2026-11-14 真机，`D-container-27`）：
+  `ContainerFluidOverlay` 用 `pose.setIdentity()` 换绝对坐标后，位姿的 Z 也一起归零；
+  而 **TLM 女仆 GUI 的 `AbstractMaidContainerGui.renderBg` 里有一次 `translate(0,0,200)`
+  没有配对 `popPose`** ⇒ 该界面后续内容全在 Z≥200，且 Foreground 事件触发时**深度测试是开着的**
+  （实机诊断 `depth=true / scissor=false`）⇒ Z=0 的水被深度剔除 ⇒
+  **女仆背包里的水「服务端发包、客户端 out=2、渲染指令都发了，但一点看不见」**。
+  原版箱子的 `renderBg` 没有这个未配对的 Z 平移，所以一直正常。
+  ⇒ 统一口径：`pose.setIdentity()` 之后 `pose.translate(0, 0, OVERLAY_Z=400)`，
+  **只抬 Z、不动 XY**（绝对坐标口径对所有界面零变化）；与
+  `LivingSpongeFluidDecorator` / `ProgressBarDecorator` 的「pose 自抬 Z」同族约定。
+  ⚠️ 这条属于**渲染位姿**，单测不可覆盖（`ProgressBarDecoratorTest` 同款边界）⇒ 走实机验收。
 - **边沿清屏**：数据从有变无（汲走最后一个源）⇒ 一次性下发空快照
   （`CLIENT_ACTIVE` 状态机），否则客户端旧水永不清除；
 - **跨存档**：`CLIENT_ACTIVE` 挂 `onServerStopped`；客户端缓存挂

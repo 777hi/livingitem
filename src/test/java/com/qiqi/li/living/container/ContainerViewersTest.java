@@ -14,12 +14,17 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.SimpleContainer;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.inventory.PlayerEnderChestContainer;
 import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.ItemStack;
 
 /**
  * 「谁正在看这个容器」的<b>唯一</b>判定入口的守卫（2026-10-23）。
@@ -113,6 +118,71 @@ class ContainerViewersTest {
             List.of(viewer), ContainerKeys.cuuidKey(containerUuid), null).size());
     }
 
+    // ── 实体容器：按宿主实体身份（2026-11-13 女仆坐箱船真机）────────────────
+
+    @Test
+    @DisplayName("实体容器：同格的两个实体不串台，女仆的水不发给看箱船的玩家")
+    void entityContainer_matchesByHostEntity_notByPosition() {
+        BlockPos shared = new BlockPos(8, 64, 16);   // 女仆坐在箱船上 ⇒ 同一格
+        UUID maidId = UUID.randomUUID();
+        UUID boatId = UUID.randomUUID();
+        Entity maid = entity(maidId, shared);
+        Entity boat = entity(boatId, shared);
+        AbstractContainerMenu maidMenu = new EntityMenu();
+        AbstractContainerMenu boatMenu = new EntityMenu();
+        registerEntityHosts(maid, boat, maidMenu, boatMenu);
+
+        ServerPlayer viewer = player(UUID.randomUUID());
+        ServerLevel level = worldWith(maid, boat);
+        when(viewer.level()).thenReturn(level);   // world 必须先建好，别在 thenReturn 里嵌套 stubbing
+        String maidKey = "minecraft:overworld|entity_" + maidId;
+
+        // 开着箱船界面：位置相同也不算女仆容器的观众（否则水会画到箱船槽上）
+        viewer.containerMenu = boatMenu;
+        assertTrue(ContainerViewers.of(List.of(viewer), maidKey, List.of(shared)).isEmpty(),
+            "位置不是实体容器的身份 ⇒ 共格不得互相串台");
+
+        // 开着自己的界面：按宿主实体身份命中
+        viewer.containerMenu = maidMenu;
+        assertEquals(List.of(viewer), ContainerViewers.of(List.of(viewer), maidKey, List.of(shared)));
+
+        // 身份判定不读位置 ⇒ 空 / null 位置一样能认观众
+        assertEquals(List.of(viewer), ContainerViewers.of(List.of(viewer), maidKey, List.of()));
+        assertEquals(List.of(viewer), ContainerViewers.of(List.of(viewer), maidKey, null));
+
+        // 箱船自己的快照仍能发给看箱船的人
+        viewer.containerMenu = boatMenu;
+        assertEquals(List.of(viewer), ContainerViewers.of(
+            List.of(viewer), "minecraft:overworld|entity_" + boatId, List.of(shared)));
+    }
+
+    @Test
+    @DisplayName("实体容器：键形态异常 / 没开界面 / 实体不在当前世界 ⇒ 没有观众")
+    void entityContainer_badKeyOrNoHost() {
+        BlockPos pos = new BlockPos(8, 64, 16);
+        UUID id = UUID.randomUUID();
+        Entity host = entity(id, pos);
+        AbstractContainerMenu menu = new EntityMenu();
+        registerEntityHosts(host, null, menu, null);
+
+        ServerPlayer viewer = player(UUID.randomUUID());
+        ServerLevel level = worldWith(host);
+        when(viewer.level()).thenReturn(level);
+        viewer.containerMenu = menu;
+        assertTrue(ContainerViewers.of(List.of(viewer), "minecraft:overworld|entity_not-a-uuid",
+            List.of(pos)).isEmpty(), "解析不出实体 UUID ⇒ 宁可不发");
+
+        viewer.containerMenu = null;
+        assertTrue(ContainerViewers.of(List.of(viewer), "minecraft:overworld|entity_" + id,
+            List.of(pos)).isEmpty(), "没打开容器界面 ⇒ 没有观众");
+
+        viewer.containerMenu = menu;
+        ServerLevel emptyWorld = mock(ServerLevel.class);           // 换维度 ⇒ 宿主不在本世界
+        when(viewer.level()).thenReturn(emptyWorld);
+        assertTrue(ContainerViewers.of(List.of(viewer), "minecraft:overworld|entity_" + id,
+            List.of(pos)).isEmpty(), "实体不在玩家当前世界 ⇒ 不发");
+    }
+
     // ── 位置匹配（世界方块容器）───────────────────────────────────────────
 
     @Test
@@ -135,6 +205,54 @@ class ContainerViewersTest {
         assertEquals(0, ContainerViewers.of(List.of(), "player_x", List.of()).size());
         assertEquals(0, ContainerViewers.of(List.of(player(UUID.randomUUID())), null, List.of()).size());
         assertEquals(0, ContainerViewers.of(List.of(player(UUID.randomUUID())), "乱键", List.of()).size());
+    }
+
+    // ── 实体容器替身 ──────────────────────────────────────────────────────
+
+    private static Entity entity(UUID uuid, BlockPos pos) {
+        Entity e = mock(Entity.class);
+        when(e.getUUID()).thenReturn(uuid);
+        when(e.blockPosition()).thenReturn(pos);
+        return e;
+    }
+
+    /** 按 UUID 反查实体的世界替身（换维度那条用例直接给一个空世界）。 */
+    private static ServerLevel worldWith(Entity... hosts) {
+        ServerLevel level = mock(ServerLevel.class);
+        for (Entity host : hosts) {
+            when(level.getEntity(host.getUUID())).thenReturn(host);
+        }
+        return level;
+    }
+
+    /**
+     * 注册「槽是否属于该实体存储区」的宿主来源。
+     *
+     * <p>⚠️ {@code EntityContainers.PROVIDERS} 是进程级静态的，判据必须锁死在<b>对象
+     * identity</b> 上 —— 否则先注册的来源会把任意菜单认成自己的容器，别的测试跟着串台。</p>
+     */
+    private static void registerEntityHosts(Entity a, Entity b,
+                                            AbstractContainerMenu menuA, AbstractContainerMenu menuB) {
+        EntityContainers.registerProvider(new EntityContainers.Provider() {
+            @Override public boolean supports(Entity value) { return value == a || value == b; }
+            @Override public EntityContainerContext createContext(Entity value, ServerLevel level) {
+                return null;
+            }
+            @Override public int menuPhysicalSlot(Entity value, AbstractContainerMenu menu, Slot slot) {
+                boolean own = (value == a && menu == menuA)
+                    || (b != null && value == b && menu == menuB);
+                return own ? slot.getContainerSlot() : -1;
+            }
+        });
+    }
+
+    private static final class EntityMenu extends AbstractContainerMenu {
+        EntityMenu() {
+            super(MenuType.GENERIC_9x3, 1);
+            addSlot(new Slot(new SimpleContainer(1), 0, 0, 0));
+        }
+        @Override public ItemStack quickMoveStack(Player p, int index) { return ItemStack.EMPTY; }
+        @Override public boolean stillValid(Player p) { return true; }
     }
 
     // ── 替身 ──────────────────────────────────────────────────────────────

@@ -57,6 +57,24 @@ public final class ContainerFluidOverlay {
     /** 每流体的渲染参数缓存（贴图位置 + 染色 + level 上限）。贴图 sprite 每帧取，资源重载安全。 */
     private static final Map<FluidType, FluidVisual> FLUID_VISUAL_CACHE = new java.util.HashMap<>();
 
+    /**
+     * GUI 叠加层的 Z 高度 —— 与 {@code LivingSpongeFluidDecorator} / {@code ProgressBarDecorator}
+     * 同族约定：{@link net.neoforged.neoforge.client.IItemDecorator} 由 NeoForge 代管
+     * {@code resetRenderState}，叠加层必须自己抬 pose。
+     *
+     * <p>2026-11-14 真机：TLM 女仆 GUI 的 {@code renderBg} 里有一次
+     * {@code translate(0,0,200)} 且<b>没有配对 popPose</b> ⇒ 该界面后续所有内容都在 Z≥200；
+     * 而 Foreground 事件触发时深度测试是<b>开着</b>的（实机日志 {@code depth=true}），
+     * 本层若停在 Z=0 会被深度剔除 ⇒ 女仆背包里的水「功能正常但一点不画」。
+     * 原版箱子的 renderBg 没有这个未配对的 Z 平移，所以一直正常。</p>
+     *
+     * <p>为什么是 400（不要随手改）：深度函数是 {@code GL_LEQUAL}（{@code RenderSystem}
+     * 初始化即 {@code _depthFunc(515)}），同深度<b>后画者胜</b>。GUI 内容在 Z=200（TLM）
+     * 或 0（原版），装饰器在 200/400；tooltip 固定 Z=400 且在 Foreground 之后画
+     * （TLM 再叠 +200 ⇒ 600）。取 400 ⇒ 盖住内容与装饰器，又不挡 tooltip。</p>
+     */
+    private static final int OVERLAY_Z = 400;
+
     private ContainerFluidOverlay() {}
 
     /** 事件入口：给当前容器界面画活流体覆盖层。 */
@@ -71,6 +89,8 @@ public final class ContainerFluidOverlay {
         pose.pushPose();
         // 事件在 (leftPos, topPos) 平移位姿里触发 ⇒ 重置，坐标统一用屏幕绝对坐标
         pose.setIdentity();
+        // 只抬 Z、不动 XY ⇒ 绝对坐标口径对所有界面零变化，见 OVERLAY_Z 的说明
+        pose.translate(0, 0, OVERLAY_Z);
 
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
