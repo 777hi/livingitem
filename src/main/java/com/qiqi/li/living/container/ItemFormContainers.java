@@ -109,6 +109,20 @@ public final class ItemFormContainers {
             }
             return found;
         }
+
+        /**
+         * 明确认领的物品内容菜单上下文；默认不认领，旧 Handle 消费路径保持独立。
+         * 宿主锚点与槽位只能由来源的真实宿主证据提供；未证明宿主的上下文须无锚点。
+         */
+        @Nullable
+        default ItemFormContainerContext contextOfMenu(AbstractContainerMenu menu, Player player) {
+            return null;
+        }
+
+        /** 明确的物品内容菜单；不依赖容器 UUID 或内容视图可用性，默认不认领。 */
+        default boolean isItemContentMenu(AbstractContainerMenu menu, Player player) {
+            return false;
+        }
     }
 
     /** 「玩家正在看的那个物品形态容器」：内容视图 + 身份 + 权威列数（0 = 不知道）。 */
@@ -166,6 +180,26 @@ public final class ItemFormContainers {
             if (handle != null) return handle;
         }
         return null;
+    }
+
+    /** 菜单上下文的来源入口；按注册顺序取首个结果，不从查看者推断宿主。 */
+    @Nullable
+    public static ItemFormContainerContext contextOf(AbstractContainerMenu menu, Player player) {
+        if (menu == null || player == null) return null;
+        for (Source source : SOURCES) {
+            ItemFormContainerContext context = source.contextOfMenu(menu, player);
+            if (context != null) return context;
+        }
+        return null;
+    }
+
+    /** 来源明确认领的物品内容菜单；解析失败时不得回落成外层方块容器。 */
+    public static boolean isItemContentMenu(AbstractContainerMenu menu, Player player) {
+        if (menu == null || player == null) return false;
+        for (Source source : SOURCES) {
+            if (source.isItemContentMenu(menu, player)) return true;
+        }
+        return false;
     }
 
     /**

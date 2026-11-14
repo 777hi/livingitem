@@ -52,6 +52,27 @@ public final class GuiInteractionHelper {
         ItemStack target = hoveredSlot.getItem();
         ItemStack trigger = menu.getCarried();
 
+        if (button == 1 && !onRelease
+                && com.qiqi.li.client.util.PortalMenuSlots.isStorageSlot(menu, hoveredSlot)) {
+            int menuSlot = com.qiqi.li.client.util.PortalMenuSlots.serverMenuSlot(menu, hoveredSlot);
+            int menuId = com.qiqi.li.client.util.PortalMenuSlots.serverMenuId(menu);
+            String action = null;
+            if (trigger.isEmpty()
+                    && com.qiqi.li.living.domain.portal.PortalClientCache.contains(menuId, menuSlot)) {
+                action = com.qiqi.li.living.domain.portal.PortalInteractHandlers.USE_ID;
+            } else if (target.isEmpty()
+                    && com.qiqi.li.living.domain.portal.PortalInteractHandlers.isIgniter(trigger)
+                    && com.qiqi.li.client.util.ClientMenuSlotOwners.resolveStorageSlot(menu, hoveredSlot) >= 0
+                    && hasNearbyPortalFrame(menu, hoveredSlot)) {
+                action = com.qiqi.li.living.domain.portal.PortalInteractHandlers.IGNITE_ID;
+            }
+            if (action != null) {
+                PacketDistributor.sendToServer(new GuiInteractionPacket(
+                    menuSlot, resolveContainerSlot(hoveredSlot), action, resolveCarriedTag(menu), menuId));
+                return true;
+            }
+        }
+
         // 活桶汲/倒（流体侧批次二，2026-10-03）：目标条件是「空槽位 + 容器级源状态」，
         // 物品中心的规则系统表达不了（matchesTarget 对空槽恒 false）⇒ 客户端按流体快照
         // 缓存精确判定，不命中不拦截（原版操作不受影响）；命中后复用 GuiInteractionPacket
@@ -90,6 +111,35 @@ public final class GuiInteractionHelper {
         PacketDistributor.sendToServer(new GuiInteractionPacket(
             hoveredSlot.index, containerSlot, entry.actionId(), carriedTag));
         return true;
+    }
+
+    private static boolean hasNearbyPortalFrame(AbstractContainerMenu menu, Slot target) {
+        var mc = Minecraft.getInstance();
+        if (mc.player == null) return false;
+        boolean playerGroup = target.container == mc.player.getInventory();
+        java.util.Map<Long, Slot> cells = new java.util.HashMap<>();
+        for (Slot slot : menu.slots) {
+            if (!com.qiqi.li.client.util.PortalMenuSlots.isStorageSlot(menu, slot)
+                    || (slot.container == mc.player.getInventory()) != playerGroup) continue;
+            if (com.qiqi.li.client.util.ClientMenuSlotOwners.resolveStorageSlot(menu, slot) < 0) continue;
+            cells.put(((long) slot.x << 32) | (slot.y & 0xffffffffL), slot);
+        }
+        java.util.Set<Slot> visited = new java.util.HashSet<>();
+        java.util.ArrayDeque<Slot> queue = new java.util.ArrayDeque<>();
+        queue.add(target);
+        while (!queue.isEmpty()) {
+            Slot slot = queue.removeFirst();
+            if (!visited.add(slot)) continue;
+            if (!slot.getItem().isEmpty()) return false;
+            for (int[] direction : new int[][] {{0, -18}, {0, 18}, {-18, 0}, {18, 0}}) {
+                long key = ((long) (slot.x + direction[0]) << 32)
+                    | ((slot.y + direction[1]) & 0xffffffffL);
+                Slot next = cells.get(key);
+                if (next == null) return false;
+                if (!com.qiqi.li.living.domain.portal.PortalStructure.isFrame(next.getItem())) queue.add(next);
+            }
+        }
+        return !visited.isEmpty();
     }
 
     /**

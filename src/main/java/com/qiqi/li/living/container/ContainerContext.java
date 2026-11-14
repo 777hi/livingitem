@@ -359,12 +359,13 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
      * 让排查者知道"哪一格、期望什么、实际什么"，而不是"物品莫名其妙多了"。</p>
      */
     static void rollbackSlot(ContainerContext ctx, int slot, ItemStack expected, String why) {
-        ctx.setItem(slot, expected);
+        ItemStack snapshot = expected.copy();
+        ctx.setItem(slot, snapshot.copy());
         ItemStack actual = ctx.getItem(slot);
-        if (!ItemStack.matches(actual, expected)) {
+        if (!ItemStack.matches(actual, snapshot)) {
             ROLLBACK_LOGGER.error(
                 "槽位回滚失败（{}）：槽位 {} 期望 {}，实际 {} —— 可能已复制，需人工核查",
-                why, slot, expected, actual);
+                why, slot, snapshot, actual);
         }
     }
 
@@ -807,7 +808,7 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
      */
     default int consume(int slot, int maxUnit) {
         if (!isValidSlot(slot) || maxUnit <= 0) return 0;
-        ItemStack source = getItem(slot);
+        ItemStack source = getItem(slot).copy();
         if (source.isEmpty()) return 0;
         int planned = Math.min(maxUnit, source.getCount());
         planned = Math.min(planned, simulateExtractItem(slot, planned));
@@ -815,7 +816,7 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
 
         int left = source.getCount() - planned;
         ItemStack expected = left <= 0 ? ItemStack.EMPTY : source.copyWithCount(left);
-        setItem(slot, expected);
+        setItem(slot, expected.copy());
         ItemStack after = getItem(slot);
         if (!ItemStack.matches(after, expected)) {
             SLOT_OPS_LOGGER.warn("consume: 槽位 {} 写回不符（期望余 {}，实际 {}）—— 按「没扣到」处理",

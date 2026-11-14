@@ -39,13 +39,13 @@ public final class WaterRegistration {
         // 让 TickContext 只认契约层 FluidPresence，不认识 ContainerFluidData
         // ⇒ container 包不再 import 水领域；跨领域消费者（活耕地判湿）也不必 import。
         TickContext.registerFluidPresenceResolver(
-            tick -> tick.data(ContainerFluidData.KEY));
+            tick -> ContainerFluidData.getOrCreate(tick.getContainerContext()));
 
         // ── 框架中继：派生源账本读写视图（2026-11-01，活海绵吸收）──
         // 与 FluidPresence 同款契约层形态：消费者（sponge 域）拿读写视图增删派生源，
         // 不必 import 水领域（R3 领域互依赖保持为零）。
         TickContext.registerSourceLedgerResolver(
-            tick -> tick.data(ContainerFluidData.KEY));
+            tick -> ContainerFluidData.getOrCreate(tick.getContainerContext()));
 
         // ── 框架中继：写回钩子（2026-10-08 计划 ⑤）──
         // 原逻辑硬编码在 ContainerLivingItemHandler#writebackBlockEntities，现移入各领域：

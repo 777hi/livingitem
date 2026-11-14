@@ -20,6 +20,17 @@ src/test/java/com/qiqi/li/
 ├── LivingItemChunkContainerScanTest.java     # 战利品容器不处理但保留区块 / 开箱回到能力路径；水·岩浆真实单箱附件 NBT→单次 Load 延迟可见→重新发现→实际 tick 发包 / 删末源保存重载不复活
 ├── LivingItemRuntimeContainerPositionsTest.java  # 运行时遥测发包「容器键→位置」反查·非 Container BE(精妙背包/ProjectE)返回位置不抛异常(I-C5 翻转)/原版 Container BE/无 BE 返回 null + 缓存键反查·前缀定向该维度且不越维度找补/未知维度/裸键扫描兜底/背包坏键安全跳过/dimPrefixOf + 实体容器键→实时位置/实体不存在→空（2026-10-21）
 ├── LivingItemMenuRuntimeTest.java            # 混合实体菜单首包·主实体与玩家保留、附加末影箱不得覆盖单非玩家缓存，普通菜单原路由不变
+├── living/domain/portal/
+│   ├── ContainerPortalDataTest.java            # 门面区域不可变/Codec合法性/多门归属/独立快照，不将门绑定框材
+│   ├── PortalStructureTest.java                # 四邻围闭/非矩形/开口/缺槽/共享边；实际流体/即时源/活物品阻塞，普通货不灭门
+│   ├── PortalDataAccessTest.java               # Player双key、UUID唯一真身、附件回填、清门不清其他key、空状态不复活
+│   ├── PortalDataMigrationTest.java            # UUID交接/无UUID快照/旧热值覆盖/只清门数据/双箱拆半旧key与左右顺序
+│   ├── PortalPositionResolverTest.java         # 自身锚点优先、配置允许借位、实体实时位置、无效/缺位置不借查看者
+│   ├── PortalItemTransferTest.java             # 确认扣量与组件/超堆分批、真实源实体短拾取延迟/一次标记、拒绝条件恢复、已交付不回填、异常留痕
+│   ├── PortalPlayerTeleportTest.java           # 玩家权限/冷却/目标禁用/坐标比例/出口矩形与回调，真实维度旅行事件仅取消一次
+│   ├── LivingPortalFunctionTest.java           # 脆弱维护与正式tick优先：actual/即时源/活物品整区清、普通货保留、多门局部失效、无位置清盘、修复不复燃
+│   ├── PortalServerSyncTest.java               # 无门/无server/无playerList no-op、真实菜单双viewer映射、非空持续同步/一次空包、客户端清缓存后无Open恢复、只写回阶段tick发包、关闭清客户端
+│   └── PortalClientCacheTest.java              # 菜单与容器独立、映射/输入输出不可变、旧菜单包拒绝、codec往返与界限校验
 ├── testutil/
 │   └── FakeContainerContext.java              # ContainerContext 测试替身（内存数组实现）
 ├── client/gui/
@@ -32,7 +43,7 @@ src/test/java/com/qiqi/li/
 │   └── LivingItemInputKeyMapTest.java         # 方向输入键码表·九宫格 8 键映射/未知键为 0/全角字母归一化与转大写链路（2026-10-29）
 ├── client/icon/
 │   ├── WaterWheelRenderStateTest.java         # 水车图标旋转时钟·速度(Create口径 6°/s/RPM)/方向(符号随rpm)/rpm=0恒0/360°回绕连续/大时钟量级不退化(2026-10-29 换源回归)
-│   ├── LivingIconSpecTest.java                # 方向getter自声明/内建四向读取/非活不读方向/null与旋转模式冲突/完整namespace缓存键/GUI与非GUI回退
+│   ├── LivingIconSpecTest.java                # 方向getter自声明/内建四向读取/非活不读方向/null与旋转模式冲突/完整namespace缓存键/GUI与非GUI回退；活黑曜石平面声明与普通栈原版回退
 │   ├── DirectionalLivingModelTest.java        # 家族 GUI 角度约定·四向视觉角表pinned(实机调校点)/非四向兜底归位/物品管线相反数与火把家族实机验证值逐项一致
 │   └── PistonRenderStateTest.java             # 活活塞伸缩进度时钟·伸出/收回插值与端点钳制/中途翻转从当前进度续接/方向变化吸附不滑动/键独立/活跃键剪枝/头位移线性([0,1]方块单位)/旋转表pinned(实机调校点)
 ├── client/render/

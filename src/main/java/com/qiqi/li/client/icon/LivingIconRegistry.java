@@ -72,6 +72,8 @@ public final class LivingIconRegistry {
      * 每次添加新的活物品类型时，只需在此方法中追加配置即可。
      */
     public static void registerAll() {
+        register(obsidianSpec());
+
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.HOPPER)
             .addLocalVariant("base", "item/hopper_living", stack -> true)
             .decorator(new LivingHopperDecorator())
@@ -360,6 +362,12 @@ public final class LivingIconRegistry {
                 stack -> LivingWaxedBulbData.of(stack).chargeMilliFe() > 0)
             .addLocalVariant("unlit", textureOff, stack -> true)
             .build());
+    }
+
+    static LivingIconSpec obsidianSpec() {
+        return LivingIconSpec.builder(net.minecraft.world.item.Items.OBSIDIAN)
+            .addLocalVariant("base", "item/obsidian", stack -> true)
+            .build();
     }
 
     private static void registerCopperBlock(Item item, String texture) {

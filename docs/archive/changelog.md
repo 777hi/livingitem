@@ -17,6 +17,8 @@
 
 ## 2026-11-14
 
+- **活地狱门组合结构落地** —— 活黑曜石四邻围闭、活打火石点燃，门面遇活物品/活流体/无可用位置整区熄灭且不复燃；接容器持久化、真实宿主配置、菜单映射与原版动态门户纹理，普通货物交原版实体门户，玩家按容器位置走公开搜造门API。库存快照与子菜单身份守卫、全量回归通过，GUI与双世界实机尚未验收。→ [活地狱门](../tech/living-nether-portal-tech.md)。
+
 - **活地狱门宿主位置配置预留** —— 在现有 SERVER `host_anchor` 增加 `portal=false` 与缓存读取/加载重载刷新，补注册及默认值守卫；设计恢复“无可用位置熄灭”，物品形态仅经配置借真实外层宿主，不用点击者兜底。门玩法及GUI宿主反查尚未实施。→ [设计稿 §5](../buffer/活地狱门设计稿.md) · [活背包配置](../tech/living-backpack-tech.md#55-宿主锚点的玩法开关2026-10-24)。
 
 - 🧍 **活武器横扫不再伤载体** —— 用户实测女仆被自己背包活武器的横扫打伤：出手原点 = 载体位置、补刀贴身必在横扫框内，而横扫过滤只有队伍制 `isAlliedTo`（2026-10-23 收口②只豁免了玩家）。接 NeoForge 官方挂点 `SweepAttackEvent`：出手者是假玩家 ⇒ 整段关横扫（被扫伤害/音效/粒子同块），出手语义收敛为「直连一刀」；真玩家出手不受影响。重锤冲击落地 AoE 不走该事件，载体仍可能被波及，属已知边界。守卫含负向验证；修复后用户实机验收通过。→ [工具 §5 世界交互边界表](../tech/living-tool-tech.md)。
@@ -55,9 +57,9 @@
 
 - ⭐ **实体宿主的辅助背后环（D-container-25 泛化）** —— 实体容器直接内容（hostSlot=-1）里的无记忆工具/武器进【该宿主的背后环】，环心 = 载体身后（`renderBackRing` 泛化到 Entity）；数据零新增同步（复用 K2 实体路径的工具清单）。方块容器是地点不是携带者 ⇒ 无环；物品形态嵌套不进环（与补刀收集同口径，展开活背包缓办）。顺带修渲染配置门（见下）。→ `living-tool-tech.md` §11.8
 - 🐛 **渲染配置门改按 hostSlot 分流（D-container-25 渲染侧补齐）** —— K2 实体路径引入「实体容器直接条目（hostSlot=-1）」后被旧门 `Kind != BLOCK` 误伤（开关关 ⇒ 有回放无外显）。`LivingToolModelRenderer` ③ / `LivingToolRayRenderer#renderContainerHosts` 改为 `hostSlot ≥ 0 && !开关`（hostSlot ≥ 0 ⇔ 物品形态借锚；-1 ⇔ 宿主直接内容，不设门）。→ `living-tool-tech.md` §6.1
-- ⭐ **实体宿主行为兼容 A2 批：活信标实体开光（D-container-25）** —— 三宿主完整落地（玩家 / 箱子 / 实体容器）：buff 中心 = 实体位置；光束锚点 = 宿主 bbHeight 顶面 + 顶面法线（`headTop`/`headNormal` 泛化到 Entity，无俯仰实体零分支退化为竖直向上）；一实体一条光束（多枚取最高，与玩家口径一致）；新增 `BeaconEntityHostSync`/`BeaconEntityHostPacket`/客户端缓存（无「自己那份不发」——主人物品栏里没有信标，所有跟踪者都靠包）。→ `living-beacon-tech.md` §0 · [buffer/entity-host-behavior-design.md](../buffer/entity-host-behavior-design.md)
-- ⭐ **实体宿主行为兼容批次 A 第二段 + B 批（D-container-25）** —— K2 上报补实体容器路径（`hostRefOfContext`：实体容器 `ofEntity(uuid,-1)`，客户端 `HostOrigin` 画实体中心，F3+B 射线联机可见）；武器辅助触发泛化（`onWielderDamage`：挥刀者 = 玩家或准入实体宿主，容器逐槽收集无记忆活武器、写回 `ctx.setItem`+槽位同步；`ServerPlayer`/FakePlayer 结构上落不进实体判据，`active` 标志第二道防递归）。→ [buffer/entity-host-behavior-design.md](../buffer/entity-host-behavior-design.md) · `living-tool-tech.md` §6 · `living-weapon-tech.md` §0
-- ⭐ **实体宿主行为兼容批次 A 第一段（不设门口径，D-container-25）** —— 活工具在实体容器（船/矿车/生物背包）从实体眼睛位置回放记忆射线（掉落物碰撞箱中心不变）、活水车向实体脚下方块注应力（掉落物同判）；`host_anchor.*` 四开关范围不变，只门物品形态借锚（活背包嵌套仍受门）。目标测试 +7、全量 1815 条 --rerun 全绿。→ [buffer/entity-host-behavior-design.md](../buffer/entity-host-behavior-design.md) · `living-tool-tech.md` §2.3/§6 · `living-water-wheel-tech.md` §4.5
+- ⭐ **实体宿主行为兼容 A2 批：活信标实体开光（D-container-25）** —— 三宿主完整落地（玩家 / 箱子 / 实体容器）：buff 中心 = 实体位置；光束锚点 = 宿主 bbHeight 顶面 + 顶面法线（`headTop`/`headNormal` 泛化到 Entity，无俯仰实体零分支退化为竖直向上）；一实体一条光束（多枚取最高，与玩家口径一致）；新增 `BeaconEntityHostSync`/`BeaconEntityHostPacket`/客户端缓存（无「自己那份不发」——主人物品栏里没有信标，所有跟踪者都靠包）。→ `living-beacon-tech.md` §0 · [实体宿主决策 D-container-25](../decisions.md)
+- ⭐ **实体宿主行为兼容批次 A 第二段 + B 批（D-container-25）** —— K2 上报补实体容器路径（`hostRefOfContext`：实体容器 `ofEntity(uuid,-1)`，客户端 `HostOrigin` 画实体中心，F3+B 射线联机可见）；武器辅助触发泛化（`onWielderDamage`：挥刀者 = 玩家或准入实体宿主，容器逐槽收集无记忆活武器、写回 `ctx.setItem`+槽位同步；`ServerPlayer`/FakePlayer 结构上落不进实体判据，`active` 标志第二道防递归）。→ [实体宿主决策 D-container-25](../decisions.md) · `living-tool-tech.md` §6 · `living-weapon-tech.md` §0
+- ⭐ **实体宿主行为兼容批次 A 第一段（不设门口径，D-container-25）** —— 活工具在实体容器（船/矿车/生物背包）从实体眼睛位置回放记忆射线（掉落物碰撞箱中心不变）、活水车向实体脚下方块注应力（掉落物同判）；`host_anchor.*` 四开关范围不变，只门物品形态借锚（活背包嵌套仍受门）。目标测试 +7、全量 1815 条 --rerun 全绿。→ [实体宿主决策 D-container-25](../decisions.md) · `living-tool-tech.md` §2.3/§6 · `living-water-wheel-tech.md` §4.5
 - 🧹 **容器内置规则表清理（28 条 → 15 条，删的全是死数据）** —— 删原版 7 条（列数由 `BuiltInContainerLayouts` 家族代码表给出、单源化；`minecraft:double_chest` 本是从未匹配过 BE 类型键的死键）与精妙背包 6 条（联动 `SophisticatedBackpackSource` 按「槽数÷行数」给权威列数，LIVE 层优先于规则，且能算对装升级后的任意容量——钉死六档的规则表做不到）；保留 ironchest 14 条（108×12 是启发式盲区）与 avaritia 1 条（`TileInfinityChest` 菜单结构学不到 + 启发式必错 ⇒ 规则是唯一正确来源）。连带：`ContainerCompatibilityConfigTest` 双源漂移守卫退役、改为守代码表数值，多档共存测试改程序化注册；`ContainerRuleConfigTest` 内置夹具换 `ironchest:iron_chest`；`SimpleContainerContextTest` 借用守卫 finally 改移除临时规则；指南规则清单同步。→ [container-compatibility.md](../guides/container-compatibility.md)
 
 - 🧹 **文档系统第一轮减法** —— 删 `docs/README.md` §0 的叙述性铺垫与「第 4 项已退役」在脚本 / 规约中的全部残留（编号 4 留空、不重排）；`decisions.md` §2「理由要点」体例改为判据式（不可重推论证可就地展开，29 行现状即合规）；铁律 6 的事故复盘压缩行数、位置不变。不改口径 / 能力边界，两份索引与冷启动卡不变。→ [文档规约](../README.md) · [决策体例](../decisions.md)

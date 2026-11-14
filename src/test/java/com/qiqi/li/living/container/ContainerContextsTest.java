@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.eq;
@@ -14,6 +15,7 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -248,6 +250,97 @@ class ContainerContextsTest {
                 assertNotEquals("chest_5_70_-3", ctx.getContainerKey(),
                     "玩家背包槽位不能被菜单位置误导进方块容器");
             }
+        }
+
+        @org.junit.jupiter.api.AfterEach
+        void clearItemSources() {
+            ItemFormContainers.clearForTest();
+        }
+
+        @Test
+        @DisplayName("明确物品菜单上下文优先于菜单位置，保留来源的真实宿主证据")
+        void itemContext_keepsSourceHostBeforeMenuPositionFallback() {
+            ServerPlayer player = mock(ServerPlayer.class);
+            Level level = mock(Level.class);
+            when(player.level()).thenReturn(level);
+            PositionAwareMenu menu = new PositionAwareMenu();
+            player.containerMenu = menu;
+            Slot slot = new Slot(new SimpleContainer(1), 0, 0, 0);
+            ItemFormContainerContext expected = new ItemFormContainerContext(new ItemStackHandler(27),
+                UUID.randomUUID(), level, 9, new ContainerAnchor.AtPlayer(player), 4);
+            ItemFormContainers.register(new ItemFormContainers.Source() {
+                @Override public boolean isContainerItem(ItemStack stack) { return false; }
+                @Override public IItemHandler contentHandler(ItemStack stack) { return null; }
+                @Override public ItemFormContainerContext contextOfMenu(AbstractContainerMenu candidate, Player viewer) {
+                    return candidate == menu ? expected : null;
+                }
+            });
+
+            assertSame(expected, ContainerContexts.resolve(player, slot));
+            assertEquals(new ContainerAnchor.AtPlayer(player), expected.getHostAnchor());
+            assertEquals(4, expected.getHostSlot());
+        }
+
+        @Test
+        @DisplayName("旧 Handle 来源默认不抢明确菜单上下文；末端仍构造无锚点 ctx")
+        void legacyHandleSource_keepsFallbackWithUnknownHost() {
+            ServerPlayer player = mock(ServerPlayer.class);
+            Level level = mock(Level.class);
+            when(player.level()).thenReturn(level);
+            AbstractContainerMenu menu = mock(AbstractContainerMenu.class);
+            player.containerMenu = menu;
+            UUID uuid = UUID.randomUUID();
+            IItemHandler handler = new ItemStackHandler(27);
+            ItemFormContainers.Source legacy = new ItemFormContainers.Source() {
+                @Override public boolean isContainerItem(ItemStack stack) { return false; }
+                @Override public IItemHandler contentHandler(ItemStack stack) { return null; }
+                @Override public ItemFormContainers.Handle handleOfMenu(AbstractContainerMenu candidate, Player viewer) {
+                    return candidate == menu ? new ItemFormContainers.Handle(handler, uuid, 9) : null;
+                }
+            };
+            ItemFormContainers.register(legacy);
+
+            assertNull(ItemFormContainers.contextOf(menu, player));
+            assertFalse(ItemFormContainers.isItemContentMenu(menu, player));
+            var context = ContainerContexts.resolve(player, new Slot(new SimpleContainer(1), 0, 0, 0));
+            assertNotNull(context);
+            assertEquals(uuid, context.getContainerUuid());
+            assertEquals(9, context.getLiveColumns());
+            assertNull(context.getHostAnchor());
+            assertEquals(-1, context.getHostSlot());
+        }
+
+        @Test
+        @DisplayName("旧 Handle 不改变菜单 BE 位置的原优先级")
+        void legacyHandleSource_doesNotPreemptBlockMenu() {
+            ServerPlayer player = mock(ServerPlayer.class);
+            Level level = mock(Level.class);
+            when(player.level()).thenReturn(level);
+            when(level.getBlockEntity(PACK_POS)).thenReturn(mock(BlockEntity.class));
+            when(level.getCapability(eq(Capabilities.ItemHandler.BLOCK), eq(PACK_POS), any()))
+                .thenReturn(new ItemStackHandler(27));
+            PositionAwareMenu menu = new PositionAwareMenu();
+            player.containerMenu = menu;
+            ItemFormContainers.register(new ItemFormContainers.Source() {
+                @Override public boolean isContainerItem(ItemStack stack) { return false; }
+                @Override public IItemHandler contentHandler(ItemStack stack) { return null; }
+                @Override public ItemFormContainers.Handle handleOfMenu(AbstractContainerMenu candidate, Player viewer) {
+                    return new ItemFormContainers.Handle(new ItemStackHandler(27), UUID.randomUUID(), 9);
+                }
+            });
+
+            var context = ContainerContexts.resolve(player, new Slot(new SimpleContainer(1), 0, 0, 0));
+            assertNotNull(context);
+            assertEquals("chest_5_70_-3", context.getContainerKey());
+        }
+
+        @Test
+        @DisplayName("contextOf 空菜单/空玩家不分派来源")
+        void itemContextNullArguments_returnNull() {
+            assertNull(ItemFormContainers.contextOf(null, mock(Player.class)));
+            assertNull(ItemFormContainers.contextOf(mock(AbstractContainerMenu.class), null));
+            assertFalse(ItemFormContainers.isItemContentMenu(null, mock(Player.class)));
+            assertFalse(ItemFormContainers.isItemContentMenu(mock(AbstractContainerMenu.class), null));
         }
 
         @Test

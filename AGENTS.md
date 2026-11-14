@@ -59,11 +59,12 @@ LivingItemFunction.tick() (各功能类自行实现 tick 逻辑)
                                   （活工具 + 活武器：记忆玩家操作 → FakePlayer 回放；
                                    渲染见 client/render/LivingToolModelRenderer + RayRenderer）
     ↓
-容器级数据计算（HasContainerData 接口，按优先级排序；**全库仅 4 个实现者**）
+容器级数据计算（HasContainerData 接口，按优先级排序；**全库仅 5 个实现者**）
     ├── LivingFluidFunction        (prio 0) — 容器级流体 BFS（**自维持**，与桶解耦）
     ├── LivingWaterWheelFunction   (prio 1) — 应力计算 + postTickSync
     ├── LivingRedstoneFunction     (prio 2) — 红石信号传播（**自维持，唯一驱动点**）
-    └── LivingWaxedCopperFunction  (prio 3) — 电力记账（依赖红石已算完）
+    ├── LivingWaxedCopperFunction  (prio 3) — 电力记账（依赖红石已算完）
+    └── LivingPortalFunction       (prio 4) — 门面脆弱维护与原版过门交接
     ↓
 ContainerContext (组合接口) → TickContext (tick 级临时状态 + 脏槽位批量同步)
     ↓
@@ -91,6 +92,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 | 族 | 子系统（点击直达文档） |
 |----|----------------------|
 | **活物品功能（20）** | [活TNT](docs/tech/living-tnt-tech.md) · [活流体](docs/tech/living-fluid-tech.md) · [活熔炉](docs/tech/living-furnace-tech.md) · [活酿造台](docs/tech/living-brewing-stand-tech.md) · [活漏斗](docs/tech/living-hopper-tech.md) · [活箱子](docs/tech/living-chest-tech.md) · [活末影箱](docs/tech/living-ender-chest-tech.md) · [活水车](docs/tech/living-water-wheel-tech.md) · [活地图传送](docs/tech/living-map-ender-pearl-tech.md) · [活耕地](docs/tech/living-farmland-tech.md) · [活工具](docs/tech/living-tool-tech.md) · [活武器](docs/tech/living-weapon-tech.md) · [活红石](docs/tech/living-redstone-tech.md)（信号层含 [活铜](docs/tech/living-copper-tech.md)） · [活涂蜡铜块（红电发电）](docs/tech/living-power-tech.md) · [活打火石](docs/tech/living-flint-and-steel-tech.md) · [活信标](docs/tech/living-beacon-tech.md) · [活背包](docs/tech/living-backpack-tech.md) · [活海绵](docs/tech/living-sponge-tech.md) · [活活塞](docs/tech/living-piston-tech.md) · [活魂符 / 女仆背包联动](docs/tech/living-maid-tech.md) |
+| **组合结构玩法（1）** | [活地狱门](docs/tech/living-nether-portal-tech.md)（活黑曜石围闭 + 门面传送） |
 | **容器基础设施（6）** | [容器七问总览](docs/system-design/container-overview.md) · [基础设施](docs/system-design/living-item-infrastructure.md) · [多方块容器身份解析](docs/system-design/container-identity.md) · [容器边界口径](docs/system-design/container-boundary.md) · [数据模型](docs/system-design/data-model.md) · [超大堆叠审计](docs/system-design/oversized-stack-audit.md) |
 | **红电 · 电力（2）** | [红电架构演进](docs/buffer/redstone-evolution-roadmap.md) · [红电不变量测试](docs/system-design/power-invariants.md) |
 | **跨域机制（3）** | [GUI交互](docs/system-design/gui-interaction-system.md) · [图标系统](docs/system-design/icon-system.md) · [Tooltip 系统](docs/system-design/tooltip-system.md) |

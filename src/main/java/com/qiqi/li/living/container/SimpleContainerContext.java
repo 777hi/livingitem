@@ -308,7 +308,7 @@ public class SimpleContainerContext implements TickableContainerContext {
      * <p>失败时<b>只告警不静默</b>（I-C6）：回退路径本身就罕见，静默会让「物品去哪了」无法排查。</p>
      */
     private void writeBackViaExtractInsert(int slot, ItemStack target) {
-        ItemStack before = handler.getStackInSlot(slot);
+        ItemStack before = handler.getStackInSlot(slot).copy();
 
         // ① + ②：抽取必须是完整的一整份
         ItemStack extracted = handler.extractItem(slot, before.getCount(), false);
@@ -322,7 +322,7 @@ public class SimpleContainerContext implements TickableContainerContext {
         }
 
         // ③ 插回
-        ItemStack remaining = handler.insertItem(slot, target, false);
+        ItemStack remaining = handler.insertItem(slot, target.copy(), false);
         if (!remaining.isEmpty() && isArmorSlot(inventory, slot)) {
             inventory.armor.set(slot - 36, target);
             syncSlotToClients(slot, target);

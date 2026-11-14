@@ -179,7 +179,7 @@ ContainerFluidWriteback → ctx.persist(key, value) → ContainerDataSavedData�
     water_wheel = false      # 水车向宿主位置注入应力（随身动力）
     tool_and_weapon = false  # 工具/武器用宿主位置作射线起点（背包里也能按记忆挖矿）
     beacon = false           # 信标用宿主位置开光（随身光环）
-    portal = false           # 配置预留：活地狱门借宿主位置，玩法未实施
+    portal = false           # 地狱门借真实宿主位置（无可用位置熄灭）
 ```
 
 | 开关 | 关掉时的表现 |
@@ -189,7 +189,7 @@ ContainerFluidWriteback → ctx.persist(key, value) → ContainerDataSavedData�
 | `tool_and_weapon` | 主动模式（有记忆）不重放射线；外显（悬浮模型 / 记忆射线 / 背后环 / 攻击环）不画。⚠️ **被动辅助（挖掘 / 攻击）不受影响** —— 见 §6 的「开关关时的真实现状」 |
 | `beacon` | 不开光 |
 
-`portal` 当前仅预留配置项和默认值守卫，**活地狱门玩法未实施**；无可用位置熄灭、真实宿主借位与GUI/tick接入见[设计稿 §5](../buffer/活地狱门设计稿.md)，不把配置存在当作行为已生效。
+`portal` 控制内部活地狱门借真实宿主位置；关掉且无自身位置时门熄灭，开启不自动复燃。GUI真实宿主反查范围与原版传送边界见[活地狱门 §2/§5](living-nether-portal-tech.md)，不把内部tick有位置当成所有子菜单均可用。
 
 ⚠️ **`tool_and_weapon` 同时作用于工具和武器** —— 两者共用一个 `LivingToolFunction`，
 做不到只开一半（要那样得先拆功能）。

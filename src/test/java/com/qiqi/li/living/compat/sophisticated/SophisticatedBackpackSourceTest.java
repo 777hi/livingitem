@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -14,13 +16,19 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.items.ItemStackHandler;
 import net.p3pp3rf1y.sophisticatedbackpacks.backpack.BackpackBlockEntity;
 import net.p3pp3rf1y.sophisticatedbackpacks.backpack.BackpackItem;
 import net.p3pp3rf1y.sophisticatedbackpacks.backpack.wrapper.BackpackWrapper;
@@ -28,8 +36,12 @@ import net.p3pp3rf1y.sophisticatedbackpacks.backpack.wrapper.IBackpackWrapper;
 import net.p3pp3rf1y.sophisticatedbackpacks.common.gui.BackpackContainer;
 import net.p3pp3rf1y.sophisticatedbackpacks.common.gui.BackpackContext;
 
+import com.qiqi.li.living.container.ContainerAnchor;
+import com.qiqi.li.living.container.ContainerContexts;
 import com.qiqi.li.living.container.ContainerUuids;
+import com.qiqi.li.living.container.ItemFormContainerContext;
 import com.qiqi.li.living.container.ItemFormContainers;
+import com.qiqi.li.living.container.MenuSlotOwners;
 
 /**
  * 精妙背包来源的守卫（2026-10-23）—— 重点是 {@link SophisticatedBackpackSource#handleOfMenu}
@@ -227,6 +239,219 @@ class SophisticatedBackpackSourceTest {
     void handleOf_foreignMenu_returnsNull() {
         assertNull(ItemFormContainers.handleOf(mock(AbstractContainerMenu.class), player()),
             "非背包菜单不能扫物品栏猜 —— 玩家只带一个活背包时会把 AE2/ProjectE 的槽位错认成它");
+    }
+
+    @Test
+    @DisplayName("两个活背包：菜单内容、真实宿主槽与 tick 同源")
+    void contextOf_twoBackpacks_matchesTickHostAndContents() {
+        ItemStack first = livingBackpack();
+        ItemStack second = livingBackpack();
+        Player owner = playerWith(first, ItemStack.EMPTY, second);
+        Level level = mock(Level.class);
+        when(owner.level()).thenReturn(level);
+        BackpackContainer menu = new BackpackContainer(
+            new BackpackContext.Item(BackpackWrapper.fromStack(second), 2));
+
+        ItemFormContainerContext context = ItemFormContainers.contextOf(menu, owner);
+        ItemFormContainerContext tickContext = new ItemFormContainerContext(source.contentHandler(second),
+            ContainerUuids.ofItem(second), level, source.columns(second), new ContainerAnchor.AtPlayer(owner), 2);
+
+        assertNotNull(context);
+        assertEquals(tickContext.getContainerKey(), context.getContainerKey());
+        assertEquals(tickContext.getHostAnchor(), context.getHostAnchor());
+        assertEquals(tickContext.getHostSlot(), context.getHostSlot());
+        assertEquals(tickContext.getLiveColumns(), context.getLiveColumns());
+        assertSame(source.contentHandler(second), ItemFormContainers.handleOf(menu, owner).handler());
+        assertNull(context.getAnchor(), "借宿主信息不能变成物品容器自身的世界位置");
+    }
+
+    @Test
+    @DisplayName("重复容器 UUID：旧内容解析保留，但不给宿主借位")
+    void contextOf_duplicateUuid_hasNoHostProof() {
+        ItemStack stack = livingBackpack();
+        Player owner = playerWith(stack, stack.copy());
+        BackpackContainer menu = new BackpackContainer(
+            new BackpackContext.Item(BackpackWrapper.fromStack(stack), 0));
+
+        assertUnknownHost(ItemFormContainers.contextOf(menu, owner));
+        assertNotNull(ItemFormContainers.handleOf(menu, owner));
+    }
+
+    @Test
+    @DisplayName("AnotherPlayer 只证明真实主人，不能借查看者的同 UUID 背包")
+    void contextOf_anotherPlayer_usesActualOwnerInventory() {
+        ItemStack stack = livingBackpack();
+        Player viewer = playerWith(stack.copy());
+        Player owner = playerWith(ItemStack.EMPTY, stack);
+        Level level = mock(Level.class);
+        when(viewer.level()).thenReturn(level);
+        when(owner.level()).thenReturn(level);
+        BackpackContainer menu = new BackpackContainer(
+            new BackpackContext.AnotherPlayer(BackpackWrapper.fromStack(stack), 0, owner));
+
+        ItemFormContainerContext context = ItemFormContainers.contextOf(menu, viewer);
+
+        assertNotNull(context);
+        assertEquals(new ContainerAnchor.AtPlayer(owner), context.getHostAnchor());
+        assertEquals(1, context.getHostSlot(), "原生分区槽不等于真实物品栏平面槽");
+    }
+
+    @Test
+    @DisplayName("AnotherPlayer 主人物品栏无背包：即使查看者有相同 UUID 也不借位")
+    void contextOf_anotherPlayerMissingHost_doesNotFallBackToViewer() {
+        ItemStack stack = livingBackpack();
+        Player viewer = playerWith(stack);
+        Player owner = playerWith();
+        BackpackContainer menu = new BackpackContainer(
+            new BackpackContext.AnotherPlayer(BackpackWrapper.fromStack(stack), 0, owner));
+
+        assertUnknownHost(ItemFormContainers.contextOf(menu, viewer));
+    }
+
+    @Test
+    @DisplayName("官方 Item 原槽失效：不以物品栏唯一背包替代菜单证据")
+    void contextOf_invalidOriginalSlot_hasNoHostProof() {
+        ItemStack stack = livingBackpack();
+        Player owner = playerWith(stack);
+        BackpackContainer menu = new BackpackContainer(
+            new BackpackContext.Item(BackpackWrapper.fromStack(stack), -1));
+
+        assertUnknownHost(ItemFormContainers.contextOf(menu, owner));
+    }
+
+    @Test
+    @DisplayName("菜单背包不在真实物品栏：不使用默认 owner/position")
+    void contextOf_itemMissingFromInventory_hasNoHostProof() {
+        ItemStack stack = livingBackpack();
+        BackpackContainer menu = new BackpackContainer(
+            new BackpackContext.Item(BackpackWrapper.fromStack(stack), 0));
+
+        assertUnknownHost(ItemFormContainers.contextOf(menu, player()));
+    }
+
+    @Test
+    @DisplayName("未知来源的基类默认主人与位置不是证据")
+    void contextOf_unknownType_hasNoHostProof() {
+        ItemStack stack = livingBackpack();
+        assertUnknownHost(ItemFormContainers.contextOf(menuOf(stack), playerWith(stack)));
+    }
+
+    @Test
+    @DisplayName("物品子背包：不穿透直接物品 parent 借玩家锚点")
+    void contextOf_itemSubBackpack_doesNotPierceParent() {
+        ItemStack parent = livingBackpack();
+        ItemStack child = livingBackpack();
+        BackpackContext parentContext = new BackpackContext.Item(BackpackWrapper.fromStack(parent), 0);
+        BackpackContainer menu = new BackpackContainer(
+            new BackpackContext.ItemSubBackpack(BackpackWrapper.fromStack(child), 0, parentContext));
+
+        assertUnknownHost(ItemFormContainers.contextOf(menu, playerWith(parent, child)));
+    }
+
+    @Test
+    @DisplayName("方块子背包：明确物品上下文隔离菜单 parent BE 的位置回退")
+    void resolve_blockSubBackpack_doesNotBecomeParentBe() {
+        ItemStack parent = livingBackpack();
+        ItemStack child = livingBackpack();
+        BlockPos position = new BlockPos(4, 65, 7);
+        BackpackContext parentContext = new BackpackContext.Block(BackpackWrapper.fromStack(parent), position);
+        BackpackContainer menu = new BackpackContainer(
+            new BackpackContext.BlockSubBackpack(BackpackWrapper.fromStack(child), position, parentContext));
+        ServerPlayer viewer = mock(ServerPlayer.class);
+        when(viewer.level()).thenReturn(mock(Level.class));
+        viewer.containerMenu = menu;
+        MenuSlotOwners.registerMenuResolver(candidate -> candidate == menu ? position : null);
+        IItemHandler parentContents = new ItemStackHandler(27);
+        BackpackBlockEntity parentBe = placedBackpack();
+        when(viewer.level().getBlockEntity(position)).thenReturn(parentBe);
+        when(viewer.level().getCapability(org.mockito.Mockito.eq(
+            net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK),
+            org.mockito.Mockito.eq(position), org.mockito.Mockito.any())).thenReturn(parentContents);
+        Slot slot = new Slot(new SimpleContainer(1), 0, 0, 0);
+
+        var resolved = ContainerContexts.resolve(viewer, slot);
+
+        assertNotNull(resolved);
+        assertEquals(ContainerUuids.ofItem(child), resolved.getContainerUuid());
+        assertNull(resolved.getAnchor());
+        assertNull(resolved.getHostAnchor());
+        assertEquals(-1, resolved.getHostSlot());
+    }
+
+    @Test
+    @DisplayName("子背包缺容器 UUID：Handle 为空仍不回落 parent BE")
+    void resolve_blockSubBackpackWithoutUuid_rejectsParentBeFallback() {
+        assertBrokenSubBackpackRejectsParent(BackpackWrapper.fromStack(backpack()));
+    }
+
+    @Test
+    @DisplayName("子背包 wrapper 失效：Handle 为空仍不回落 parent BE")
+    void resolve_blockSubBackpackWithUnavailableWrapper_rejectsParentBeFallback() {
+        assertBrokenSubBackpackRejectsParent(null);
+    }
+
+    @Test
+    @DisplayName("子背包 wrapper 抛异常：菜单类型认领不依赖内容视图")
+    void resolve_blockSubBackpackWithThrowingWrapper_rejectsParentBeFallback() {
+        IBackpackWrapper unavailable = () -> { throw new IllegalStateException("wrapper unavailable"); };
+        assertBrokenSubBackpackRejectsParent(unavailable);
+    }
+
+    private void assertBrokenSubBackpackRejectsParent(IBackpackWrapper wrapper) {
+        BlockPos position = new BlockPos(4, 65, 7);
+        BackpackContext parent = new BackpackContext.Block(
+            BackpackWrapper.fromStack(livingBackpack()), position);
+        BackpackContainer menu = new BackpackContainer(
+            new BackpackContext.BlockSubBackpack(wrapper, position, parent));
+        ServerPlayer viewer = mock(ServerPlayer.class);
+        Level level = mock(Level.class);
+        when(viewer.level()).thenReturn(level);
+        viewer.containerMenu = menu;
+        MenuSlotOwners.registerMenuResolver(candidate -> candidate == menu ? position : null);
+        BackpackBlockEntity parentBe = placedBackpack();
+        when(level.getBlockEntity(position)).thenReturn(parentBe);
+        when(level.getCapability(org.mockito.Mockito.eq(
+            net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK),
+            org.mockito.Mockito.eq(position), org.mockito.Mockito.any())).thenReturn(new ItemStackHandler(27));
+        Slot slot = new Slot(new SimpleContainer(1), 0, 0, 0);
+
+        assertNotNull(level.getBlockEntity(position));
+        assertEquals(java.util.List.of(position), MenuSlotOwners.resolve(menu, slot));
+        assertNull(ItemFormContainers.handleOf(menu, viewer));
+        assertNull(ItemFormContainers.contextOf(menu, viewer));
+        assertTrue(ItemFormContainers.isItemContentMenu(menu, viewer));
+        assertNull(ContainerContexts.resolve(viewer, slot), "明确子菜单不能回落到可用的 parent BE");
+    }
+
+    @Test
+    @DisplayName("顶层方块背包不认作借位物品上下文，保留 BE 解析")
+    void contextOf_topLevelBlock_leavesBePathIntact() {
+        ItemStack stack = livingBackpack();
+        BackpackContainer menu = new BackpackContainer(
+            new BackpackContext.Block(BackpackWrapper.fromStack(stack), BlockPos.ZERO));
+
+        assertNull(ItemFormContainers.contextOf(menu, playerWith(stack)));
+        assertFalse(ItemFormContainers.isItemContentMenu(menu, playerWith(stack)));
+        assertNotNull(ItemFormContainers.handleOf(menu, playerWith(stack)));
+    }
+
+    @Test
+    @DisplayName("外来菜单即使玩家只有一个活背包也不被认领")
+    void contextOf_foreignMenuWithOneBackpack_returnsNull() {
+        ItemStack stack = livingBackpack();
+        Player owner = playerWith(stack);
+        AbstractContainerMenu menu = mock(AbstractContainerMenu.class);
+
+        assertNull(ItemFormContainers.contextOf(menu, owner));
+        assertFalse(ItemFormContainers.isItemContentMenu(menu, owner));
+        assertNull(ItemFormContainers.handleOf(menu, owner));
+    }
+
+    private static void assertUnknownHost(ItemFormContainerContext context) {
+        assertNotNull(context, "宿主证据不足不能丢掉旧内容上下文");
+        assertNull(context.getHostAnchor());
+        assertEquals(-1, context.getHostSlot());
+        assertNull(context.getAnchor());
     }
 
     // ── 边界：认不出就是不认，不猜 ──────────────────────────────────────────

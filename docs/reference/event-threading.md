@@ -54,15 +54,18 @@
 | `LivingToolReplay` | `onSweepAttack`(`SweepAttackEvent`) |
 | `LivingWeaponAssist` | `onIncomingDamage`(`LivingIncomingDamageEvent`) `onKnockback`(`LivingKnockBackEvent`) `onWielderDamage`(`Post`) |
 | `PhaseDataMigration` | `onBlockDrops`(`BlockDropsEvent`) `onBlockPlace`(`EntityPlaceEvent`) |
+| `PortalDataMigration` | `onBlockDrops`(`BlockDropsEvent`) `onBlockPlace`(`EntityPlaceEvent`) |
+| `PortalServerSync` | `onClose`(`Close`) `onOpen`(`Open`) |
 | ▸ **客户端包 `com/qiqi/li/client/`（客户端侧，不在服务器 tick 线程）** | |
 | `ContainerFluidOverlaySubscriber` | `onRenderForeground`(`Foreground`) |
+| `ContainerPortalOverlay` | `onClosing`(`Closing`) `onForeground`(`Foreground`) |
 | `FluidClientCacheCleanup` | `onLoggingOut`(`LoggingOut`) |
 | `LivingContainerOverlaySubscriber` | `onRenderForeground`(`Foreground`) |
 | `LivingItemInputHandler` | `onCharTyped`(`Pre`) `onClientLoggingOut`(`LoggingOut`) `onKeyPressed`(`Pre`) `onLeftClickEmpty`(`LeftClickEmpty`) `onLevelTick`(`Post`) `onMouseDragged`(`Pre`) `onScreenClosing`(`Closing`) |
 | `LivingItemTooltip` | `onItemTooltip`(`ItemTooltipEvent`) |
 | `LivingSoulSlabSlotPreview` | `onClientSetup`(`FMLClientSetupEvent`) `onRegisterReloadListeners`(`RegisterClientReloadListenersEvent`) |
 
-**共 61 个处理器**。本名单不含线程判断 —— 想知道某个处理器在哪个线程、能不能碰共享状态，看上方三条硬规则与 §2 的例外清单；名单里查不到的约束就是**没写过的约束**，不等于「无约束」。
+**共 67 个处理器**。本名单不含线程判断 —— 想知道某个处理器在哪个线程、能不能碰共享状态，看上方三条硬规则与 §2 的例外清单；名单里查不到的约束就是**没写过的约束**，不等于「无约束」。
 <!-- rosters:end -->
 
 ---

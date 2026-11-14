@@ -157,6 +157,8 @@ public class LivingItem {
         com.qiqi.li.living.domain.hopper.HopperComponents.REG.register(modEventBus);
         com.qiqi.li.living.domain.water.WaterComponents.REG.register(modEventBus);
         com.qiqi.li.living.domain.water.WaterComponents.ATTACH_REG.register(modEventBus);
+        com.qiqi.li.living.domain.portal.PortalComponents.REG.register(modEventBus);
+        com.qiqi.li.living.domain.portal.PortalComponents.ATTACH_REG.register(modEventBus);
         com.qiqi.li.living.domain.sponge.SpongeComponents.REG.register(modEventBus);
         com.qiqi.li.living.domain.power.PowerComponents.REG.register(modEventBus);
         com.qiqi.li.living.domain.power.PowerComponents.ATTACH_REG.register(modEventBus);
@@ -294,6 +296,7 @@ public class LivingItem {
         ChestRegistration.register();
         EnderRegistration.register();
         WaterRegistration.register();
+        com.qiqi.li.living.domain.portal.PortalRegistration.register();
         SpongeRegistration.register();     // 活海绵（第一段骨架：组件 + 注册，吸收随第二段）
         TntRegistration.register();        // 含活打火石（点燃规则的归属见该类注释）
         RedstoneRegistration.register();
@@ -728,6 +731,9 @@ public class LivingItem {
         registrar.playToClient(LivingItemSyncPacket.TYPE, LivingItemSyncPacket.STREAM_CODEC, LivingItemSyncPacket::handle);
         // 服务端 → 客户端：下发容器流体快照（Q5 渲染轨，FluidFlowServerSync.flushAfterTick 发送）
         registrar.playToClient(FluidFlowSyncPacket.TYPE, FluidFlowSyncPacket.STREAM_CODEC, FluidFlowSyncPacket::handle);
+        registrar.playToClient(com.qiqi.li.living.domain.portal.PortalSnapshotPacket.TYPE,
+            com.qiqi.li.living.domain.portal.PortalSnapshotPacket.STREAM_CODEC,
+            com.qiqi.li.living.domain.portal.PortalSnapshotPacket::handle);
         // 活工具（K2）：近处方块容器里的活工具清单（位置 + ItemStack），
         // 供客户端渲染记忆射线与（未来的）悬浮模型 —— 不开 GUI 时客户端拿不到箱子内容
         registrar.playToClient(LivingToolHostPacket.TYPE, LivingToolHostPacket.STREAM_CODEC, LivingToolHostPacket::handle);

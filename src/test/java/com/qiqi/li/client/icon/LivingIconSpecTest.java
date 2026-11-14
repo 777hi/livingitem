@@ -34,6 +34,22 @@ class LivingIconSpecTest {
     }
 
     @Test
+    void obsidianUsesDedicatedFlatIconAndPlainStackKeepsVanilla() {
+        LivingIconSpec spec = LivingIconRegistry.obsidianSpec();
+        assertSame(Items.OBSIDIAN, spec.getItem());
+        assertEquals(1, spec.getVariants().size());
+        assertEquals(ResourceLocation.fromNamespaceAndPath("living_item", "item/obsidian"),
+            spec.getVariants().getFirst().getModelId());
+        assertFalse(spec.isDirectional());
+        assertFalse(spec.isRotating());
+        assertFalse(spec.isLivingItem(new ItemStack(Items.OBSIDIAN)));
+        assertTrue(spec.isLivingItem(living(Items.OBSIDIAN)));
+        BakedModel vanilla = mock(BakedModel.class);
+        var overrides = new GenericLivingItemOverrides(vanilla, spec);
+        assertSame(vanilla, overrides.resolve(vanilla, new ItemStack(Items.OBSIDIAN), null, null, 0));
+    }
+
+    @Test
     void arbitraryItemUsesDeclaredDirectionNotTorchData() {
         ItemStack stack = living(Items.STONE);
         LivingRedstoneTorchData.set(stack, LivingRedstoneTorchData.DEFAULT.withDirection(Pos2D.LEFT));

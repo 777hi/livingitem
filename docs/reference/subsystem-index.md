@@ -10,6 +10,7 @@
 |--------|------|----------|
 | **活TNT** | 引信倒计时 + 爆炸，威力随数量缩放，三模式（普通/大当量/超级爆炸）；破坏按区块分帧 + 待炸账本 | [living-tnt-tech.md](../tech/living-tnt-tech.md) |
 | **活流体**（原「活水桶」） | 容器级流体引擎（`ContainerFluidData`：派生源/蔓延/晋升/挤没/转化/推动，`LivingFluidFunction` 自维持驱动）+ 行为分档 + 转化表；**活桶**（桶家族 × 活标记）是系统的激活器/载体（类比红电的活铜块们），子系统关系见 §1；**活熔岩** = 接入的第二条会流动流体（引擎零改动）：焚毁/源诞生 + 前沿反应·刷石机，见 §3.7 | [docs/tech/living-fluid-tech.md](../tech/living-fluid-tech.md) |
+| **活地狱门**（组合结构） | 活黑曜石自由围闭 + 活打火石点燃；普通货物交接原版过门，玩家GUI传送；活物品/活流体/无可用位置导致整门熄灭，配置控制真实宿主借位 | [living-nether-portal-tech.md](../tech/living-nether-portal-tech.md) |
 | **活熔炉** | 配方匹配 + 燃料消耗 + 方向槽位配置 | [living-furnace-tech.md](../tech/living-furnace-tech.md) |
 | **活酿造台** | 5 槽位（3 瓶 + 燃料 + 材料）方向配置（**支持斜向**）+ 400t 批次酿造 + 次数制燃料（落盘）+ 堆叠加速（`step = count`）；`level.potionBrewing()` 已聚合原版与所有模组配方 ⇒ 零兼容代码 | [living-brewing-stand-tech.md](../tech/living-brewing-stand-tech.md) |
 | **活漏斗** | TransferPipeline 统一传输 + 黑白名单 + 跨容器 + WASD 配置 | [living-hopper-tech.md](../tech/living-hopper-tech.md) |

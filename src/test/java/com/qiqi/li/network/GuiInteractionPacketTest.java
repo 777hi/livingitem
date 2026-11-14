@@ -46,6 +46,27 @@ class GuiInteractionPacketTest {
         assertFalse(GuiInteractionPacket.isValidTarget(new ItemStack(Items.STONE)));
     }
 
+    @Test
+    @DisplayName("门面双索引不符时拒绝，不回退到另一个库存同号槽")
+    void portalSlotRejectsMismatchedPhysicalIndex() {
+        FakeMenu menu = new FakeMenu();
+        menu.attach(slot(0));
+        menu.attach(slot(1));
+        org.junit.jupiter.api.Assertions.assertNull(GuiInteractionPacket.resolvePortalSlot(menu, 0, 1));
+    }
+
+    @Test
+    @DisplayName("门面双索引明确时选择该库存，不比较货物内容")
+    void portalSlotSelectsExactMenuEntry() {
+        FakeMenu menu = new FakeMenu();
+        menu.attach(slot(0));
+        menu.attach(slot(0));
+        org.junit.jupiter.api.Assertions.assertSame(menu.getSlot(1),
+            GuiInteractionPacket.resolvePortalSlot(menu, 1, 0));
+        org.junit.jupiter.api.Assertions.assertNull(GuiInteractionPacket.resolvePortalSlot(menu, -1, 0));
+        org.junit.jupiter.api.Assertions.assertNull(GuiInteractionPacket.resolvePortalSlot(menu, 2, 0));
+    }
+
     // ── 槽位定位（创造模式索引错位，2026-10-06）──────────────────
 
     /** 最小菜单：只为装槽位（判定逻辑不需要其它行为）。 */

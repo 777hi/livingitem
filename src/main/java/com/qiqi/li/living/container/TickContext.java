@@ -110,6 +110,10 @@ public class TickContext {
         // 时机与原「在此调 getFluidData」等价（2026-10-08 计划 ⑤ 移出）。
     }
 
+    public ContainerContext getContainerContext() {
+        return ctx;
+    }
+
     /**
      * 读容器级 / tick 级数据（1a-4 的统一入口）。
      * 持久 key 委托给容器的 store；tick 级 key 查本 tick 的 store。

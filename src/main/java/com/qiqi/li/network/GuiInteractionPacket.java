@@ -45,8 +45,14 @@ public record GuiInteractionPacket(
     int slotIndex,
     int containerSlot,
     String actionId,
-    @Nullable CompoundTag carriedTag
+    @Nullable CompoundTag carriedTag,
+    int menuId
 ) implements CustomPacketPayload {
+
+    public GuiInteractionPacket(int slotIndex, int containerSlot, String actionId,
+                                @Nullable CompoundTag carriedTag) {
+        this(slotIndex, containerSlot, actionId, carriedTag, -1);
+    }
 
     public static final ResourceLocation ID = ResourceLocation.fromNamespaceAndPath("living_item", "gui_interaction");
     public static final CustomPacketPayload.Type<GuiInteractionPacket> TYPE = new CustomPacketPayload.Type<>(ID);
@@ -66,6 +72,7 @@ public record GuiInteractionPacket(
         } else {
             buf.writeBoolean(false);
         }
+        buf.writeVarInt(pkt.menuId);
     }
 
     private static GuiInteractionPacket decode(FriendlyByteBuf buf) {
@@ -76,7 +83,7 @@ public record GuiInteractionPacket(
         if (buf.readBoolean()) {
             carriedTag = buf.readNbt();
         }
-        return new GuiInteractionPacket(slotIndex, containerSlot, actionId, carriedTag);
+        return new GuiInteractionPacket(slotIndex, containerSlot, actionId, carriedTag, buf.readVarInt());
     }
 
     @Override
@@ -89,6 +96,9 @@ public record GuiInteractionPacket(
             if (!(context.player() instanceof ServerPlayer player)) return;
 
             AbstractContainerMenu menu = player.containerMenu;
+            boolean portalAction = com.qiqi.li.living.domain.portal.PortalInteractHandlers
+                .isPortalAction(packet.actionId());
+            if (portalAction && packet.menuId() != menu.containerId) return;
 
             boolean carriedRestored = false;
             if (player.isCreative() && packet.carriedTag() != null) {
@@ -100,8 +110,10 @@ public record GuiInteractionPacket(
                 }
             }
 
-            Slot targetSlot = resolveSlot(menu, packet.slotIndex(), packet.containerSlot(),
-                slot -> isAcceptable(player, slot));
+            Slot targetSlot = portalAction
+                ? resolvePortalSlot(menu, packet.slotIndex(), packet.containerSlot())
+                : resolveSlot(menu, packet.slotIndex(), packet.containerSlot(),
+                    slot -> isAcceptable(player, slot));
             if (targetSlot == null) {
                 if (carriedRestored) menu.setCarried(ItemStack.EMPTY);
                 return;
@@ -122,6 +134,8 @@ public record GuiInteractionPacket(
             }
 
             handler.handle(player, targetSlot);
+            if (player.containerMenu != menu) return;
+            com.qiqi.li.living.domain.portal.PortalInteractHandlers.afterInteraction(player, targetSlot);
 
             if (carriedRestored) {
                 ItemStack modifiedCarried = menu.getCarried().copy();
@@ -135,6 +149,13 @@ public record GuiInteractionPacket(
 
             menu.broadcastChanges();
         });
+    }
+
+    /** 门面动作只接受当前菜单的精确双索引，不回退到另一库存的同号槽。 */
+    static Slot resolvePortalSlot(AbstractContainerMenu menu, int menuSlot, int physicalSlot) {
+        if (menuSlot < 0 || menuSlot >= menu.slots.size()) return null;
+        Slot slot = menu.getSlot(menuSlot);
+        return slot.isActive() && slot.getContainerSlot() == physicalSlot ? slot : null;
     }
 
     /**

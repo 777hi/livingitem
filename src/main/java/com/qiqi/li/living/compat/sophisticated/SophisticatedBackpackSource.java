@@ -1,5 +1,6 @@
 package com.qiqi.li.living.compat.sophisticated;
 
+import java.util.Optional;
 import java.util.UUID;
 
 import javax.annotation.Nullable;
@@ -13,7 +14,9 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.items.IItemHandler;
 
+import com.qiqi.li.living.container.ContainerAnchor;
 import com.qiqi.li.living.container.ContainerUuids;
+import com.qiqi.li.living.container.ItemFormContainerContext;
 import com.qiqi.li.living.container.ItemFormContainers;
 
 /**
@@ -107,7 +110,23 @@ public final class SophisticatedBackpackSource implements ItemFormContainers.Sou
     @Nullable
     private static java.lang.reflect.Method getBackpackWrapperOfBe;
 
+    /** 官方顶层玩家来源；子来源不继承穿透外层宿主的能力。 */
+    @Nullable
+    private static Class<?> itemContextClass;
+    @Nullable
+    private static Class<?> anotherPlayerContextClass;
+    @Nullable
+    private static java.lang.reflect.Method getContextType;
+    @Nullable
+    private static java.lang.reflect.Method getBackpackSlotIndex;
+    @Nullable
+    private static java.lang.reflect.Method getParentBackpackContext;
+    /** {@code AnotherPlayer#getOwnerPlayer(Player)} 的显式覆写，不能使用基类默认值。 */
+    @Nullable
+    private static java.lang.reflect.Method getAnotherPlayerOwner;
+
     private static boolean resolved;
+    private static boolean hostProofFailureLogged;
 
     public SophisticatedBackpackSource() {
         resolve();
@@ -170,6 +189,25 @@ public final class SophisticatedBackpackSource implements ItemFormContainers.Sou
             getBackpackWrapperOfBe = null;
             LOGGER.warn("[ModSophisticated] 放置形态反射解析失败（{}），"
                 + "放置态背包的列数回落启发式（物品形态不受影响）：{}",
+                e.getClass().getSimpleName(), e.getMessage());
+        }
+
+        // 菜单宿主证明独立降级；旧内容视图与 Handle 不依赖这些 API。
+        try {
+            Class<?> contextClass = Class.forName(BACKPACK_CONTEXT);
+            getContextType = contextClass.getMethod("getType");
+            getBackpackSlotIndex = contextClass.getMethod("getBackpackSlotIndex");
+            getParentBackpackContext = contextClass.getMethod("getParentBackpackContext");
+            itemContextClass = Class.forName(BACKPACK_CONTEXT + "$Item");
+            anotherPlayerContextClass = Class.forName(BACKPACK_CONTEXT + "$AnotherPlayer");
+            getAnotherPlayerOwner = anotherPlayerContextClass.getDeclaredMethod("getOwnerPlayer", Player.class);
+        } catch (ReflectiveOperationException | LinkageError e) {
+            itemContextClass = null;
+            anotherPlayerContextClass = null;
+            getBackpackSlotIndex = null;
+            getParentBackpackContext = null;
+            getAnotherPlayerOwner = null;
+            LOGGER.warn("[ModSophisticated] 菜单宿主证明 API 解析失败（{}），未证明的宿主不借位：{}",
                 e.getClass().getSimpleName(), e.getMessage());
         }
     }
@@ -286,6 +324,103 @@ public final class SophisticatedBackpackSource implements ItemFormContainers.Sou
         }
     }
 
+    /** 精妙官方物品/子背包类型；UUID 缺失或 wrapper 失效仍属于物品菜单。 */
+    @Override
+    public boolean isItemContentMenu(AbstractContainerMenu menu, Player player) {
+        if (menu == null || player == null || backpackContainerClass == null
+                || getBackpackContext == null || getContextType == null
+                || !backpackContainerClass.isInstance(menu)) return false;
+        try {
+            Object context = getBackpackContext.invoke(menu);
+            if (context == null) return false;
+            Object type = getContextType.invoke(context);
+            if (!(type instanceof Enum<?> value)) return false;
+            return switch (value.name()) {
+                case "ITEM_BACKPACK", "ITEM_SUB_BACKPACK", "BLOCK_SUB_BACKPACK",
+                    "ANOTHER_PLAYER_BACKPACK", "ANOTHER_PLAYER_SUB_BACKPACK" -> true;
+                default -> false;
+            };
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            logHostProofFailure(e);
+            return false;
+        }
+    }
+
+    /**
+     * 物品/子背包菜单的上下文；只有官方顶层玩家来源且真实物品栏唯一匹配时才提供宿主。
+     * 子来源不穿透物品 parent，未证明的宿主保持无锚点；顶层方块来源留给 BE 路径。
+     */
+    @Override
+    @Nullable
+    public ItemFormContainerContext contextOfMenu(AbstractContainerMenu menu, Player player) {
+        ItemFormContainers.Handle handle = handleOfMenu(menu, player);
+        if (handle == null) return null;
+        ItemFormContainerContext unknownHost = new ItemFormContainerContext(
+            handle.handler(), handle.containerUuid(), player.level(), handle.columns(), null);
+        try {
+            Object context = getBackpackContext.invoke(menu);
+            if (context == null || getContextType == null) return unknownHost;
+            Object type = getContextType.invoke(context);
+            String typeName = type instanceof Enum<?> value ? value.name() : "";
+            if (typeName.equals("BLOCK_BACKPACK")) return null;
+            if (getBackpackSlotIndex == null || getParentBackpackContext == null
+                    || getParentBackpackContext.invoke(context) != context
+                    || !(getBackpackSlotIndex.invoke(context) instanceof Integer originalSlot)
+                    || originalSlot < 0) {
+                return unknownHost;
+            }
+
+            Player owner;
+            if (typeName.equals("ITEM_BACKPACK") && context.getClass() == itemContextClass) {
+                owner = player;
+            } else if (typeName.equals("ANOTHER_PLAYER_BACKPACK")
+                    && context.getClass() == anotherPlayerContextClass && getAnotherPlayerOwner != null) {
+                Object ownerResult = getAnotherPlayerOwner.invoke(context, player);
+                if (!(ownerResult instanceof Optional<?> optional)
+                        || !(optional.orElse(null) instanceof Player actualOwner)) {
+                    return unknownHost;
+                }
+                owner = actualOwner;
+            } else {
+                return unknownHost;
+            }
+            if (owner.level() != player.level()) return unknownHost;
+            Object wrapper = getBackpackWrapper.invoke(context, player);
+            Object stackResult = wrapper == null ? null : getBackpack.invoke(wrapper);
+            if (!(stackResult instanceof ItemStack stack)) return unknownHost;
+            int hostSlot = uniqueInventorySlot(owner, stack, handle.containerUuid());
+            if (hostSlot < 0) return unknownHost;
+            return new ItemFormContainerContext(handle.handler(), handle.containerUuid(), player.level(),
+                handle.columns(), new ContainerAnchor.AtPlayer(owner), hostSlot);
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            logHostProofFailure(e);
+            return unknownHost;
+        }
+    }
+
+    /** 真实玩家物品栏的平面槽；重复 UUID 或栈内容不符均不能证明宿主。 */
+    private int uniqueInventorySlot(Player owner, ItemStack menuStack, UUID uuid) {
+        var inventory = owner.getInventory();
+        if (inventory == null || !isContainerItem(menuStack)
+                || !uuid.equals(ContainerUuids.ofItem(menuStack))) return -1;
+        int found = -1;
+        for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
+            ItemStack stack = inventory.getItem(slot);
+            if (stack == null || stack.isEmpty() || !uuid.equals(ContainerUuids.ofItem(stack))) continue;
+            if (found >= 0 || !isContainerItem(stack)
+                    || !ItemStack.isSameItemSameComponents(menuStack, stack)) return -1;
+            found = slot;
+        }
+        return found;
+    }
+
+    private static synchronized void logHostProofFailure(Throwable failure) {
+        if (hostProofFailureLogged) return;
+        hostProofFailureLogged = true;
+        LOGGER.warn("[ModSophisticated] 菜单宿主证明失败（{}），未证明的宿主不借位：{}",
+            failure.getClass().getSimpleName(), failure.getMessage());
+    }
+
     /**
      * 从菜单反查「GUI 正在看的那一个背包」。
      *
@@ -325,7 +460,7 @@ public final class SophisticatedBackpackSource implements ItemFormContainers.Sou
             if (handler == null) return null;
 
             return new ItemFormContainers.Handle(handler, containerUuid, columns(stack));
-        } catch (ReflectiveOperationException | RuntimeException e) {
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
             LOGGER.warn("[ModSophisticated] 菜单反查背包失败（{}）：{}",
                 e.getClass().getSimpleName(), e.getMessage());
             return null;

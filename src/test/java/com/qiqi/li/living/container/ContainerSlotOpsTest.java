@@ -561,6 +561,81 @@ class ContainerSlotOpsTest {
         assertEquals(8, stackOf(ctx, 0).getCount(), "扣减不成立 ⇒ 恢复原状");
     }
 
+    @Test
+    @DisplayName("consume：setter 抽干旧活引用后重定向，仍按独立快照恢复原物品与组件")
+    void consumeRestoresSnapshotWhenSetterDrainsOldReference() {
+        LimitedHandler h = new LimitedHandler(64) {
+            boolean first = true;
+            @Override public void setStackInSlot(int slot, ItemStack stack) {
+                if (first) {
+                    first = false;
+                    slots[slot].setCount(0);
+                    slots[slot] = new ItemStack(Items.GOLD_INGOT, 1);
+                } else {
+                    super.setStackInSlot(slot, stack);
+                }
+            }
+        };
+        ItemStack original = new ItemStack(Items.COAL, 8);
+        CompoundTag tag = new CompoundTag();
+        tag.putString("marker", "before");
+        original.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+        ItemStack snapshot = original.copy();
+        h.slots[0] = original;
+        SimpleContainerContext ctx = new SimpleContainerContext(h);
+
+        assertEquals(0, ctx.consume(0, 3));
+        assertTrue(original.isEmpty(), "旧活引用确实被 setter 抽干");
+        assertTrue(ItemStack.matches(snapshot, ctx.getItem(0)), "恢复独立快照，不能恢复空掉的旧引用");
+    }
+
+    @Test
+    @DisplayName("consume：setter 污染传入 expected，不得把坏写入判断为成功")
+    void consumeDoesNotAcceptMutatedWriteArgument() {
+        FakeContainerContext ctx = new FakeContainerContext(1, 1) {
+            boolean first = true;
+            @Override public void setItem(int slot, ItemStack stack) {
+                if (first) {
+                    first = false;
+                    stack.setCount(2);
+                }
+                super.setItem(slot, stack);
+            }
+        };
+        ctx.set(0, new ItemStack(Items.COAL, 8));
+
+        assertEquals(0, ctx.consume(0, 3), "实余2不是预期5，不能确认扣3");
+        assertEquals(8, ctx.getItem(0).getCount(), "失败恢复操作前快照");
+    }
+
+    @Test
+    @DisplayName("rollback：setter 污染参数不改变调用方快照，校验仍比较未暴露的原值")
+    void rollbackDoesNotExposeCallerSnapshotToSetter() {
+        FakeContainerContext ctx = new FakeContainerContext(1, 1) {
+            @Override public void setItem(int slot, ItemStack stack) {
+                stack.setCount(1);
+                super.setItem(slot, stack);
+            }
+        };
+        ItemStack expected = new ItemStack(Items.COAL, 8);
+
+        ContainerContext.rollbackSlot(ctx, 0, expected, "test argument mutation");
+
+        assertEquals(8, expected.getCount(), "调用方快照不得污染");
+        assertEquals(1, ctx.getItem(0).getCount(), "违约后端没有被伪装成恢复成功");
+    }
+
+    @Test
+    @DisplayName("consume 抽插回退：抽取修改旧活引用时，独立抽前数量不得误判不完整")
+    void consumeFallbackKeepsIndependentExtractionSnapshot() {
+        PlainHandlerLike h = new PlainHandlerLike(1);
+        h.slots[0] = new ItemStack(Items.COAL, 8);
+        SimpleContainerContext ctx = new SimpleContainerContext(h);
+
+        assertEquals(3, ctx.consume(0, 3));
+        assertEquals(5, ctx.getItem(0).getCount(), "回退抽完整8后写余5，而非重插原8");
+    }
+
     // ── transform ──────────────────────────────────────────────
 
     @Test
