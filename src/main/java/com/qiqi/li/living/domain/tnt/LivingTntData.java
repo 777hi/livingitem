@@ -1,6 +1,6 @@
-package com.qiqi.li.living.domain.tnt;import net.minecraft.world.item.ItemStack;
+package com.qiqi.li.living.domain.tnt;
 
-
+import net.minecraft.world.item.ItemStack;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.components.LivingComponents;
 import java.util.function.Consumer;
@@ -43,16 +43,8 @@ public record LivingTntData(ExplosionData explosion) implements TooltipProvider 
         return LivingItemManager.getData(stack, TntComponents.LIVING_TNT_DATA.value(), LivingTntData.DEFAULT);
     }
 
-    /**
-     * 便捷方法：设置TNT数据。
-     */
-
     /** 写入：等于默认值时移除组件。（A1 迁移：原 LivingItemManager.setTntData） */
     public static void set(ItemStack stack, LivingTntData data) {
         LivingItemManager.setData(stack, TntComponents.LIVING_TNT_DATA.value(), data, LivingTntData.DEFAULT);
     }
-
-    /**
-     * 便捷方法：获取水桶数据。
-     */
 }

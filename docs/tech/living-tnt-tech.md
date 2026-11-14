@@ -217,6 +217,9 @@ for (SlotEntry entry : entries) {
         if (ExplosionComponent.ignite(context, level)) {
             return;                             // 成功：ignite 已清空容器内全部活 TNT 槽位
         }
+        if (context.getItem(slot).isEmpty()) {
+            return;                             // ignite 的早退路径（计数异常）不清槽位；真被清空 = 物品已不在，写回会复活
+        }
         // 无可用锚点 ⇒ 熄灭（清零 ignited / fuseTimer），写回 + 同步
         LivingTntData.set(stack, data.withExplosion(ExplosionData.DEFAULT));
         context.setItem(slot, stack);
@@ -602,7 +605,8 @@ long 求和守卫沿用，不声称 N 无上界或所有模式内存均有统一
 - **FIFO、三态**：自然加载事件只提交坐标；tick 阶段区分「FULL 可用」「可见但 FULL 尚未就绪」
   「已卸载」。前者执行，未就绪保留 / 重试，真正卸载丢候选；保留的持久条目由自然重载再触发。
   禁止因 `getChunkNow == null` 就把尚未完成加载的候选永久丢掉；全程不主动加载或生成区块。
-- **预算单位**：每维度每 tick 至多完成 `MAX_CHUNKS_PER_TICK = 32` 个**区块坐标整轮**，
+- **预算单位**：每维度每 tick 至多**处理** `MAX_CHUNKS_PER_TICK = 32` 个**区块坐标整轮**
+  （失败待重试的轮次同样占用预算 —— 进度只可能推迟，不丢失），
   正常持久账本与 SUPER 瞬态降级共用；一个坐标命中多条仍需整轮处理，不按每条扣预算。
   不新增任意硬 backlog 上限；FIFO 只约束候选先后，不承诺单次检查或 tick 耗时恒定。
 - **固定旧水印 + 快照 + 登记顺序**：一轮只读取一次旧 `W`，对原始登记顺序的混合模式
@@ -695,6 +699,9 @@ public void addToTooltip(Item.TooltipContext context,
                          ItemStack stack) {
     LivingTntData data = LivingTntData.of(stack);
     ExplosionData explosion = data.explosion();
+
+    tooltipAdder.accept(Component.nullToEmpty(""));
+    tooltipAdder.accept(Component.translatable("tooltip.livingitem.tnt.status"));
 
     if (explosion.ignited()) {
         tooltipAdder.accept(Component.literal("TNT [Fuse: " + explosion.fuseTimer() + " ticks]")

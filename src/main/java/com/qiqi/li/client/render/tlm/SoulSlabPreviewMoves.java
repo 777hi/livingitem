@@ -61,7 +61,7 @@ final class SoulSlabPreviewMoves {
 
         matchPhase(removed, added, usedSources, usedTargets, moves,
                 (source, target) -> source.reference != null && source.reference == target.reference
-                        && ItemStack.matches(source.stack, target.stack), false);
+                        && (source.stack == target.stack || ItemStack.matches(source.stack, target.stack)), false);
         matchPhase(removed, added, usedSources, usedTargets, moves,
                 (source, target) -> ItemStack.matches(source.stack, target.stack), true);
         return moves;

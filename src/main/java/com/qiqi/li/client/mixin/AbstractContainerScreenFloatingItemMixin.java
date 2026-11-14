@@ -1,5 +1,7 @@
 package com.qiqi.li.client.mixin;
 
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.qiqi.li.client.render.LivingSoulSlabFloatingPreview;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -8,7 +10,6 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /** 将原版光标物品模型绘制交给可选的活魂符预览桥。 */
@@ -44,18 +45,20 @@ public abstract class AbstractContainerScreenFloatingItemMixin {
         this.living_item$renderingSnapback = true;
     }
 
-    @Redirect(
+    // ⚠️ 用 @WrapOperation 不用 @Redirect：同注入点须能与其它模组叠加（Redirect 排他，撞点即加载崩溃）
+    @WrapOperation(
             method = "renderFloatingItem",
             at = @At(
                     value = "INVOKE",
                     target = "Lnet/minecraft/client/gui/GuiGraphics;renderItem(Lnet/minecraft/world/item/ItemStack;II)V"
             )
     )
-    private void living_item$renderFloatingSoulSlab(GuiGraphics graphics, ItemStack stack, int x, int y) {
+    private void living_item$renderFloatingSoulSlab(GuiGraphics graphics, ItemStack stack, int x, int y,
+                                                    Operation<Void> original) {
         AbstractContainerScreen<?> screen = (AbstractContainerScreen<?>) (Object) this;
         boolean snapback = this.living_item$renderingSnapback;
         this.living_item$renderingSnapback = false;
         LivingSoulSlabFloatingPreview.render(screen, graphics, stack, x, y, snapback,
-                () -> graphics.renderItem(stack, x, y));
+                () -> original.call(graphics, stack, x, y));
     }
 }

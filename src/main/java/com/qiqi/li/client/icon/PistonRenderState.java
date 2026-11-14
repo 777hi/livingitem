@@ -70,6 +70,11 @@ public final class PistonRenderState {
     /**
      * 屏面 Z 旋转（度）：配置方向的屏幕角减去 iso 位姿中模型 +X 的投影角。
      * GUI 屏幕 Y 正向向下；此表与 {@code Rx(30°)·Ry(225°)} 必须成对调整。
+     *
+     * <p>⚠️ 生产渲染不走此表 —— 叠加层 / 模型管线一律用
+     * {@link DirectionalLivingModel#rotationOf}（家族视觉角约定）。本方法只是测试侧的
+     * 投影复算 oracle：独立 JOML 矩阵借此复算全伸头板落点（PistonRenderStateTest）。
+     * 改投影位姿前先看该测试。</p>
      */
     public static float rotationDegrees(Pos2D direction) {
         if (Pos2D.UP.equals(direction)) return -90f - PROJECTED_EAST_ANGLE_DEGREES;

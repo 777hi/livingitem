@@ -1,5 +1,7 @@
 package com.qiqi.li.client.mixin;
 
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.qiqi.li.client.render.LivingSoulSlabHotbarPreview;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.gui.Gui;
@@ -9,7 +11,6 @@ import net.minecraft.world.item.ItemStack;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /** 将原版快捷栏物品模型绘制交给可选的活魂符预览桥。 */
@@ -21,7 +22,8 @@ public abstract class GuiHotbarSoulSlabMixin {
         LivingSoulSlabHotbarPreview.begin();
     }
 
-    @Redirect(
+    // ⚠️ 用 @WrapOperation 不用 @Redirect：同注入点须能与其它模组叠加（Redirect 排他，撞点即加载崩溃）
+    @WrapOperation(
             method = "renderSlot",
             at = @At(
                     value = "INVOKE",
@@ -29,9 +31,10 @@ public abstract class GuiHotbarSoulSlabMixin {
             )
     )
     private void living_item$renderHotbarSoulSlab(GuiGraphics graphics, LivingEntity entity,
-                                                   ItemStack stack, int x, int y, int seed) {
+                                                   ItemStack stack, int x, int y, int seed,
+                                                   Operation<Void> original) {
         LivingSoulSlabHotbarPreview.render(graphics, entity, stack, x, y, seed,
-                () -> graphics.renderItem(entity, stack, x, y, seed));
+                () -> original.call(graphics, entity, stack, x, y, seed));
     }
 
     @Inject(method = "renderItemHotbar", at = @At("RETURN"))

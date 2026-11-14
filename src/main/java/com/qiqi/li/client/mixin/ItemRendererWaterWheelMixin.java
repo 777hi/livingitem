@@ -16,17 +16,18 @@ import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * 物品渲染管线中 Create 水车的旋转处理。
  *
- * <p>重定向 {@code handleCameraTransforms}，对 Create 的水车物品按
- * {@link LivingWaterWheelData} 的净应力换算 RPM 并施加绕轴旋转，
+ * <p>包装 {@code handleCameraTransforms}（WrapOperation，可与其它模组在同注入点叠加），
+ * 对 Create 的水车物品按 {@link LivingWaterWheelData} 的净应力换算 RPM 并施加绕轴旋转，
  * 同时切换为正向光照，避免 3D 模型在 GUI 中发暗。</p>
  */
 @Mixin(ItemRenderer.class)
@@ -54,20 +55,20 @@ public class ItemRendererWaterWheelMixin {
         livingItem$renderingItem = null;
     }
 
-    @Redirect(
+    @WrapOperation(
         method = "render",
         at = @At(
             value = "INVOKE",
             target = "Lnet/neoforged/neoforge/client/ClientHooks;handleCameraTransforms(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/resources/model/BakedModel;Lnet/minecraft/world/item/ItemDisplayContext;Z)Lnet/minecraft/client/resources/model/BakedModel;"
         )
     )
-    private BakedModel redirectHandleCameraTransforms(PoseStack poseStack, BakedModel model,
-                                                      ItemDisplayContext context, boolean applyLeftHandTransform) {
+    private BakedModel living_item$wrapCameraTransforms(PoseStack poseStack, BakedModel model,
+                                                        ItemDisplayContext context, boolean applyLeftHandTransform,
+                                                        Operation<BakedModel> original) {
         ItemStack itemStack = livingItem$renderingItem;
         if (CreateCompat.isLoaded() && isWaterWheel(itemStack) && isGuiContext(context)) {
             if (!LivingItemManager.isLivingItem(itemStack)) {
-                return net.neoforged.neoforge.client.ClientHooks.handleCameraTransforms(
-                    poseStack, model, context, applyLeftHandTransform);
+                return original.call(poseStack, model, context, applyLeftHandTransform);
             }
 
             RenderSystem.setShaderLights(FRONT_LIGHT_0, FRONT_LIGHT_1);
@@ -92,8 +93,7 @@ public class ItemRendererWaterWheelMixin {
             poseStack.scale(0.625f, 0.625f, 0.625f);
             return model;
         }
-        return net.neoforged.neoforge.client.ClientHooks.handleCameraTransforms(
-            poseStack, model, context, applyLeftHandTransform);
+        return original.call(poseStack, model, context, applyLeftHandTransform);
     }
 
     private static boolean isGuiContext(ItemDisplayContext context) {

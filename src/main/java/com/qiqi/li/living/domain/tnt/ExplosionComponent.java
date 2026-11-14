@@ -1,5 +1,4 @@
 package com.qiqi.li.living.domain.tnt;
-import com.qiqi.li.living.domain.tnt.LivingTntData;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -42,7 +41,6 @@ import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.phys.Vec3;
 import com.qiqi.li.living.container.ContainerContext;
-import com.qiqi.li.living.container.SimpleContainerContext;
 
 /*
  * ╔══════════════════════════════════════════════════════════════╗
@@ -122,8 +120,8 @@ public class ExplosionComponent {
     private ExplosionComponent() {}
 
     public static boolean startFuseOnStack(ItemStack tntStack) {
-        com.qiqi.li.living.domain.tnt.LivingTntData data = LivingTntData.of(tntStack);
-        com.qiqi.li.living.domain.tnt.ExplosionData explosion = data.explosion();
+        LivingTntData data = LivingTntData.of(tntStack);
+        ExplosionData explosion = data.explosion();
         if (!explosion.ignited()) {
             explosion = explosion.ignite();
             LivingTntData.set(tntStack, data.withExplosion(explosion));
@@ -135,12 +133,6 @@ public class ExplosionComponent {
         return ignite(containerCtx, level, DEFAULT_BASE_RADIUS, DEFAULT_VANILLA_DROPS);
     }
 
-    /**
-     * 点燃：统计 TNT → 算半径 → 选模式 → 立即部分（声光 / 实体伤害）→ 方块破坏交给账本。
-     *
-     * <p>本方法<b>不读任何方块</b> —— 爆炸范围可能跨未加载区块，读它会强制加载。
-     * 方块破坏由 {@link ExplosionLedger} 按区块分帧推进（已加载的）或等区块自然加载（未加载的）。</p>
-     */
     /** 容器内活 TNT 总数（long：槽数 × maxCount 实际不可回绕；供单测钉溢出）。 */
     static long countLivingTnt(ContainerContext containerCtx) {
         long total = 0;
@@ -165,6 +157,12 @@ public class ExplosionComponent {
         }
     }
 
+    /**
+     * 点燃：统计 TNT → 算半径 → 选模式 → 立即部分（声光 / 实体伤害）→ 方块破坏交给账本。
+     *
+     * <p>本方法<b>不读任何方块</b> —— 爆炸范围可能跨未加载区块，读它会强制加载。
+     * 方块破坏由 {@link ExplosionLedger} 按区块分帧推进（已加载的）或等区块自然加载（未加载的）。</p>
+     */
     public static boolean ignite(ContainerContext containerCtx, Level level, float baseRadius, boolean vanillaDrops) {
         // 分类统一走 ContainerAnchor（2026-10-23 普查：此处原是与另外三处重复的一份三选一）
         //

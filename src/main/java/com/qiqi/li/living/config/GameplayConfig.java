@@ -31,12 +31,14 @@ public final class GameplayConfig {
     private static final ModConfigSpec.BooleanValue WATER_WHEEL;
     private static final ModConfigSpec.BooleanValue TOOL_AND_WEAPON;
     private static final ModConfigSpec.BooleanValue BEACON;
+    private static final ModConfigSpec.BooleanValue PORTAL;
 
     /** 读路径只看这些字段（见类注释：未加载时保持默认 false）。 */
     private static volatile boolean tnt;
     private static volatile boolean waterWheel;
     private static volatile boolean toolAndWeapon;
     private static volatile boolean beacon;
+    private static volatile boolean portal;
 
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
@@ -62,6 +64,11 @@ public final class GameplayConfig {
         BEACON = builder.comment(
                 "活背包里的活信标：开启后用宿主位置开光。")
             .define("beacon", false);
+
+        PORTAL = builder.comment(
+                "活背包里的活地狱门：开启后借用宿主位置；关闭或宿主无位置时不能点燃，已有门熄灭。",
+                "活地狱门玩法尚未实现，此项仅预留宿主位置配置。")
+            .define("portal", false);
 
         builder.pop();
         SPEC = builder.build();
@@ -95,6 +102,7 @@ public final class GameplayConfig {
         waterWheel = WATER_WHEEL.get();
         toolAndWeapon = TOOL_AND_WEAPON.get();
         beacon = BEACON.get();
+        portal = PORTAL.get();
     }
 
     // ── 读路径（tick 里调用，只读静态字段）──
@@ -113,5 +121,9 @@ public final class GameplayConfig {
 
     public static boolean beaconUsesHostAnchor() {
         return beacon;
+    }
+
+    public static boolean portalUsesHostAnchor() {
+        return portal;
     }
 }

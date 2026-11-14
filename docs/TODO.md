@@ -20,6 +20,8 @@
 9. **HUD快捷栏连续预览** —— ~~HUD九格/副手退回魂符、关容器必重建~~ ✅ 已实装（2026-11-13：原版HUD真实槽短token握手；GUI槽↔carried↔HUD同一实例，跨表面settle；全部可见HUD女仆完整沿用D-maid-10，不限选中槽、不共享节流，D-maid-11）。待实机核对十枚、pop/数量/耐久/decorator、冷却、聊天/F1/旁观、第三方HUD与真实性能，见[技术文档 §4](tech/living-maid-tech.md#4-验证状态与已知边界)。
 10. **女仆 GUI 里活按钮缺失（2026-11-14 记，未修）** —— `AbstractContainerScreenMixin` 在 `AbstractContainerScreen.init` 的 TAIL 注入并添加 `LivingButton`，而 TLM `AbstractMaidContainerGui.init()` 在 `super.init()` **之后**调 `this.clearWidgets()` ⇒ 刚加的按钮被清掉；`containerTick` 的位置变化检查因 `previousLeftPos` 已被设成当前值不会补加。修法方向：TLM 存在时在 `AbstractMaidContainerGui` init 之后重新挂载（或改挂 `MaidContainerGuiEvent.Init`）。与流体渲染无关（那次的根因是 Z，见 `D-container-27`），本次不扩范围。
 
+11. **预览平滑后续杠杆（2026-11-14）** —— 用户反馈箱内数十枚魂符不稳滑，本轮分配优化已做（渲染缓冲静态复用、快照按栈引用缓存、好感观察按同步边沿、匹配首同引用跳过深比较，见 changelog 2026-11-14 与 [技术文档 §4](tech/living-maid-tech.md#4-验证状态与已知边界)）；优化后实测若仍卡顿，下一杠杆：逐 maid 的 GL 状态查询（renderOne 每帧 5 次 GL 读）与 `graphics.flush()` 合并、不可见或滚动出视野预览的绘制裁剪。均不改玩法判定。
+
 ## 实体宿主行为兼容（2026-11-12 拍板；批次 A/B/A2 已落地，C 批缓办）
 
 设计稿与拍板记录见 [buffer/entity-host-behavior-design.md](buffer/entity-host-behavior-design.md)；口径 = D-container-25（自己的位置直接用，借来的位置才要开关）。
@@ -112,6 +114,10 @@
    在内容网格渲染帧与材料统计路径各扫一遍背包全部槽位。
    只在标签激活时才渲染 ⇒ 未开标签零开销；激活时的量级 = 背包 36 槽 × 判活检查。
    修法（若将来要省）：按内容签名缓存或仅背包变更时重扫。
+
+## 活地狱门 · 组合结构玩法（设计探讨）
+
+1. **活黑曜石围闭 + 活打火石点燃的容器门面** —— 玩家空光标右键跨维度，门面槽内物品传送；玩法归活地狱门子系统而非单件活黑曜石功能。自身位置/配置允许的真实宿主借位、无位置熄灭与原版实体过门建议见 [活地狱门设计稿](buffer/活地狱门设计稿.md)。`host_anchor.portal` 配置已预留，门玩法及GUI宿主接入未实施。
 
 ## 活流体（流体侧挂起项 —— 原 idea.md 任务队列 2026-10-08 已蒸馏进 tech/archive，本节为现行台账）
 
@@ -404,16 +410,26 @@
    `@EventBusSubscriber` 本就能被事件总线发现），但那要动 mod 入口组织、
    **只能真机验证** ⇒ 先记录。
 
-3.3 ⚠️ **`ContainerFluidData` 当数据组件值违反 NeoForge 约定**（2026-10-21 写单测时暴露）——
-   `ItemStack.set(CONTAINER_FLUID_DATA_ITEM, data)` 在 NeoForge 的数据组件校验下抛
-   `IllegalArgumentException: Data components must implement equals and hashCode`。
-   校验由 `CommonHooks.validateComponent` 执行、**只在开发开关下启用** ⇒ 生产环境「能跑」，
-   但属于**未定义行为**：组件被当作不可变值参与 `ItemStack.matches` / 网络同步 / 缓存判等，
-   而 `ContainerFluidData` 每 tick 重算 flows（可变对象）。
-   影响面：破坏/放置迁移、GUI 拖拽时的物品比较、创造模式连续放置。
-   修法方向：给组件值做**不可变快照类型**（与 `PhaseSnapshot` 同构的 record，CODEC 同源复用），
-   或把 `ContainerFluidData` 改成不可变 + 每 tick 换新对象（成本更高）。
-   ⇒ 未定案。真机尚未观察到异常（校验未开），但这是「不该存在的状态」。
+3.3 ⚠️ **`ContainerFluidData` 当数据组件值违反 NeoForge 约定**（2026-10-21 写单测时暴露；
+   2026-11-14 按代码复核，修正下面三处口径）——
+   组件 `CONTAINER_FLUID_DATA_ITEM` 的值是可变的 `ContainerFluidData`（无 equals/hashCode），
+   `ItemStack.set` 在 `CommonHooks.validateComponent` 下抛 `IllegalArgumentException`
+   （`net/neoforged/neoforge/common/CommonHooks.java:1460-1485`）。开关是
+   `SharedConstants.IS_RUNNING_IN_IDE`（= `!FMLLoader.isProduction()`）⇒ IDE 下必抛、生产不校验。
+   ① 生产后果**不是「未定义行为」**，是**判等偏保守**：无 equals ⇒ 引用相等 ⇒
+   `ItemStack.matches` / `ItemStackMixin.java:77` 恒判不等 ⇒ 带组件物品无法堆叠；
+   **不复制、不损坏**。
+   ② 触发路径**不是旧存档兜底**：`moveOut` ② 分支（`ContainerDataMigration.java:150-166`）是
+   **普通方块容器（无容器 UUID）的常态路径** —— `getOrCreateHost` 全库零调用点
+   （仅 `ContainerUuids.java:94` 有定义），`ofHost` 恒 null。`contentRetaining` 内置 3 个
+   （潜影盒 / 精妙背包 / 无尽箱子，`container_rules.json:3-7`），原版箱子等不走。
+   ③ 组件**实际只承载源列表**：`CODEC` 只序列化 `generatedSources`
+   （`ContainerFluidData.java:296-298`），flows 不落盘、不进组件语义、全库无读取点
+   ⇒ 物品上那份 flows 是冗余；`snapshot()` 对 flows 是浅拷贝（共享 `FlowEntry`），
+   当前靠「`FlowEntry` 从不就地改」维持安全，无测试守住。
+   修法方向（`architecture-evolution-roadmap.md` §1.2，已定）：不可变快照（与 `PhaseSnapshot`
+   同构）或补齐值语义；`networkSynchronized` 成对声明或注明「仅服务端」；破坏/放置迁移 +
+   GUI 拖拽实测。⇒ **未开工**（方向已定，不是未定案）。
 
 3.4 🔮 **实体容器的列数校准入口没做**（2026-10-26 记）—— `/livingitem container register` 与
    `inspect` 都按**准心方块**解析，船 / 矿车 / 带箱驴骡无法校准。原版四类已有明确布局
@@ -426,6 +442,16 @@
    空 store 不删活跃位置索引。旧代码回归11项红，修复后保留标志/索引、查询-only回收、
    同键重建和反复删除不泄漏均通过。口径见 [生命周期契约 §2](reference/container-data-lifecycle.md)；
    Create 无铜灯持续抽取实机验收已通过（见「活海绵」第1项），其他守恒/保存通知问题未顺带修复。
+
+3.6 🔮 **inspect 可观测性两小项（2026-11-14 记，暂缓）** ——
+   ① **学习值与规则矛盾展示**：规则层压过学习层（RULE > LEARNED），模组改版后过期的
+   内置规则会永远赢过玩家开 GUI 学到的正确值，唯一暴露信号是学习侧开 GUI 时的 WARN 日志。
+   `LearnedLayouts.peek(id, size)`（现成只读接口，键形与学习器写入同源）在
+   `inspectContainer` 里对比规则列数即可把矛盾提到随手可查。
+   ② **删「校准可用 /livingitem container register %d」建议行**（inspect 未注册分支末尾）：
+   建议数字来自启发式，可能算错 ⇒ 玩家照登错误值后永久遮蔽学习值，误导大于帮助。
+   两项都落 `LivingItemContainerCommand#inspectContainer`；配套用例挂
+   `LivingItemContainerCommandTest`（现成 sendSuccess 捕获基建，五个既有用例可参照）。
 
 4. ♻️ **「客户端列数探测」前提已错，已被设计稿取代**（2026-10-21 更正）——
    见 [buffer/container-menu-introspection-topic.md](buffer/container-menu-introspection-topic.md) §1.1/1.2：

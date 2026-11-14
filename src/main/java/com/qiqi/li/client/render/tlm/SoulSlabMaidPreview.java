@@ -52,6 +52,13 @@ final class SoulSlabMaidPreview {
     }
 
     private static final int RESPONSE_COOLDOWN_TICKS = 10;
+    /**
+     * 复用的实体渲染缓冲（仅渲染线程使用）：每枚每帧新建 256KB 直接内存在数十枚魂符下
+     * 是主要分配抖动源。endBatch 会把 mesh 消费完并将写游标归零，可安全复用；
+     * 异常中断 endBatch 时缓冲可能残留未清理数据 ⇒ 脏标记触发整块重建，不复用脏数据。
+     */
+    private static ByteBufferBuilder renderMemory = new ByteBufferBuilder(262144);
+    private static boolean renderMemoryClean = true;
     private final EntityMaid maid;
     private final float modelScale;
     private final SoulSlabPreviewFacing facing = new SoulSlabPreviewFacing();
@@ -272,8 +279,13 @@ final class SoulSlabMaidPreview {
         // 气泡沿用原renderer的billboard；GUI方向与世界相机分离，结束必须还原。
         var dispatcher = mc.getEntityRenderDispatcher();
         Quaternionf previousCamera = new Quaternionf(dispatcher.cameraOrientation());
-        try (ByteBufferBuilder memory = new ByteBufferBuilder(262144)) {
-            MultiBufferSource.BufferSource buffer = MultiBufferSource.immediate(memory);
+        try {
+            if (!renderMemoryClean) {
+                renderMemory.close();
+                renderMemory = new ByteBufferBuilder(262144);
+                renderMemoryClean = true;
+            }
+            MultiBufferSource.BufferSource buffer = MultiBufferSource.immediate(renderMemory);
             Lighting.setupForEntityInInventory();
             RenderSystem.enableDepthTest();
             dispatcher.overrideCameraOrientation(new Quaternionf().rotateY((float) Math.PI));
@@ -282,6 +294,9 @@ final class SoulSlabMaidPreview {
             // 复用TLM原renderer的Bedrock/Gecko/YSM分派，不调用世界影子/火焰/碰撞箱。
             renderer.render(maid, 0, partial, pose, buffer, 0xf000f0);
             buffer.endBatch();
+        } catch (RuntimeException | LinkageError failure) {
+            renderMemoryClean = false;
+            throw failure;
         } finally {
             dispatcher.overrideCameraOrientation(previousCamera);
             GlWrapper.clearPoseStack();

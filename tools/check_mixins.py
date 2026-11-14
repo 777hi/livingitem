@@ -23,10 +23,22 @@ R3  每个 `src/main/resources/*mixins*.json` 的条目必须能解析到真实�
 R4  每个 `@Mixin` 源文件必须登记在某个 *mixins*.json 里。防「写了 mixin 忘了注册」
     ⇒ 加载不到、注入静默失效（required=true 会崩，但 loose 配置只会静默）。
 
+R5  禁用排他型注入器：`@Redirect` / `@ModifyArg` / `@ModifyArgs` / `@Overwrite`。
+    为什么：它们对注入点/方法是**独占**的——第三方模组在同一点也注入 ⇒ 后应用者
+    MixinApplyError ⇒ 客户端加载崩溃。这是「单人永远测不出、装了联动模组才炸」的
+    事故类（2026-10-11 @Accessor 撞名先例的同型；2026-11-14 三处 @Redirect 已迁完）。
+    一律改 NeoForge 内置 MixinExtras 的可叠加注解：`@WrapOperation`
+    （等价 Redirect/ModifyArg，`Operation.call` 调回原版）/ `@ModifyExpressionValue`；
+    @Inject（可叠加）本就不受限。
+
 W1  （仅警告，不判失败）`@Shadow` 成员名**不得**带 `living_item$` 前缀 ——
     shadow 是「别名目标已有成员」，必须与目标成员同名，加前缀 = 解析不到目标。
     与 R1 方向相反，别混淆：注入器 handler / @Accessor/@Invoker 方法名可加前缀，
     @Shadow 不行（它不生成新成员，也无碰撞风险）。
+
+W2  （仅警告，不判失败）`@ModifyConstant` 同方法排他且 MixinExtras 无完美替代 ——
+    能用 `@ModifyExpressionValue` 包住消费该常量的调用就改过去；确需保留时
+    就地注释说明理由，人工复核。
 
 已知局限
 ----
@@ -146,7 +158,23 @@ def collect_mixin_files():
 # ---------------------------------------------------------------- 主流程
 
 def main() -> int:
-    r1, r2, r3, r4, w1 = [], [], [], [], []
+    r1, r2, r3, r4, r5, w1, w2 = [], [], [], [], [], [], []
+
+    # R5/W2：排他型注入器（注释已剥离，自家的「别用 @Redirect」提醒注释不会误报）。
+    # 全限定写法 @org...Redirect 也要拦 ⇒ 注解名前允许任意包限定段。
+    EXCLUSIVE_INJECTOR_RE = re.compile(
+        r"@(?:[A-Za-z_][\w.]*\.)?(Redirect|ModifyArg|ModifyArgs|Overwrite)\b")
+    MODIFY_CONSTANT_RE = re.compile(
+        r"@(?:[A-Za-z_][\w.]*\.)?ModifyConstant\b")
+    for path in iter_java_files():
+        text = strip_comments(read(path))
+        for m in EXCLUSIVE_INJECTOR_RE.finditer(text):
+            r5.append("%s:%d  @%s 对注入点/方法排他（第三方同点注入 ⇒ MixinApplyError 加载崩溃）—— "
+                      "改用 MixinExtras @WrapOperation / @ModifyExpressionValue（可叠加）"
+                      % (rel(path), line_of(text, m.start()), m.group(1)))
+        for m in MODIFY_CONSTANT_RE.finditer(text):
+            w2.append("%s:%d  @ModifyConstant 同方法排他且无完美替代：尽量改 @ModifyExpressionValue；"
+                      "确需保留请就地注释说明理由" % (rel(path), line_of(text, m.start())))
 
     member_files = 0
     for path in iter_java_files():
@@ -209,6 +237,7 @@ def main() -> int:
         ("R2", "访问器/调用器显式指定目标成员", r2),
         ("R3", "mixins.json 条目/插件 ↔ 源文件一致", r3),
         ("R4", "每个 @Mixin 源文件都已登记", r4),
+        ("R5", "排他型注入器禁用（@Redirect/@ModifyArg/@ModifyArgs/@Overwrite）", r5),
     ):
         if items:
             ok = False
@@ -221,6 +250,10 @@ def main() -> int:
     if w1:
         print("[WARN] W1 @Shadow 前缀（建议级，不影响退出码）—— %d 项" % len(w1))
         for it in w1:
+            print("       " + it)
+    if w2:
+        print("[WARN] W2 @ModifyConstant（建议级，不影响退出码）—— %d 项" % len(w2))
+        for it in w2:
             print("       " + it)
 
     print("-" * 60)

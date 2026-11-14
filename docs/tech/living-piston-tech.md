@@ -334,20 +334,22 @@ q=2 成功；A / B 保持原位，货物漏斗剩 1；即使货物漏斗送空�
 
 ## §7 测试地图（piston 域 8 类 + 客户端 3 类 + 漏斗接收端）
 
+> 逐类条数不列（随加测试必漂，口径同 AGENTS.md「条数不进文档」）；逐条守什么见本表与 [test-map.md](../reference/test-map.md)。
+
 | 测试类 | 守什么 |
 |---|---|
-| `PistonChainResolverTest`（12 项） | N 货物 / N+1 候选解析：链长边界、空格截断、漏斗作货物不提前接管、越界失败 |
-| `PistonActionsTest`（16 项） | moveStack/undo 编排：尾到首提交、逆序撤销、undo 失败继续尝试剩余步骤（含数量与物品校验）、整链全有或全无 |
-| `PistonControllerTest`（13 项） | 状态机：成功保持 / 失败重试、改向复位不补拉、count 不参与有效性、空推 |
-| `LivingPistonDataTest`（4 项） | 四向组件：默认向上、值相等校验、非法方向 Codec 拒绝、默认值移除组件 |
-| `LivingPistonFunctionTest`（19 项） | 真实函数 tick：逐条重读当前栈 / 数量 / 朝向、runtime 读写映射对称、候选交付 |
-| `LivingPistonIntegrationTest`（11 项） | E2E（真实 processContext）：信号推 / 通电保持 / 断电收回 / 粘性拉回 / 取消活化 / 双活塞独立 / 链长超限 / q>0 伸出 / q=0 重试 / 路由拒绝不伸出 / 送空后方不动 |
-| `LivingPistonTooltipTest`（8 项） | 四向更新判变、中英文标题 / 推力 / 方向 / 机械态 |
-| `PistonSegmentTest`（2 项） | runtime 片段线格式编解码（复用既有同步包） |
-| `PistonRenderStateTest`（11 项） | 进度时钟：插值 / 钳制 / 翻转续接 / 方向吸附 / 键独立 / 剪枝 / 头位移线性 / 旋转表 pinned |
-| `DirectionalLivingModelTest`（3 项） | 家族角度约定：四向视觉角 pinned / 非四向兜底 / 管线相反数与火把家族逐项一致 |
-| `LivingPistonOverlayTest`（5 项） | 准入（仅活活塞）、背包 / 容器缓存双路路由、进度键前缀防同号互串（绘制本体不可单测，实机验收） |
-| `HopperMechanicalReceiverTest`（11 项，domain/hopper） | 机械接收端：输入面重验、本次过滤固定、剂量 min(C,M,A)、冷却 / 锁定原样、本体不展开、目标活漏斗拒绝、回源拒绝、超大栈余量 |
+| `PistonChainResolverTest` | N 货物 / N+1 候选解析：链长边界、空格截断、漏斗作货物不提前接管、越界失败 |
+| `PistonActionsTest` | moveStack/undo 编排：尾到首提交、逆序撤销、undo 失败继续尝试剩余步骤（含数量与物品校验）、整链全有或全无 |
+| `PistonControllerTest` | 状态机：成功保持 / 失败重试、改向复位不补拉、count 不参与有效性、空推 |
+| `LivingPistonDataTest` | 四向组件：默认向上、值相等校验、非法方向 Codec 拒绝、默认值移除组件 |
+| `LivingPistonFunctionTest` | 真实函数 tick：逐条重读当前栈 / 数量 / 朝向、runtime 读写映射对称、候选交付 |
+| `LivingPistonIntegrationTest` | E2E（真实 processContext）：信号推 / 通电保持 / 断电收回 / 粘性拉回 / 取消活化 / 双活塞独立 / 链长超限 / q>0 伸出 / q=0 重试 / 路由拒绝不伸出 / 送空后方不动 |
+| `LivingPistonTooltipTest` | 四向更新判变、中英文标题 / 推力 / 方向 / 机械态 |
+| `PistonSegmentTest` | runtime 片段线格式编解码（复用既有同步包） |
+| `PistonRenderStateTest` | 进度时钟：插值 / 钳制 / 翻转续接 / 方向吸附 / 键独立 / 剪枝 / 头位移线性 / 旋转表 pinned |
+| `DirectionalLivingModelTest` | 家族角度约定：四向视觉角 pinned / 非四向兜底 / 管线相反数与火把家族逐项一致 |
+| `LivingPistonOverlayTest` | 准入（仅活活塞）、背包 / 容器缓存双路路由、进度键前缀防同号互串（绘制本体不可单测，实机验收） |
+| `HopperMechanicalReceiverTest`（domain/hopper） | 机械接收端：输入面重验、本次过滤固定、剂量 min(C,M,A)、冷却 / 锁定原样、本体不展开、目标活漏斗拒绝、回源拒绝、超大栈余量 |
 
 ---
 

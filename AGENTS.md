@@ -237,8 +237,16 @@ Mixin 的 `@Accessor` / `@Invoker` 会在**目标类上生成合成方法，名�
 > **「以小见大」原则**：通用名（原版字段派生 / 短方法名）一律默认有全局碰撞风险，
 > 先加前缀再写，别等撞了才改。
 >
+> 🚫 **排他注入器铁律（2026-11-14）**：**禁用 `@Redirect` / `@ModifyArg` / `@ModifyArgs` / `@Overwrite`**——
+> 它们对注入点/方法**独占**，第三方模组在同一点也注入 ⇒ 加载期 `MixinApplyError` 客户端崩溃。
+> 与上面 `@Accessor` 撞名是同型事故：「单人永远测不出，装了联动模组才炸」。
+> 一律用 NeoForge 内置 MixinExtras 的**可叠加**注解：`@WrapOperation`（等价 Redirect/ModifyArg，
+> `Operation.call` 调回原版）/ `@ModifyExpressionValue`；`@Inject` 本就可叠加不受限；
+> `@ModifyConstant` 无完美替代但同方法排他，能不用就不用。
+>
 > **判据可复算**：`python tools/check_mixins.py` —— R1 前缀 / R2 显式成员 /
-> R3 mixins.json 条目·插件 ↔ 源文件 / R4 @Mixin 源文件 ↔ 配置双向一致；
+> R3 mixins.json 条目·插件 ↔ 源文件 / R4 @Mixin 源文件 ↔ 配置双向一致 /
+> R5 排他注入器禁用（零容忍，2026-11-14 全部 3 处 @Redirect 已迁完）；
 > 违例即退出码 1（先例同 `check_layers.py`，可挂 CI / 提交前检查）。
 
 ## 设计铁律：新增机制前先找对应物

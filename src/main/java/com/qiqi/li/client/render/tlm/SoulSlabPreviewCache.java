@@ -57,6 +57,8 @@ final class SoulSlabPreviewCache implements LivingSoulSlabHotbarPreview.Renderer
         SoulSlabMaidPreview preview;
         SoulSlabFeedFeedback feedFeedback = new SoulSlabFeedFeedback();
         SoulSlabBooleanFeedback sittingFeedback = new SoulSlabBooleanFeedback();
+        /** 好感观察的来源栈（引用等值）；只在实例换新时重读 maid_info，避免每帧深拷贝快照。 */
+        Object favorObservedFrom;
         boolean feedPending;
         boolean responsePending;
         boolean attempted;
@@ -135,7 +137,10 @@ final class SoulSlabPreviewCache implements LivingSoulSlabHotbarPreview.Renderer
         List<Snapshot> added = new ArrayList<>();
         List<Snapshot> removed = new ArrayList<>();
         for (Placement placement : placements.values()) {
-            ItemStack snapshot = stable(placement.stack());
+            // 快照按栈引用缓存：同一实例内容不变，深拷贝只发生在实例换新（服务端同步）时
+            Entry previous = entries.get(placement.position());
+            ItemStack snapshot = previous != null && previous.reference == placement.stack()
+                    ? previous.snapshot : stable(placement.stack());
             next.put(placement.position(), new Entry(placement, placement.stack(), snapshot));
             added.add(new Snapshot(placement.position(), snapshot, placement.stack()));
         }
@@ -213,7 +218,10 @@ final class SoulSlabPreviewCache implements LivingSoulSlabHotbarPreview.Renderer
 
     private void observeEntries() {
         for (Entry entry : entries.values()) {
-            entry.feedPending |= entry.feedFeedback.observe(TlmSoulData.pendingFavor(entry.reference));
+            if (entry.favorObservedFrom != entry.reference) {
+                entry.favorObservedFrom = entry.reference;
+                entry.feedPending |= entry.feedFeedback.observe(TlmSoulData.pendingFavor(entry.reference));
+            }
             boolean sitting = LivingSoulSlabFunction.isSitting(entry.reference);
             entry.responsePending |= entry.sittingFeedback.observe(sitting);
             if (entry.preview != null && !entry.preview.disabled()) entry.preview.setSitting(sitting);
@@ -224,6 +232,7 @@ final class SoulSlabPreviewCache implements LivingSoulSlabHotbarPreview.Renderer
         target.preview = source.preview;
         target.feedFeedback = source.feedFeedback;
         target.sittingFeedback = source.sittingFeedback;
+        target.favorObservedFrom = source.favorObservedFrom;
         target.feedPending = source.feedPending;
         target.responsePending = source.responsePending;
         target.attempted = source.attempted;
