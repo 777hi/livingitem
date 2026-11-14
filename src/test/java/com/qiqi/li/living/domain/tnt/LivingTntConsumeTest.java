@@ -5,8 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -87,8 +89,8 @@ class LivingTntConsumeTest {
         // 账本：真实例即可（它是纯内存记账，schedule 之后由 tick 推进）
         doReturn(new ExplosionLedger()).when(storage).computeIfAbsent(any(), anyString());
         when(level.getDataStorage()).thenReturn(storage);
+        when(level.getAllEntities()).thenReturn(List.of());
 
-        // getEntities 默认返回空表（Mockito 对 List 的默认答案），伤害阶段自然什么都不做
         return level;
     }
 
@@ -158,6 +160,25 @@ class LivingTntConsumeTest {
         assertEquals(4 * Math.sqrt(5L * Integer.MAX_VALUE), entry.getDouble("r"));
         assertTrue(entry.getLong("epoch") > 0);
         assertFalse(entry.contains("done"), "巨大 SUPER 不得保存完成位图");
+    }
+
+    @Test
+    @DisplayName("SUPER + Float.MAX_VALUE 基础半径：double 半径可保存、点火不走巨型 AABB")
+    void hugeCustomRadius_superIgnitesWithoutAabbQuery() {
+        FakeContainerContext ctx = new FakeContainerContext(27, 9).withBlockPos(POS);
+        ctx.set(0, livingTnt(new ExplosionData(true, 0), 4000));
+        ServerLevel level = explodingLevel();
+        ExplosionLedger ledger = ExplosionLedger.get(level);
+
+        assertTrue(ExplosionComponent.ignite(ctx, level, Float.MAX_VALUE, true));
+
+        assertTrue(ctx.getItem(0).isEmpty());
+        CompoundTag entry = ledger.save(new CompoundTag(), null)
+            .getList("entries", Tag.TAG_COMPOUND).getCompound(0);
+        assertEquals("SUPER", entry.getString("mode"));
+        assertTrue(Double.isFinite(entry.getDouble("r")));
+        assertTrue(entry.getDouble("r") > Float.MAX_VALUE);
+        verify(level, never()).getEntities(isNull(), any(net.minecraft.world.phys.AABB.class));
     }
 
     @Test

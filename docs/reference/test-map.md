@@ -102,7 +102,7 @@ src/test/java/com/qiqi/li/
 │   ├── GameplayConfigTest.java                 # 玩法开关的默认值（2026-10-24）·spec 能构建/**四个宿主锚点开关默认全关**（TNT 无锚点熄灭/不发电/不挖矿/不开光）（⚠️ 只测未加载配置时的静态字段，不测 ModConfigSpec 本身）
 │   ├── TlmClientConfigTest.java                # TLM客户端配置·spec/专属文件名/未加载默认1.25/0.25-4.0边界钳位/NaN与无穷回退默认/缓存热刷新不重建消费者
 │   ├── ContainerAnchorTest.java                # 容器世界锚点（2026-10-23 收编 4 份重复解析）·方块⇒AtBlock/玩家⇒AtPlayer(靠 getOwnerPlayer)/**实体容器⇒AtEntity（必须覆写，否则退化成没锚点）**/**掉落物⇒AtEntity（有实体，不是没锚点）**/物品形态⇒null/**getHostAnchor 与 getAnchor 刻意分开（物品形态有宿主值、非物品形态恒 null）**/roughPosition 三分支/退化不抛
-│   ├── ContainerViewersTest.java               # 「谁在看这个容器」唯一判定入口（2026-10-23 收编）·背包只发主人不门控(隐私红线)/末影箱开着 GUI 才发(第③次泄漏修复)/物品形态按菜单锚点认观众(开着别的容器不算)/位置为空⇒无观众/退化输入不抛（末影箱门控两条用例从流体轨与运行时轨合并迁入）
+│   ├── ContainerViewersTest.java               # 「谁在看这个容器」唯一判定入口（2026-10-23 收编）·背包只发主人不门控(隐私红线)/末影箱开着 GUI 才发(第③次泄漏修复)/物品形态按菜单锚点认观众(开着别的容器不算)/**实体容器按宿主 UUID + 菜单存储槽认观众：同格两实体不串台(女仆坐箱船)、空/null 位置可用、宿主不在本世界不发、键形态异常不发(2026-11-13 D-container-26)**/位置为空⇒无观众/退化输入不抛（末影箱门控两条用例从流体轨与运行时轨合并迁入）
 │   ├── ContainerHandoffTest.java              # I-C9 **第三挂点「双向交接」**（2026-10-21，D-container-12）·宿主→物品：捕获→交接搬到目标/无捕获 no-op/空栈不搬且丢捕获/capture(null) 清残留/一个 Mover 抛异常不连累其它/discard + **物品→宿主：暂存→恢复调 moveIn / 暂存是副本（源栈 shrink 后仍能恢复）/无暂存或宿主空 no-op/stageRestore(EMPTY) 清残留** + **反射守卫：Mover 不得有 default 方法**（真机三连失败的真凶）
 │   ├── MenuSlotOwnersTest.java                # I-C5 守卫：菜单槽→容器位置解析·**核心不反射第三方方法**(菜单自带 getBlockPosition 也不认,D-container-09)/注册联动解析器后生效/无解析器返回 null/模组容器槽回落菜单位置/原版 BE 槽直取/大箱 CompoundContainer 两半位置(防跨容器虚影)/空位置集恒 false
 │   ├── SophisticatedMenuResolverTest.java        # D-container-09 守卫：包名匹配+getBlockPosition → 解出位置；包名不匹配**即使有同名方法也不认**（反射不扩散）（替身 FakeBackpackMenu 故意放在对方包名下）
@@ -152,6 +152,8 @@ src/test/java/com/qiqi/li/
 │   ├── IgniteCarriedHandlerTest.java          # 光标持 TNT 右键打火石（2026-10-28，缺口 #2 另一半）·创造活 TNT ⇒ 点燃 + 广播 / 创造空光标拒绝 / 创造未活化 TNT 拒绝 / 生存未活化打火石拒绝 / 生存空光标拒绝（拒绝分支用 `broadcastChanges` 未被调用兜住）
 │   ├── TntIgniteHandlerTest.java              # 打火石点燃交互（2026-10-28，审查测试缺口 #2）·创造空光标信任客户端 / 创造活打火石 / 创造错物品拒绝 / **生存空光标拒绝（抓出「空手点燃」真 bug）** / 生存未活化打火石拒绝
 │   ├── LivingTntConsumeTest.java              # 爆炸后必须消耗·单颗/多颗槽位清空且不复活/五满int槽真实引爆只存SUPER参数与epoch无位图/掉落物在原地爆炸/宿主锚点默认关熄灭、打开消耗/熄灭后移进有锚点箱子不自爆
+│   ├── ExplosionComponentDamageTest.java      # 即时实体伤害·只遍历已加载实体/不走半径AABB/巨型有限半径伤害饱和/范围外与物品实体排除/零距离无无效击退/10k实体perf量测
+│   ├── ExplosionPoiCleanupTest.java           # raw section POI清理·HIGH只通知实际删除工作站/普通与球外抗爆不通知/SUPER逐POI通知/官方hook发生在AIR写入后/重复命中不重删
 │   ├── ExplosionParamsTest.java               # 爆炸参数·位图映射可逆与越界/有限正参数准入/自定义半径不钳制/受检面积与索引算术/巨型SUPER几何不依赖位图/宽区块边界不回绕/AABB∩球体与切线包含/负小数中心既有转换
 │   ├── ExplosionLedgerTest.java               # 普通位图账本·相交才进队列/圆外标记/卸载丢弃与自然加载补炸/分帧预算/混合模式重放水印/处理中登记保留/满额拒绝/位图存档往返
 │   ├── ExplosionSuperLedgerTest.java          # SUPER 参数与纪元·巨型无位图/保存恢复与重载防重放/新爆炸再破坏/固定旧水印与混合顺序/异常不提前提交/同坐标重入/FIFO等待与32坐标预算/只逐出旧SUPER/降级原READY身份与无未来加载/运行态清理/真实holder就绪查询/附件Codec往返

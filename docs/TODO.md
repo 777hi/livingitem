@@ -663,6 +663,11 @@
    剩余用新爆炸验证不再按旧地面浮空刷怪、雨雪/剩余地面/客户端高度正确及极限爆炸仍流畅；
    已完成水印的历史空洞不自动修复。机制与边界见 [TNT 批量破坏修复](tech/living-tnt-tech.md)。
 
+3. **本轮 TNT 正确性实机验收** —— 新爆炸验证：正负坐标镜像爆坑；床/工作站/钟被
+   HIGH/SUPER 清除后村民不再认领或寻路，保存重进仍无幽灵 POI；超大半径即时实体伤害
+   不因理论 AABB 扫描卡顿。自动化入口见 `ExplosionParamsTest` / `ExplosionPoiCleanupTest` /
+   `ExplosionComponentDamageTest`；旧在途负坐标位图与旧存档幽灵 POI 不迁移。
+
 > 求和溢出已于 2026-10-27 改 long + 计数守卫（`ExplosionComponentCountTest`），
 > 不再作为未修需求；原事故留在设计稿 §1.4。本轮不填测试条数或未经测量的 O(1) / TPS 保证。
 

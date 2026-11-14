@@ -3,6 +3,7 @@ package com.qiqi.li.living.domain.tnt;
 import java.util.Objects;
 
 import net.minecraft.core.SectionPos;
+import net.minecraft.util.Mth;
 import net.minecraft.world.level.ChunkPos;
 
 /**
@@ -80,12 +81,24 @@ public record ExplosionParams(double centerX, double centerY, double centerZ,
         Math.toIntExact((long) centerChunkZ() + cr);
     }
 
+    public int voxelCenterX() {
+        return Mth.floor(centerX);
+    }
+
+    public int voxelCenterY() {
+        return Mth.floor(centerY);
+    }
+
+    public int voxelCenterZ() {
+        return Mth.floor(centerZ);
+    }
+
     public int centerChunkX() {
-        return SectionPos.blockToSectionCoord((int) centerX);
+        return SectionPos.blockToSectionCoord(voxelCenterX());
     }
 
     public int centerChunkZ() {
-        return SectionPos.blockToSectionCoord((int) centerZ);
+        return SectionPos.blockToSectionCoord(voxelCenterZ());
     }
 
     /** 偏移 → 位图下标；偏移必须在网格内。 */
@@ -128,8 +141,15 @@ public record ExplosionParams(double centerX, double centerY, double centerZ,
     public boolean affects(ChunkPos cp) {
         long minX = (long) cp.x * 16L;
         long minZ = (long) cp.z * 16L;
-        double nearestX = Math.max(minX, Math.min(centerX, minX + 15L));
-        double nearestZ = Math.max(minZ, Math.min(centerZ, minZ + 15L));
-        return Math.hypot(nearestX - centerX, nearestZ - centerZ) <= radius;
+        if (mode != Mode.SUPER) {
+            int centerX = voxelCenterX();
+            int centerZ = voxelCenterZ();
+            double nearestX = Math.max(minX, Math.min(centerX, minX + 15L));
+            double nearestZ = Math.max(minZ, Math.min(centerZ, minZ + 15L));
+            return Math.hypot(nearestX - centerX, nearestZ - centerZ) <= radius;
+        }
+        double nearestX = Math.max(minX, Math.min(centerX(), minX + 15L));
+        double nearestZ = Math.max(minZ, Math.min(centerZ(), minZ + 15L));
+        return Math.hypot(nearestX - centerX(), nearestZ - centerZ()) <= radius;
     }
 }

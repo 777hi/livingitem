@@ -27,6 +27,7 @@ import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.ai.village.poi.PoiTypes;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Explosion;
@@ -39,7 +40,6 @@ import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.lighting.LevelLightEngine;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.material.FluidState;
-import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.SimpleContainerContext;
@@ -227,7 +227,7 @@ public class ExplosionComponent {
 
         // ── 立即部分：声光 + 实体伤害（都不碰方块）──
         playExplosionEffects(serverLevel, center, radius);
-        applyExplosionDamage(level, center.x, center.y, center.z, radius);
+        applyExplosionDamage(serverLevel, center.x, center.y, center.z, radius);
 
         // ── 方块破坏：登记进账本，按区块分帧执行 ──
         if (!ExplosionLedger.schedule(serverLevel, params) && mode != ExplosionParams.Mode.SUPER) {
@@ -255,7 +255,7 @@ public class ExplosionComponent {
 
     /** 爆炸瞬间的声光 —— 立即播放，让玩家先感知到爆炸，破坏随后分帧出现。 */
     private static void playExplosionEffects(ServerLevel level, Vec3 center, double radius) {
-        float volume = Math.min(4.0f, (float) (radius / 4.0) * 4.0f);
+        float volume = (float) Math.min(4.0D, radius);
         level.playSound(null, center.x, center.y, center.z,
             SoundEvents.GENERIC_EXPLODE, SoundSource.BLOCKS, volume,
             (1.0f + (level.random.nextFloat() - level.random.nextFloat()) * 0.2f) * 0.7f);
@@ -278,25 +278,21 @@ public class ExplosionComponent {
     //   impact = 1 - (距离 / 半径)
     //   damage = (impact² + impact)/2 × 7 × 半径 + 1
 
-    private static void applyExplosionDamage(Level level, double centerX, double centerY,
+    static void applyExplosionDamage(ServerLevel level, double centerX, double centerY,
                                               double centerZ, double radius) {
-        Vec3 center = new Vec3(centerX, centerY, centerZ);
-        float range = (float) radius;
-
-        AABB searchBox = new AABB(
-            centerX - range, centerY - range, centerZ - range,
-            centerX + range, centerY + range, centerZ + range
-        );
-        List<Entity> entities = level.getEntities(null, searchBox);
-
-        for (Entity entity : entities) {
+        for (Entity entity : level.getAllEntities()) {
             if (entity instanceof ItemEntity) continue;
 
-            double dist = Math.sqrt(entity.distanceToSqr(center));
-            if (dist > range) continue;
+            double dx = entity.getX() - centerX;
+            double dy = entity.getY() - centerY;
+            double dz = entity.getZ() - centerZ;
+            double dist = Math.hypot(Math.hypot(dx, dz), dy);
+            if (!Double.isFinite(dist) || dist > radius) continue;
 
-            double impact = (1.0 - dist / range);
-            float damage = (float) ((impact * impact + impact) / 2.0 * 7.0 * range + 1.0);
+            double impact = 1.0 - dist / radius;
+            double rawDamage = (impact * impact + impact) / 2.0 * 7.0 * radius + 1.0;
+            float damage = rawDamage >= Float.MAX_VALUE || !Double.isFinite(rawDamage)
+                ? Float.MAX_VALUE : (float) rawDamage;
 
             if (damage > 0 && entity instanceof LivingEntity living) {
                 // ⚠️ 无归因爆炸（2026-10-27 审查 P3）：曾传 (entity, entity) —— causedBy 是
@@ -306,17 +302,13 @@ public class ExplosionComponent {
                 living.hurt(explosionSource, damage);
             }
 
-            double dx = entity.getX() - centerX;
-            double dy = entity.getY() - centerY;
-            double dz = entity.getZ() - centerZ;
-            double distNorm = Math.sqrt(dx * dx + dy * dy + dz * dz);
-            if (distNorm > 0.0) {
+            if (dist > 0.0) {
                 double knockback = impact * 2.0;
                 entity.setDeltaMovement(
                     entity.getDeltaMovement().add(
-                        dx / distNorm * knockback,
-                        dy / distNorm * knockback + 0.5 * impact,
-                        dz / distNorm * knockback
+                        dx / dist * knockback,
+                        dy / dist * knockback + 0.5 * impact,
+                        dz / dist * knockback
                     )
                 );
             }
@@ -354,21 +346,21 @@ public class ExplosionComponent {
      * <p>只走球体在该 (x,z) 列上的 y 跨度（{@code |dy| ≤ √(r²−dx²−dz²)}），
      * <b>不扫整列</b> —— 否则半径 235 时每个区块要多扫十几万格空气。</p>
      *
-     * <p>用的是与旧实现一致的整数中心（{@code (int) center}）与 {@code ceil(radius)} 边界，
-     * 保证选出的方块集合与重构前逐字节相同。</p>
+     * <p>方块破坏沿用整数格球体；中心按原版 {@code floor} 取所在方块，确保正负坐标镜像。
+     * 半径边界仍使用 {@code ceil(radius)}，不改变正坐标既有方块集合。</p>
      */
-    private static void forEachBlockInChunk(ServerLevel level, ExplosionParams p, ChunkPos cp,
+    static void forEachBlockInChunk(ServerLevel level, ExplosionParams p, ChunkPos cp,
                                             Consumer<BlockPos.MutableBlockPos> action) {
-        int cx = (int) p.centerX();
-        int cy = (int) p.centerY();
-        int cz = (int) p.centerZ();
+        int cx = p.voxelCenterX();
+        int cy = p.voxelCenterY();
+        int cz = p.voxelCenterZ();
         int rInt = (int) Math.ceil(p.radius());
         double r2 = p.radius() * p.radius();
 
-        int minX = Math.max(cp.getMinBlockX(), cx - rInt);
-        int maxX = Math.min(cp.getMaxBlockX(), cx + rInt);
-        int minZ = Math.max(cp.getMinBlockZ(), cz - rInt);
-        int maxZ = Math.min(cp.getMaxBlockZ(), cz + rInt);
+        int minX = (int) Math.max(cp.getMinBlockX(), Math.max(Integer.MIN_VALUE, (long) cx - rInt));
+        int maxX = (int) Math.min(cp.getMaxBlockX(), Math.min(Integer.MAX_VALUE, (long) cx + rInt));
+        int minZ = (int) Math.max(cp.getMinBlockZ(), Math.max(Integer.MIN_VALUE, (long) cz - rInt));
+        int maxZ = (int) Math.min(cp.getMaxBlockZ(), Math.min(Integer.MAX_VALUE, (long) cz + rInt));
 
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         for (int x = minX; x <= maxX; x++) {
@@ -407,9 +399,9 @@ public class ExplosionComponent {
     // └──────────────────────────────────────────────────────────────┘
 
     private static void applyNormalToChunk(ServerLevel level, ExplosionParams p, LevelChunk chunk) {
-        int cx = (int) p.centerX();
-        int cy = (int) p.centerY();
-        int cz = (int) p.centerZ();
+        int cx = p.voxelCenterX();
+        int cy = p.voxelCenterY();
+        int cz = p.voxelCenterZ();
 
         List<BlockPos> blocksToBlow = new ArrayList<>();
 
@@ -522,9 +514,9 @@ public class ExplosionComponent {
     // └──────────────────────────────────────────────┘
 
     private static void applyHighYieldToChunk(ServerLevel level, ExplosionParams p, LevelChunk chunk) {
-        int cx = (int) p.centerX();
-        int cy = (int) p.centerY();
-        int cz = (int) p.centerZ();
+        int cx = p.voxelCenterX();
+        int cy = p.voxelCenterY();
+        int cz = p.voxelCenterZ();
         double r2 = p.radius() * p.radius();
 
         // ── 阶段1：收集（只扫本区块）──
@@ -579,6 +571,7 @@ public class ExplosionComponent {
             if (sectionIndex < 0 || sectionIndex >= sectionCount) continue;
             LevelChunkSection section = chunk.getSection(sectionIndex);
             if (section == null) continue;
+            boolean mayHavePoi = section.maybeHas(PoiTypes::hasPoi);
 
             for (short packedPos : entry.getValue()) {
                 int localX = packedPos & 0xF;
@@ -590,7 +583,8 @@ public class ExplosionComponent {
                     sectionPos.minBlockZ() + localZ);
 
                 if (blockEntityPositions.contains(bePos)) removeBlockEntityData(chunk, bePos);
-                section.setBlockState(localX, localY, localZ, airState, false);
+                BlockState oldState = section.setBlockState(localX, localY, localZ, airState, false);
+                if (mayHavePoi) removePoiIfNeeded(level, bePos, oldState, airState);
                 changedColumns[localX + localZ * 16] = true;
             }
         }
@@ -630,14 +624,21 @@ public class ExplosionComponent {
         }
 
         LevelChunkSection[] sections = chunk.getSections();
+        BlockPos.MutableBlockPos poiPos = new BlockPos.MutableBlockPos();
         for (int i = 0; i < sections.length; i++) {
             LevelChunkSection section = sections[i];
             if (section == null || section.hasOnlyAir()) continue;
             blockContentChanged = true;
+            boolean mayHavePoi = section.maybeHas(PoiTypes::hasPoi);
+            int sectionMinY = SectionPos.sectionToBlockCoord(chunk.getMinSection() + i);
             for (int x = 0; x < 16; x++) {
                 for (int y = 0; y < 16; y++) {
                     for (int z = 0; z < 16; z++) {
-                        section.setBlockState(x, y, z, airState, false);
+                        BlockState oldState = section.setBlockState(x, y, z, airState, false);
+                        if (mayHavePoi) {
+                            poiPos.set(chunkPos.getMinBlockX() + x, sectionMinY + y, chunkPos.getMinBlockZ() + z);
+                            removePoiIfNeeded(level, poiPos, oldState, airState);
+                        }
                     }
                 }
             }
@@ -656,6 +657,13 @@ public class ExplosionComponent {
         // 超级爆炸把**整区块**清空 ⇒ 每个 section 都变成"空"，
         // 旧光数据会随 section 状态更新被丢弃，不需要逐个记录被炸掉的光源。
         refreshLightAfterBulkEdit(level, chunk, List.of());
+    }
+
+    private static void removePoiIfNeeded(ServerLevel level, BlockPos pos,
+                                          BlockState oldState, BlockState newState) {
+        if (PoiTypes.forState(oldState).isPresent()) {
+            level.onBlockStateChange(pos, oldState, newState);
+        }
     }
 
     record BlockEntityRemoval(boolean live, boolean pending) {

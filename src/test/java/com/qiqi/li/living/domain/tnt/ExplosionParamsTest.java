@@ -7,12 +7,16 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
 
 /**
@@ -226,12 +230,71 @@ class ExplosionParamsTest {
     }
 
     @Test
-    @DisplayName("中心区块保持既有浮点转 int 规则，不顺带改变负数小数中心")
-    void centerChunks_preserveExistingConversion() {
-        ExplosionParams p = new ExplosionParams(-0.5, 64, -16.5, 16, ExplosionParams.Mode.NORMAL, true);
-        assertEquals(0, p.centerChunkX());
-        assertEquals(-1, p.centerChunkZ());
-        assertEquals(0, p.bitIndexOf(p.chunkAt(0)));
+    @DisplayName("中心区块使用原版 floor 口径，负数小数不向零偏移")
+    void centerChunks_useContainingBlockConversion() {
+        ExplosionParams negative = new ExplosionParams(-0.5, -0.5, -16.5, 16,
+            ExplosionParams.Mode.NORMAL, true);
+        assertEquals(-1, negative.voxelCenterX());
+        assertEquals(-1, negative.voxelCenterY());
+        assertEquals(-17, negative.voxelCenterZ());
+        assertEquals(-1, negative.centerChunkX());
+        assertEquals(-2, negative.centerChunkZ());
+        ExplosionParams positive = new ExplosionParams(0.5, 0.5, 16.5, 16,
+            ExplosionParams.Mode.NORMAL, true);
+        assertEquals(0, positive.voxelCenterX());
+        assertEquals(16, positive.voxelCenterZ());
+        assertEquals(1, positive.centerChunkZ());
+    }
+
+    @Test
+    @DisplayName("位图族区块预筛与 floor 体素球一致；SUPER 保持精确 double 覆盖")
+    void affects_usesModeGeometry() {
+        ChunkPos negativeNeighbor = new ChunkPos(-1, 0);
+        assertTrue(new ExplosionParams(15.5, 64, 8, 16, ExplosionParams.Mode.NORMAL, true)
+            .affects(negativeNeighbor));
+        assertTrue(new ExplosionParams(15.5, 64, 8, 16, ExplosionParams.Mode.HIGH_YIELD, true)
+            .affects(negativeNeighbor));
+        assertFalse(new ExplosionParams(15.5, 64, 8, 16, ExplosionParams.Mode.SUPER, true)
+            .affects(negativeNeighbor));
+    }
+
+    @Test
+    @DisplayName("NORMAL/HIGH 的正负半格中心产生镜像方块集合")
+    void voxelSphere_isMirroredAcrossOrigin() {
+        for (ExplosionParams.Mode mode : new ExplosionParams.Mode[] {
+                ExplosionParams.Mode.NORMAL, ExplosionParams.Mode.HIGH_YIELD }) {
+            ExplosionParams positive = new ExplosionParams(10.5, 10.5, 10.5, 4, mode, true);
+            ExplosionParams negative = new ExplosionParams(-10.5, -10.5, -10.5, 4, mode, true);
+            Set<BlockPos> positiveSet = collect(positive);
+            Set<BlockPos> negativeSet = collect(negative);
+            Set<BlockPos> mirrored = new HashSet<>();
+            for (BlockPos pos : positiveSet) mirrored.add(new BlockPos(-pos.getX() - 1, -pos.getY() - 1, -pos.getZ() - 1));
+            assertEquals(mirrored, negativeSet, mode.toString());
+        }
+    }
+
+    private static Set<BlockPos> collect(ExplosionParams params) {
+        ServerLevel level = org.mockito.Mockito.mock(ServerLevel.class);
+        org.mockito.Mockito.when(level.getMinBuildHeight()).thenReturn(-64);
+        org.mockito.Mockito.when(level.getMaxBuildHeight()).thenReturn(320);
+        Set<BlockPos> out = new HashSet<>();
+        int centerChunkX = params.centerChunkX();
+        int centerChunkZ = params.centerChunkZ();
+        int radius = params.chunkRadius();
+        for (int cx = centerChunkX - radius; cx <= centerChunkX + radius; cx++) {
+            for (int cz = centerChunkZ - radius; cz <= centerChunkZ + radius; cz++) {
+                ExplosionComponent.forEachBlockInChunk(level, params, new ChunkPos(cx, cz),
+                    pos -> {
+                        int dx = pos.getX() - params.voxelCenterX();
+                        int dy = pos.getY() - params.voxelCenterY();
+                        int dz = pos.getZ() - params.voxelCenterZ();
+                        if ((long) dx * dx + (long) dy * dy + (long) dz * dz <= params.radius() * params.radius()) {
+                            out.add(pos.immutable());
+                        }
+                    });
+            }
+        }
+        return out;
     }
 
     @Test

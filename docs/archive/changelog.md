@@ -17,6 +17,8 @@
 
 ## 2026-11-13
 
+- **活 TNT 幽灵 POI / 负坐标中心 / 极端实体查询修复** —— HIGH/SUPER raw 写仅对实际删除 POI 走原版 `onBlockStateChange`；NORMAL/HIGH 整数格中心统一 `floor` 并与位图预筛同源；即时伤害改遍历当前已加载实体、double 距离过滤并在 float 边界饱和，避免超大 AABB 跨理论坐标扫描。补 POI、正负镜像、极端半径与实体量测守卫，实机待验。→ [TNT §4](../tech/living-tnt-tech.md)。
+
 - **活 TNT 延迟方块实体残留修复与实机验收** —— 频繁 SUPER 修复前出现 6022 次 DUMMY + 6029 次空气方块实体加载警告；根因是批量清空只删已实例化 BE，packed NBT 后续才被原版尝试提升。新增内部 pending NBT 接线，HIGH 精确清被炸位置、SUPER 清 live+pending 并集，全程不触发实例化；修复后四个窗口共清 8368 条 pending NBT，两类警告与 Mixin 错误均 0。→ [TNT 批量破坏修复](../tech/living-tnt-tech.md)。
 
 - **活 TNT 批量破坏高度图修复** —— 针对炸空区域生物浮空生成后落入虚空：SUPER 用官方接口重置四种运行时高度图，HIGH_YIELD 仅修实际删除列且保留幸存顶面，均在区块包构造前完成；不改爆炸玩法、不扫描已完成历史空洞。真实高度图/packed往返/发包顺序守卫与单区块量测已加入，实机待验。→ [TNT 高度图修复](../tech/living-tnt-tech.md)。
