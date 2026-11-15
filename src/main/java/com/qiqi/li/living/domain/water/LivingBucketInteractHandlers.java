@@ -5,6 +5,7 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 
 import com.qiqi.li.living.interaction.InteractionHandler;
+import com.qiqi.li.living.interaction.InteractionAction;
 
 /**
  * 活桶汲/倒处理器（流体侧批次二，2026-10-03）—— 薄壳：光标校验 + 委托
@@ -25,7 +26,20 @@ public final class LivingBucketInteractHandlers {
     public static final InteractionHandler SCOOP = (player, slot) ->
         interact(player, slot, false);
 
+    public static final InteractionAction POUR_ACTION = action(true);
+    public static final InteractionAction SCOOP_ACTION = action(false);
+
     private LivingBucketInteractHandlers() {}
+
+    private static InteractionAction action(boolean pour) {
+        InteractionAction delegate = InteractionAction.container(pour ? POUR : SCOOP);
+        return new InteractionAction(delegate.kind(), delegate.handler(), (player, slot, carried) -> {
+            if (!LivingBucketFunction.isLivingBucket(carried)) return null;
+            if (pour ? !LivingBucketFunction.hasFullBucket(carried) || !slot.getItem().isEmpty()
+                    : !LivingBucketFunction.isEmptyBucket(carried)) return null;
+            return delegate.scopeResolver().resolve(player, slot, carried);
+        });
+    }
 
     private static void interact(ServerPlayer player, Slot slot, boolean pour) {
         ItemStack carried = player.containerMenu.getCarried();

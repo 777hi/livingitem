@@ -17,6 +17,28 @@ import net.minecraft.world.entity.player.Player;
 public final class PortalDataAccess {
     private PortalDataAccess() {}
 
+    /** 授权前只读候选，不建立热表或写入持久状态。 */
+    public static ContainerPortalData peekSaved(ContainerContext ctx) {
+        ContainerPortalData current = ContainerLivingItemHandler.peekExistingContainerData(ctx, ContainerPortalData.KEY);
+        if (current != null) return current;
+        UUID uuid = ctx.getContainerUuid();
+        if (uuid != null) {
+            ContainerPortalData saved = ContainerDataSavedData.get().get(uuid, ContainerPortalData.KEY);
+            return saved == null ? ContainerPortalData.EMPTY : saved;
+        }
+        Player owner = playerOwner(ctx);
+        if (owner != null && owner.hasData(PortalComponents.CONTAINER_PORTAL_DATA_PLAYER)) {
+            var data = owner.getData(PortalComponents.CONTAINER_PORTAL_DATA_PLAYER).get(ctx.getContainerKey());
+            return data == null ? ContainerPortalData.EMPTY : data;
+        }
+        for (var host : ctx.getDataHosts()) {
+            if (!host.hasData(PortalComponents.CONTAINER_PORTAL_DATA)) continue;
+            var data = host.getData(PortalComponents.CONTAINER_PORTAL_DATA);
+            if (data != null && !data.isEmpty()) return data;
+        }
+        return ContainerPortalData.EMPTY;
+    }
+
     public static ContainerPortalData getOrLoad(ContainerContext ctx) {
         return getOrLoad(ctx, ctx.getContainerUuid());
     }

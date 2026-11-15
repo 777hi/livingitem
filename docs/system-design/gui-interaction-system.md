@@ -20,7 +20,19 @@
 
 - **规则声明**：`InteractionEntry(targetItem, triggerItem, button, actionId)` 由 `InteractionRuleConfig` 从 JSON 加载（内置资源 + 玩家差异）
 - **统一拦截**：所有 Screen Mixin 调用 `GuiInteractionHelper.tryInteract()`，查询 `InteractionRegistry` 匹配规则
-- **服务端处理**：`GuiInteractionPacket` 携带 `actionId`，服务端通过 `InteractionRegistry.getHandler()` 查找处理器
+- **服务端处理**：`GuiInteractionPacket` 携带精确菜单身份与 `actionId`，`InteractionRegistry.getAction()` 提供动作语义、只读候选范围与执行体；菜单访问由 `MenuActionAccess` 统一校验
+
+### 1.1 身份、访问、能力与玩法条件
+
+这四个判断不得互相代答：菜单/槽映射只证明操作对象，访问解析只证明玩家对本次动作的授权，容器/槽位能力负责执行与提交，领域负责玩法条件。`mayPickup` / `mayPlace` 只表达提取/放入，不是任意状态动作权限；空槽、可读、可解析位置或内容相同都不能授权。
+
+动作在 Java 注册中声明 `ITEM_STATE`、`CONTAINER_STATE` 或 `USE_CONTAINER` 与只读候选范围。默认物品动作只能作用于非空活物品；桶与门等容器状态动作显式注册，JSON只能匹配玩法，不能授权。范围必须包含实际影响的逻辑槽，不能通过点中一个允许格绕过区域内受限格；不对只读边框或无关门扩大授权范围。
+
+访问来源先认领，再返回允许/拒绝/未知。认领后的拒绝、未知和异常直接终止，不回落另一来源或通用许可。默认承认保留原版 `Slot` 提取实现的存储契约（含仅改插入规则/显示的原版子类），不读取提取结果作状态授权；覆写提取语义的自定义槽须有来源证据，不按模组白名单排除 tick 宿主，也不将所有 `SlotItemHandler` 子类自动放行。具体第三方访问 API 留联动模块，不在核心猜方法名。
+
+候选查询不得懒建状态：授权前的门数据查询用 `peekExistingContainerData`，不建立聚合条目、回收计时和反向位置索引；UUID读取用官方非创建附件接口。授权后的运行回填仍沿原入口，不能把旧 `peekContainerData`（会登记聚合条目）当成无副作用查询。
+
+权限拒绝不覆盖光标、不扣耐久、不建立/维护门状态、不执行传送或后置维护。自动 tick 不依赖当前菜单授权，仍受宿主运行、能力和提交契约约束。拒绝原因走现有容器 DEBUG 日志；未受理与已受理动作的玩法失败分开，不承诺撤销已发生的外部副作用。
 
 ---
 
@@ -39,16 +51,15 @@ GuiInteractionHelper.tryInteract(hoveredSlot, button, menu)
     ├─ InteractionRegistry.findInteraction(trigger, target, button)
     │     遍历所有 InteractionEntry，匹配 triggerItem + targetItem + button
     │     同时验证双方都是活物品
-    ├─ resolveContainerSlot() — 解析真实容器索引（兼容 SlotWrapper）
+    ├─ ClientMenuSlots — 显示槽按引用映射到真实服务端菜单槽与物理槽
     ├─ resolveCarriedTag() — 创造模式背包下序列化光标物品NBT
-    └─ 发送 GuiInteractionPacket(slotIndex, containerSlot, actionId, carriedTag)
+    └─ 发送 GuiInteractionPacket(slotIndex, containerSlot, actionId, carriedTag, menuId)
         ↓
 GuiInteractionPacket.handle() (服务端)
-    ├─ 创造模式 + carriedTag非空 → menu.setCarried() 恢复光标物品
-    ├─ resolveSlot() 定位目标槽位（slotIndex优先，containerSlot回退）
-    ├─ InteractionRegistry.getHandler(actionId) 查找处理器
-    ├─ handler.handle(player, targetSlot) 执行交互逻辑
-    └─ 创造模式光标被修改 → CarriedUpdatePacket 同步回客户端
+    ├─ 当前菜单ID、有效性、精确双索引与活动槽校验；不跨库存回退
+    ├─ 动作身份、只读候选范围与菜单访问校验
+    ├─ 授权后临时借入创造光标 → handler.handle(player, targetSlot)
+    └─ 执行结束恢复原服务端光标，CarriedUpdatePacket 同步虚拟光标结果
         ↓
 CarriedUpdatePacket.handle() (客户端)
     └─ 直接更新 menu.setCarried()，绕过原版对 CreativeModeInventoryScreen 的排除
@@ -76,7 +87,7 @@ new InteractionEntry(Items.FLINT_AND_STEEL, Items.TNT, 1, "ignite_carried")
 创造模式使用 `ItemPickerMenu`，光标物品是客户端虚拟的，服务端 `menu.getCarried()` 返回空。此外原版 `ClientboundContainerSetSlotPacket(containerId=-1)` 明确排除了 `CreativeModeInventoryScreen`。
 
 解决方案分两层：
-- **客户端→服务端**：`GuiInteractionPacket` 携带 `carriedTag`（光标物品NBT），仅在 `CreativeModeInventoryScreen` 下发送；服务端收到后 `menu.setCarried()` 恢复光标物品
+- **客户端→服务端**：`GuiInteractionPacket` 携带 `carriedTag`（光标物品NBT），仅在 `CreativeModeInventoryScreen` 下发送；服务端仅在当前真实 `inventoryMenu` 中校验候选，通过授权后临时恢复光标，执行结束恢复原服务端光标
 - **服务端→客户端**：`CarriedUpdatePacket` 自定义包，绕过原版排除逻辑，直接更新客户端 `menu.setCarried()`
 
 注意：创造模式打开容器（箱子等）时使用普通容器界面，光标由服务端管理，不需要 `carriedTag`。`resolveCarriedTag()` 仅在 `CreativeModeInventoryScreen` 下返回非空。
@@ -87,7 +98,7 @@ new InteractionEntry(Items.FLINT_AND_STEEL, Items.TNT, 1, "ignite_carried")
 - `hoveredSlot.index` = 客户端显示索引
 - `SlotWrapper.target.index` = 服务端实际槽位索引
 
-`GuiInteractionHelper.resolveContainerSlot()` 通过 `LivingItemSlotWrapperAccessor` 获取 `target` 字段，统一处理此差异。`GuiInteractionPacket` 携带双索引（`slotIndex` + `containerSlot`），服务端优先通过 `containerSlot` 遍历匹配。
+`ClientMenuSlots` 通过 `LivingItemSlotWrapperAccessor` 读取真实 `target`，先按引用核验目标属于 `player.inventoryMenu`，再发送其菜单索引、物理槽号与实际菜单ID。服务端双索引必须同时对应当前槽，任何动作都不跨库存按同号回退；目录、销毁格和复制槽不参与。
 
 ---
 
@@ -96,7 +107,7 @@ new InteractionEntry(Items.FLINT_AND_STEEL, Items.TNT, 1, "ignite_carried")
 新增交互类型只需两步：
 
 1. 在 `interaction_rules.json` 中新增 `InteractionEntry` 条目（内置 `assets/living_item/` 或玩家 `config/living_item/`）
-2. 注册处理器 `InteractionRegistry.registerHandler("actionId", new XxxHandler())`
+2. 注册动作。普通物品状态用 `InteractionRegistry.registerHandler("actionId", new XxxHandler())`；容器状态须显式注册 `InteractionAction` 的语义及只读范围解析器。范围解析器不能写状态、扣光标或执行世界动作。
 
 无需修改任何 Mixin 代码。
 
@@ -336,6 +347,6 @@ CropClassifier::isSeedPlantableOnFarmland)`）；**只有真·任意光标自交
 | `BonemealHandler` | 活骨粉催熟（精确触发器条目） |
 | `GuiInteractionHelper` | 客户端GUI交互统一工具（查询规则+解析槽位+序列化光标+发包） |
 | `FarmlandPlantHint` | 活耕地种植悬停提示行（纯函数可单测；门槛复用 `canPlantWith`，渲染由 `AbstractContainerScreenMixin` 挂 `render` TAIL） |
-| `GuiInteractionPacket` | 通用GUI交互包（客户端→服务端：slotIndex + containerSlot + actionId + carriedTag） |
+| `GuiInteractionPacket` | 通用GUI交互包（精确菜单ID、双槽号与action；授权后执行） |
 | `CarriedUpdatePacket` | 光标更新包（服务端→客户端：绕过创造模式光标同步限制） |
 | `LivingItemSlotWrapperAccessor` | SlotWrapper 访问器接口（获取 target 字段；命名铁律见 AGENTS.md「Mixin 铁律」） |

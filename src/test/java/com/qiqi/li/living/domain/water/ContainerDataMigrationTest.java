@@ -291,7 +291,7 @@ class ContainerDataMigrationTest {
         data.registerGeneratedSource(3, net.minecraft.world.level.material.Fluids.WATER.getFluidType());
 
         BlockEntity be = beWithFluid(net.minecraft.world.level.block.entity.BlockEntityType.SHULKER_BOX, data);
-        when(be.getData(com.qiqi.li.living.components.LivingComponents.CONTAINER_UUID_ATTACHMENT.value()))
+        when(be.getExistingDataOrNull(com.qiqi.li.living.components.LivingComponents.CONTAINER_UUID_ATTACHMENT.value()))
             .thenReturn(containerUuid);
 
         ItemStack target = mock(ItemStack.class);

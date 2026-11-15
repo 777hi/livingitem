@@ -61,6 +61,7 @@ class PortalDataMigrationTest {
         Map<AttachmentType<?>, Object> map = new HashMap<>();
         map.put(PortalComponents.CONTAINER_PORTAL_DATA.value(), data);
         doAnswer(inv -> map.get(inv.getArgument(0))).when(host).getData(any(AttachmentType.class));
+        doAnswer(inv -> map.get(inv.getArgument(0))).when(host).getExistingDataOrNull(any(AttachmentType.class));
         when(host.getData(PortalComponents.CONTAINER_PORTAL_DATA)).thenAnswer(inv ->
             map.get(PortalComponents.CONTAINER_PORTAL_DATA.value()));
         doAnswer(inv -> {

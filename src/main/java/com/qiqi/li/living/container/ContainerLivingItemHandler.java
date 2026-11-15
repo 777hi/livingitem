@@ -388,6 +388,13 @@ public class ContainerLivingItemHandler {
         return e == null ? null : e.store.peek(key);
     }
 
+    /** 非创建热表查询；不建立聚合条目、位置索引或回收计时。 */
+    public static <T> T peekExistingContainerData(ContainerContext ctx, ContainerDataKey<T> key) {
+        String cacheKey = cacheKey(ctx);
+        ContainerEntry e = cacheKey == null ? null : CONTAINER_DATA.get(cacheKey);
+        return e == null ? null : e.store.peek(key);
+    }
+
     /**
      * 泛型访问或创建容器级持久数据。见 {@link #peekContainerData(ContainerContext, ContainerDataKey)}。
      *

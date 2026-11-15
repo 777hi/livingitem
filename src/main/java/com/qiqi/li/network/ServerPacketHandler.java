@@ -73,7 +73,8 @@ public class ServerPacketHandler {
     }
 
     public static void handleHopperDirection(ServerPlayer player, HopperDirectionPacket payload) {
-        if (player == null || player.containerMenu == null) return;
+        if (player == null || player.containerMenu == null
+                || !player.containerMenu.stillValid(player)) return;
 
         CompoundTag mappingData = payload.mappingData();
 
@@ -109,7 +110,8 @@ public class ServerPacketHandler {
     }
 
     public static void handleSlotDirection(ServerPlayer player, SlotDirectionPacket payload) {
-        if (player == null || player.containerMenu == null) return;
+        if (player == null || player.containerMenu == null
+                || !player.containerMenu.stillValid(player)) return;
 
         ItemStack carried = player.containerMenu.getCarried();
         if (carried.isEmpty()) {

@@ -12,8 +12,8 @@ public final class PortalRegistration {
     public static void register() {
         LivingItemManager.registerFunction(new LivingPortalFunction());
         ContainerTickHooks.register(new PortalServerSync());
-        InteractionRegistry.registerHandler(PortalInteractHandlers.IGNITE_ID, PortalInteractHandlers.IGNITE);
-        InteractionRegistry.registerHandler(PortalInteractHandlers.USE_ID, PortalInteractHandlers.USE);
+        InteractionRegistry.registerHandler(PortalInteractHandlers.IGNITE_ID, PortalInteractHandlers.IGNITE_ACTION);
+        InteractionRegistry.registerHandler(PortalInteractHandlers.USE_ID, PortalInteractHandlers.USE_ACTION);
         ContainerHandoff.registerMover(new ContainerHandoff.Mover() {
             @Override
             public void moveOut(net.neoforged.neoforge.attachment.IAttachmentHolder host,

@@ -1,5 +1,6 @@
 package com.qiqi.li.client.render;
 
+import com.qiqi.li.client.util.ClientMenuSlots;
 import com.qiqi.li.living.domain.portal.PortalClientCache;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -26,23 +27,23 @@ public final class ContainerPortalOverlay {
     }
 
     public static void render(GuiGraphics graphics, AbstractContainerScreen<?> screen) {
-        int menuId = com.qiqi.li.client.util.PortalMenuSlots.serverMenuId(screen.getMenu());
+        int menuId = ClientMenuSlots.serverMenuId(screen.getMenu());
+        if (menuId < 0) return;
         var snapshots = PortalClientCache.snapshots(menuId);
         if (snapshots.isEmpty()) return;
         var sprite = Minecraft.getInstance().getTextureAtlas(TextureAtlas.LOCATION_BLOCKS).apply(PORTAL);
         // Z 层级走统一协议（基座 + 350 + 禁深度），见 GuiOverlays
         GuiOverlays.paintOverContent(graphics, () -> {
             graphics.setColor(1, 1, 1, 0.55f);
-            for (var snapshot : snapshots) {
-                for (var entry : snapshot.menuSlots().entrySet()) {
-                    if (!snapshot.cells().contains(entry.getValue())) continue;
-                    int index = entry.getKey();
-                    if (index < 0 || index >= screen.getMenu().slots.size()) continue;
-                    var slot = screen.getMenu().getSlot(index);
-                    if (!com.qiqi.li.client.util.PortalMenuSlots.isStorageSlot(screen.getMenu(), slot)
-                            || com.qiqi.li.client.util.PortalMenuSlots.serverMenuSlot(screen.getMenu(), slot) != index) continue;
+            for (var slot : screen.getMenu().slots) {
+                if (!ClientMenuSlots.isStorageSlot(screen.getMenu(), slot)) continue;
+                int index = ClientMenuSlots.serverMenuSlot(screen.getMenu(), slot);
+                for (var snapshot : snapshots) {
+                    Integer logicalSlot = snapshot.menuSlots().get(index);
+                    if (logicalSlot == null || !snapshot.cells().contains(logicalSlot)) continue;
                     graphics.blit(screen.getGuiLeft() + slot.x - 1, screen.getGuiTop() + slot.y - 1,
                         0, 18, 18, sprite);
+                    break;
                 }
             }
             graphics.setColor(1, 1, 1, 1);

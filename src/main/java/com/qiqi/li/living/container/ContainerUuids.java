@@ -60,7 +60,7 @@ public final class ContainerUuids {
     @Nullable
     public static UUID ofHost(@Nullable IAttachmentHolder host) {
         if (host == null) return null;
-        UUID uuid = host.getData(LivingComponents.CONTAINER_UUID_ATTACHMENT.get());
+        UUID uuid = host.getExistingDataOrNull(LivingComponents.CONTAINER_UUID_ATTACHMENT.get());
         // 哨兵（全零）⇒ 没有身份。附件默认值不能是 null（见 CONTAINER_UUID_ATTACHMENT 的 javadoc）
         return isAbsent(uuid) ? null : uuid;
     }

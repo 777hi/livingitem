@@ -1,6 +1,7 @@
 package com.qiqi.li.client.input;
 
-import com.qiqi.li.client.util.ClientSlotResolve;
+import com.qiqi.li.client.util.ClientMenuSlotOwners;
+import com.qiqi.li.client.util.ClientMenuSlots;
 import com.qiqi.li.living.domain.water.FluidFlowClientCache;
 import com.qiqi.li.living.domain.water.LivingBucketFunction;
 import com.qiqi.li.living.interaction.InteractionEntry;
@@ -17,22 +18,11 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import javax.annotation.Nullable;
 
 /**
- * 客户端GUI交互统一处理工具。
+ * 客户端 GUI 交互统一入口；仅真实菜单槽可发送交互包。
  *
- * 所有 Screen Mixin 的 mouseClicked/mouseReleased 拦截逻辑
- * 统一调用 {@link #tryInteract}，不再硬编码具体的物品判断。
- *
- * 处理流程：
- *   1. 从 InteractionRegistry 查询匹配的交互规则
- *   2. 解析真实容器槽位索引（兼容 SlotWrapper）
- *   3. 创造模式下序列化光标物品数据（解决服务端无法获取光标物品的问题）
- *   4. 发送 GuiInteractionPacket 到服务端
- *
- * 创造模式光标物品：
- *   创造模式使用 ItemPickerMenu，光标物品是客户端虚拟的，
- *   服务端 menu.getCarried() 返回空。
- *   当交互需要服务端访问光标物品时，客户端通过 carriedTag
- *   将光标物品的完整NBT数据发送到服务端。
+ * <p>按规则匹配动作，携带服务端菜单 ID、精确菜单槽号与该槽物理号；
+ * 创造模式只接入 inventory wrapper 的真实目标，并附带虚拟光标物品数据。
+ * 门面与容器级桶动作额外要求存储槽，普通物品动作不受此限制。</p>
  */
 public final class GuiInteractionHelper {
 
@@ -47,69 +37,65 @@ public final class GuiInteractionHelper {
      * @return true 表示匹配到交互规则并已发送网络包，调用方应取消原版行为
      */
     public static boolean tryInteract(Slot hoveredSlot, int button, boolean onRelease, AbstractContainerMenu menu) {
-        if (hoveredSlot == null) return false;
+        int menuSlot = ClientMenuSlots.serverMenuSlot(menu, hoveredSlot);
+        int menuId = ClientMenuSlots.serverMenuId(menu);
+        if (menuSlot < 0 || menuId < 0) return false;
+        int containerSlot = ClientMenuSlots.serverContainerSlot(menu, hoveredSlot);
+        if (containerSlot < 0) return false;
 
         ItemStack target = hoveredSlot.getItem();
         ItemStack trigger = menu.getCarried();
 
         if (button == 1 && !onRelease
-                && com.qiqi.li.client.util.PortalMenuSlots.isStorageSlot(menu, hoveredSlot)) {
-            int menuSlot = com.qiqi.li.client.util.PortalMenuSlots.serverMenuSlot(menu, hoveredSlot);
-            int menuId = com.qiqi.li.client.util.PortalMenuSlots.serverMenuId(menu);
+                && ClientMenuSlots.isStorageSlot(menu, hoveredSlot)) {
             String action = null;
             if (trigger.isEmpty()
                     && com.qiqi.li.living.domain.portal.PortalClientCache.contains(menuId, menuSlot)) {
                 action = com.qiqi.li.living.domain.portal.PortalInteractHandlers.USE_ID;
             } else if (target.isEmpty()
                     && com.qiqi.li.living.domain.portal.PortalInteractHandlers.isIgniter(trigger)
-                    && com.qiqi.li.client.util.ClientMenuSlotOwners.resolveStorageSlot(menu, hoveredSlot) >= 0
+                    && ClientMenuSlotOwners.resolveStorageSlot(menu, hoveredSlot) >= 0
                     && hasNearbyPortalFrame(menu, hoveredSlot)) {
                 action = com.qiqi.li.living.domain.portal.PortalInteractHandlers.IGNITE_ID;
             }
             if (action != null) {
                 PacketDistributor.sendToServer(new GuiInteractionPacket(
-                    menuSlot, resolveContainerSlot(hoveredSlot), action, resolveCarriedTag(menu), menuId));
+                    menuSlot, containerSlot, action, resolveCarriedTag(menu), menuId));
                 return true;
             }
         }
 
-        // 活桶汲/倒（流体侧批次二，2026-10-03）：目标条件是「空槽位 + 容器级源状态」，
-        // 物品中心的规则系统表达不了（matchesTarget 对空槽恒 false）⇒ 客户端按流体快照
-        // 缓存精确判定，不命中不拦截（原版操作不受影响）；命中后复用 GuiInteractionPacket
-        // 服务端管道（actionId → WaterRegistration 注册的处理器，服务端权威重验）。
-        if (button == 1 && !onRelease && LivingBucketFunction.isLivingBucket(trigger)) {
-            String bucketAction = matchBucketInteract(hoveredSlot, trigger);
+        // 活桶汲/倒只接入真实存储槽，依据容器级流体快照判定。
+        if (button == 1 && !onRelease && LivingBucketFunction.isLivingBucket(trigger)
+                && ClientMenuSlots.isStorageSlot(menu, hoveredSlot)) {
+            String bucketAction = matchBucketInteract(hoveredSlot, trigger,
+                ClientMenuSlotOwners.resolveStorageSlot(menu, hoveredSlot));
             if (bucketAction != null) {
-                int containerSlot = resolveContainerSlot(hoveredSlot);
                 CompoundTag carriedTag = resolveCarriedTag(menu);
                 PacketDistributor.sendToServer(new GuiInteractionPacket(
-                    hoveredSlot.index, containerSlot, bucketAction, carriedTag));
+                    menuSlot, containerSlot, bucketAction, carriedTag, menuId));
                 return true;
             }
         }
 
-        // 活海绵汲出（2026-11-02 第三段）：目标是「组件量 ≥ 一桶」—— {fluid, mmB} 是
-        // networkSynchronized 组件，客户端可直接精确判定（无需流体快照）；命中后同走
-        // GuiInteractionPacket 管道（actionId → SpongeRegistration 注册的处理器，服务端权威重验）。
+        // 活海绵汲出依据同步组件量判定，不要求容器级流体快照。
         if (button == 1 && !onRelease
                 && LivingBucketFunction.isLivingBucket(trigger)
                 && LivingBucketFunction.isEmptyBucket(trigger)
                 && com.qiqi.li.living.domain.sponge.LivingSpongeInteractSupport.drawable(target)) {
-            int containerSlot = resolveContainerSlot(hoveredSlot);
             CompoundTag carriedTag = resolveCarriedTag(menu);
             PacketDistributor.sendToServer(new GuiInteractionPacket(
-                hoveredSlot.index, containerSlot, "living_sponge_draw", carriedTag));
+                menuSlot, containerSlot, "living_sponge_draw", carriedTag, menuId));
             return true;
         }
 
         InteractionEntry entry = InteractionRegistry.findInteraction(trigger, target, button, onRelease);
         if (entry == null) return false;
 
-        int containerSlot = resolveContainerSlot(hoveredSlot);
         CompoundTag carriedTag = resolveCarriedTag(menu);
 
         PacketDistributor.sendToServer(new GuiInteractionPacket(
-            hoveredSlot.index, containerSlot, entry.actionId(), carriedTag));
+            menuSlot, containerSlot, entry.actionId(), carriedTag, menuId));
         return true;
     }
 
@@ -119,9 +105,9 @@ public final class GuiInteractionHelper {
         boolean playerGroup = target.container == mc.player.getInventory();
         java.util.Map<Long, Slot> cells = new java.util.HashMap<>();
         for (Slot slot : menu.slots) {
-            if (!com.qiqi.li.client.util.PortalMenuSlots.isStorageSlot(menu, slot)
+            if (!ClientMenuSlots.isStorageSlot(menu, slot)
                     || (slot.container == mc.player.getInventory()) != playerGroup) continue;
-            if (com.qiqi.li.client.util.ClientMenuSlotOwners.resolveStorageSlot(menu, slot) < 0) continue;
+            if (ClientMenuSlotOwners.resolveStorageSlot(menu, slot) < 0) continue;
             cells.put(((long) slot.x << 32) | (slot.y & 0xffffffffL), slot);
         }
         java.util.Set<Slot> visited = new java.util.HashSet<>();
@@ -151,7 +137,7 @@ public final class GuiInteractionHelper {
      * 其余情况返回 null（不拦截，光标右键的原版拿起/放置/交换照常）。
      */
     @Nullable
-    private static String matchBucketInteract(Slot hoveredSlot, ItemStack carried) {
+    private static String matchBucketInteract(Slot hoveredSlot, ItemStack carried, int storageSlot) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return null;
 
@@ -163,7 +149,7 @@ public final class GuiInteractionHelper {
             snapshot = FluidFlowClientCache.getChestLike();
         }
 
-        var cell = snapshot.cells().get(resolveContainerSlot(hoveredSlot));
+        var cell = snapshot.cells().get(storageSlot);
         boolean isSourceCell = cell != null && cell[0] == 0;
 
         if (LivingBucketFunction.hasFullBucket(carried)) {
@@ -173,16 +159,6 @@ public final class GuiInteractionHelper {
             return "living_bucket_scoop";
         }
         return null;
-    }
-
-    /**
-     * 解析槽位的真实容器索引，兼容创造模式 SlotWrapper。
-     *
-     * <p>Q6 批次 C（2026-10-04）：实现已迁至 {@link ClientSlotResolve#resolveContainerSlot}
-     * （客户端槽位解析共享工具），此处保留薄委托。</p>
-     */
-    private static int resolveContainerSlot(Slot slot) {
-        return ClientSlotResolve.resolveContainerSlot(slot);
     }
 
     /**

@@ -22,6 +22,7 @@ src/test/java/com/qiqi/li/
 ├── LivingItemMenuRuntimeTest.java            # 混合实体菜单首包·主实体与玩家保留、附加末影箱不得覆盖单非玩家缓存，普通菜单原路由不变
 ├── living/domain/portal/
 │   ├── ContainerPortalDataTest.java            # 门面区域不可变/Codec合法性/多门归属/独立快照，不将门绑定框材
+│   ├── PortalInteractHandlersTest.java         # 真实空SlotItemHandler点火/生存耐久/重复不扣/整门访问范围/拒绝零副作用/普通货共存使用/冷读不入热表
 │   ├── PortalStructureTest.java                # 四邻围闭/非矩形/开口/缺槽/共享边；实际流体/即时源/活物品阻塞，普通货不灭门
 │   ├── PortalDataAccessTest.java               # Player双key、UUID唯一真身、附件回填、清门不清其他key、空状态不复活
 │   ├── PortalDataMigrationTest.java            # UUID交接/无UUID快照/旧热值覆盖/只清门数据/双箱拆半旧key与左右顺序
@@ -74,6 +75,7 @@ src/test/java/com/qiqi/li/
 │   ├── SoulSlabPreviewSurfaceTest.java        # 预览表面仲裁·仅无容器屏时HUD持帧/任意跨表面SETTLE/同表面同位NONE、GUI槽异位MOVE、HUD/光标异位SETTLE
 │   └── SoulSlabPreviewVisibilityTest.java     # 活魂符预览可见帧·未绘制哨兵不因int溢出误判/当前至前2tick可见/更旧与tick极值不可见
 ├── client/util/
+│   ├── ClientMenuSlotsTest.java                # 精确显示槽映射/创造已解包目标身份/目录与销毁格及复制槽拒绝；真实Mixin解包实机验收
 │   └── LivingChestTabSearchTest.java          # 活箱子标签页搜索过滤纯函数·空搜索词原样返回(不清空栈)/非空词剔除空栈不改入参/中文名直配/拼音(全拼·首字母·部分)/英文名大小写/注册ID兜底/空物品+非空词⇒匹配(原守卫分支语义·实际路径不可达,钉住防漂)
 ├── living/api/
 │   ├── LivingItemRegistrationTest.java        # 重复ID先拒绝且零变更/合法注册失效缓存/异常与安装失败恢复原实例顺序及缓存视图
@@ -283,6 +285,8 @@ src/test/java/com/qiqi/li/
 │   ├── SpongeContainerCapabilityTest.java     # 容器级能力·存在性/客户端零罐只读探针（Jade取数闸门）/槽序罐/填充/边沿·多堆剩余预算与混种/代表流体/模拟·BLOCK副本计算与原槽提交/原引用和副本后端/拒写不报账/只读不抽插/第二槽失败报先前提交量/超大堆叠与无关组件保留
 │   └── LivingSpongeTooltipTest.java           # tooltip 堆口径（2026-11-06 回归）·分子分母同乘 count（旧实现分母写死枚容量 ⇒「128000 / 64000 mB」）/ 与 getFluidInTank·getTankCapacity 逐字一致 / 半满余量 / 干态无内容行
 ├── living/interaction/
+│   ├── MenuActionAccessTest.java               # 菜单/槽身份与范围/原版存储契约/真实NeoForge空槽/显式访问/拒绝未知异常不回落/过滤不等于权限
+│   ├── InteractionActionTest.java              # 物品与容器语义/只读范围/逻辑映射/准入拒绝不执行/规则匹配不能授权
 │   ├── InteractionRegistryTest.java           # 两趟优先级匹配·通配遮蔽+triggerFilter 回归守卫
 │   ├── InteractionRuleConfigTest.java         # 交互规则 JSON 加载语义·内置全有效/玩家覆盖与removed/坏值跳过/未知字段忽略/version守卫/reload幂等（自带 mock handler 不依赖测试执行顺序）
 │   └── TillToFarmlandCompatTest.java          # 活锄头跨模组兼容·模组锄头命中+处理器产物回归
@@ -306,7 +310,8 @@ src/test/java/com/qiqi/li/
 │   └── PerItemLedgerTest.java                 # 均分记账内核（2026-11-02，power/sponge 两域共享）·floor 均分记账=写入×count（同源）/ 不足整步不写 / 容量防御截断 / 已满不动 / 退化输入 / 损耗 ≤ count−1（设计稿 §3.1；灯泡行为不变由 RoundTripConservationIT 全量回归守）
 └── network/
     ├── ContainerMenuInfoPacketTest.java         # 菜单信息载荷·全形态/来源codec/状态独立/request关联/服务端限频/错菜单拒绝/实际回包/退出清理/几何有效性
-    ├── GuiInteractionPacketTest.java          # 目标槽判据·空槽可解析（活桶汲/倒包的回归守卫）/活物品可解析/非活物品不可解析
+    ├── GuiInteractionDispatchTest.java        # 真实分发当前菜单/精确双槽/同号异库存/访问拒绝无后置维护/创造候选授权后借入与finally恢复/正常物品及空槽容器动作
+    ├── GuiInteractionPacketTest.java          # 所有动作精确双槽号/越界与inactive拒绝/不按物理号回退；物品动作仅非空活物品
     └── LivingItemSyncPacketTest.java          # 运行时同步包编解码往返（档 2 安全网）·三组字段往返/空数据/多槽混合/两种键形态/容器种类 kind 往返(背包·末影箱·世界·掉落物)/子记录哨兵/未登记 id 报错
     └── LivingItemRuntimeSyncTest.java         # （门控判定已迁 ContainerViewersTest）+ **物品形态容器按菜单锚点发包（真机 tooltip 不显示容器信息的回归）**
     └── ServerPacketHandlerInventorySafetyTest.java  # 满背包不丢物（2026-10-27 审查 P0）·配方书 Shift 取出活箱子物品曾直接丢栈 ⇒ 背包满时静默销毁 / 满 ⇒ 余量掉落（Player#drop 原版入口，落副本+清零）/ 空 ⇒ 全收不掉 / 部分空间 ⇒ 合并后余量掉落

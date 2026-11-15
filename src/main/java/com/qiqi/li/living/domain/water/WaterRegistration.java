@@ -80,9 +80,9 @@ public final class WaterRegistration {
         // 物品中心规则表达不了，见 LivingBucketInteractHandlers 类注释），直接发
         // GuiInteractionPacket 走本注册的 handler
         com.qiqi.li.living.interaction.InteractionRegistry.registerHandler(
-            "living_bucket_pour", LivingBucketInteractHandlers.POUR);
+            "living_bucket_pour", LivingBucketInteractHandlers.POUR_ACTION);
         com.qiqi.li.living.interaction.InteractionRegistry.registerHandler(
-            "living_bucket_scoop", LivingBucketInteractHandlers.SCOOP);
+            "living_bucket_scoop", LivingBucketInteractHandlers.SCOOP_ACTION);
 
         // ── 活熔岩（2026-10-06，与活水源对称的第三条流体）──────
         //  - 会流动：maxLevel 3（dropOff 2 派生值）、30t/格（getTickDelay 派生值，下界 10）

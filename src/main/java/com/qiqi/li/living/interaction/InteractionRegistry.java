@@ -28,7 +28,7 @@ import net.minecraft.world.item.ItemStack;
 public class InteractionRegistry {
 
     private static final List<InteractionEntry> ENTRIES = new ArrayList<>();
-    private static final Map<String, InteractionHandler> HANDLERS = new HashMap<>();
+    private static final Map<String, InteractionAction> HANDLERS = new HashMap<>();
 
     /**
      * 注册一条交互规则。
@@ -46,17 +46,31 @@ public class InteractionRegistry {
      * @param handler  处理器实现
      */
     public static void registerHandler(String actionId, InteractionHandler handler) {
-        HANDLERS.put(actionId, handler);
+        registerHandler(actionId, InteractionAction.item(handler));
+    }
+
+    /** 容器状态动作须显式声明范围；未声明的注册只作用于目标物品。 */
+    public static void registerHandler(String actionId, InteractionAction action) {
+        HANDLERS.put(actionId, action);
+    }
+
+    public static InteractionAction getAction(String actionId) {
+        return HANDLERS.get(actionId);
     }
 
     /**
-     * 获取交互处理器。
+     * 获取带访问校验的交互处理器；未授权时不执行。
      *
      * @param actionId 动作ID
      * @return 对应的处理器，不存在返回 null
      */
     public static InteractionHandler getHandler(String actionId) {
-        return HANDLERS.get(actionId);
+        InteractionAction action = HANDLERS.get(actionId);
+        return action == null ? null : (player, slot) -> {
+            if (action.permits(player, slot, player.containerMenu.getCarried())) {
+                action.handler().handle(player, slot);
+            }
+        };
     }
 
     /**

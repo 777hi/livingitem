@@ -1,6 +1,7 @@
 package com.qiqi.li.living.container;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -93,12 +94,21 @@ class ContainerUuidsTest {
     void ofHost_sentinelMeansNoIdentity() {
         net.neoforged.neoforge.attachment.IAttachmentHolder host =
             org.mockito.Mockito.mock(net.neoforged.neoforge.attachment.IAttachmentHolder.class);
-        org.mockito.Mockito.when(host.getData(
+        org.mockito.Mockito.when(host.getExistingDataOrNull(
                 com.qiqi.li.living.components.LivingComponents.CONTAINER_UUID_ATTACHMENT.value()))
             .thenReturn(com.qiqi.li.living.components.LivingComponents.NO_CONTAINER_UUID);
 
         assertNull(ContainerUuids.ofHost(host),
             "哨兵必须翻译成 null —— 否则每个箱子都被当成「有身份」，会去 SavedData 找不存在的数据");
+    }
+
+    @Test
+    void ofHostDoesNotCreateMissingAttachment() {
+        var host = new net.neoforged.neoforge.attachment.AttachmentHolder() {};
+        var type = com.qiqi.li.living.components.LivingComponents.CONTAINER_UUID_ATTACHMENT.value();
+        assertFalse(host.hasData(type));
+        assertNull(ContainerUuids.ofHost(host));
+        assertFalse(host.hasData(type));
     }
 
     @Test
@@ -109,7 +119,7 @@ class ContainerUuidsTest {
         var attachType = com.qiqi.li.living.components.LivingComponents.CONTAINER_UUID_ATTACHMENT.value();
         // 模拟「初始为哨兵」的宿主
         java.util.UUID[] slot = {com.qiqi.li.living.components.LivingComponents.NO_CONTAINER_UUID};
-        org.mockito.Mockito.when(host.getData(attachType)).thenAnswer(inv -> slot[0]);
+        org.mockito.Mockito.when(host.getExistingDataOrNull(attachType)).thenAnswer(inv -> slot[0]);
         org.mockito.Mockito.doAnswer(inv -> {
             slot[0] = inv.getArgument(1);
             return null;

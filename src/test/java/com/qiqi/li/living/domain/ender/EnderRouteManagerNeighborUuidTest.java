@@ -56,7 +56,7 @@ class EnderRouteManagerNeighborUuidTest {
         UUID neighborUuid = UUID.randomUUID();
         UUID registrarUuid = UUID.randomUUID();
         BlockEntity be = mock(BlockEntity.class);
-        when(be.getData(LivingComponents.CONTAINER_UUID_ATTACHMENT.value())).thenReturn(neighborUuid);
+        when(be.getExistingDataOrNull(LivingComponents.CONTAINER_UUID_ATTACHMENT.value())).thenReturn(neighborUuid);
         Level level = mock(Level.class);
         when(level.dimension()).thenReturn(Level.OVERWORLD);
         when(level.getBlockEntity(NEIGHBOR_POS)).thenReturn(be);
@@ -79,7 +79,7 @@ class EnderRouteManagerNeighborUuidTest {
     @DisplayName("邻居没有容器身份：sourceContainerUuid 为 null")
     void neighborRoute_withoutIdentity_leavesUuidNull() {
         BlockEntity be = mock(BlockEntity.class);
-        when(be.getData(LivingComponents.CONTAINER_UUID_ATTACHMENT.value())).thenReturn(new UUID(0, 0));
+        when(be.getExistingDataOrNull(LivingComponents.CONTAINER_UUID_ATTACHMENT.value())).thenReturn(new UUID(0, 0));
         Level level = mock(Level.class);
         when(level.dimension()).thenReturn(Level.OVERWORLD);
         when(level.getBlockEntity(NEIGHBOR_POS)).thenReturn(be);

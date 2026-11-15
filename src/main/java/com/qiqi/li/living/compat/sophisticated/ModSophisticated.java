@@ -34,6 +34,7 @@ public final class ModSophisticated {
     public static void init() {
         if (!isLoaded()) return;
         MenuSlotOwners.registerMenuResolver(new SophisticatedMenuResolver());
+        com.qiqi.li.living.interaction.MenuActionAccess.register(new SophisticatedMenuAccess());
         LOGGER.info("[ModSophisticated] 已注册菜单位置解析器（容器 GUI 的 tooltip / 流体渲染依赖它）");
 
         // 活背包（2026-10-22）：把精妙背包登记为「物品形态容器」来源 ⇒

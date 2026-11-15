@@ -38,9 +38,11 @@
 | `LivingToolRecorder` | 自带停服事件 | `LAST_RECORD_TICK` |
 | `MapUpdateSkipHelper` | 登记 | `cooldowns` `lastUpdateTick` |
 | `MechanicalReceivers` | ⚠️ 本类无清理入口 | `RECEIVERS` |
+| `MenuActionAccess` | ⚠️ 本类无清理入口 | `RESOLVERS` |
 | `PortalClientCache` | 登出 | `SNAPSHOTS` |
 | `PortalServerSync` | 登记 | `SENT` |
 | `RepresentativeFluids` | ⚠️ 本类无清理入口 | `CACHE` |
+| `SophisticatedMenuAccess` | ⚠️ 本类无清理入口 | `METHODS` |
 | `StaticCacheRegistry` | 登记 / 自带登出事件 | `CLIENT` `SERVER` |
 | `StructureMapDecorator` | ⚠️ 本类无清理入口 | `SCANNED_CHUNKS` |
 | `TransferTargetPolicies` | ⚠️ 本类无清理入口 | `POLICIES` |

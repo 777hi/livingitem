@@ -92,6 +92,10 @@ javadoc 明写「新增 LivingItemFunction 必须回来手添」⇒ **第三方�
 | `LivingIconRegistry.register` | `LivingIconRegistry.java` | ⚠️ public，但内置调用时机在 mod 构造函数，无时序契约 |
 | 可选钩子 `onActivated` / `onDeactivated` | `living/api/LivingItemFunction.java` | ✅ default 空实现，契约见 §1.5（2026-10-04）—— ⚠️ 与其它钩子不同，它**有守卫测试**（`ActivationHookTest`） |
 
+#### GUI 动作访问边界
+
+`InteractionRegistry.registerHandler(actionId, handler)` 默认声明物品状态动作，只接受非空活物品；容器状态/使用动作须注册带语义与只读范围的 `InteractionAction`。规则JSON只匹配对象，不授予权限；`MenuActionAccess` 的来源接口先认领当前菜单，认领后的拒绝/未知/异常不得回落。提取/插入结果不证明状态动作授权，拒绝不改光标、不执行容器后置维护。完整契约只在 [GUI交互 §1.1](gui-interaction-system.md#11-身份访问能力与玩法条件)。
+
 #### Function ID 唯一性（2026-11-11）
 
 `LivingItemManager.registerFunction` 按 `getFunctionId()` 的字符串值拒绝重复（包括同一实例二次注册），在日志、追加、缓存失效和自维持回调之前抛 `IllegalStateException`，报告 ID 与双方实现类。相同类的不同 ID 可注册；不静默去重、不替换已注册功能。Function ID 暂不迁移为 ResourceLocation。
