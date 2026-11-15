@@ -9,12 +9,12 @@
 | 子系统 | 概述 | 详细文档 |
 |--------|------|----------|
 | **活TNT** | 引信倒计时 + 爆炸，威力随数量缩放，三模式（普通/大当量/超级爆炸）；破坏按区块分帧 + 待炸账本 | [living-tnt-tech.md](../tech/living-tnt-tech.md) |
-| **活流体**（原「活水桶」） | 容器级流体引擎（`ContainerFluidData`：派生源/蔓延/晋升/挤没/转化/推动，`LivingFluidFunction` 自维持驱动）+ 行为分档 + 转化表；**活桶**（桶家族 × 活标记）是系统的激活器/载体（类比红电的活铜块们），子系统关系见 §1；**活熔岩** = 接入的第二条会流动流体（引擎零改动）：焚毁/源诞生 + 前沿反应·刷石机，见 §3.7 | [docs/tech/living-fluid-tech.md](../tech/living-fluid-tech.md) |
+| **活流体**（原「活水桶」） | 容器级流体引擎（派生源/蔓延/晋升/挤没/转化/推动）+ 行为分档 + 转化表；活桶是激活器/载体，活熔岩为第二条流体（焚毁/源诞生/刷石机） | [living-fluid-tech.md](../tech/living-fluid-tech.md) |
 | **活地狱门**（组合结构） | 活黑曜石自由围闭 + 活打火石点燃；普通货物交接原版过门，玩家GUI传送；活物品/活流体/无可用位置导致整门熄灭，配置控制真实宿主借位 | [living-nether-portal-tech.md](../tech/living-nether-portal-tech.md) |
 | **活熔炉** | 配方匹配 + 燃料消耗 + 方向槽位配置 | [living-furnace-tech.md](../tech/living-furnace-tech.md) |
 | **活酿造台** | 5 槽位（3 瓶 + 燃料 + 材料）方向配置（**支持斜向**）+ 400t 批次酿造 + 次数制燃料（落盘）+ 堆叠加速（`step = count`）；`level.potionBrewing()` 已聚合原版与所有模组配方 ⇒ 零兼容代码 | [living-brewing-stand-tech.md](../tech/living-brewing-stand-tech.md) |
 | **活漏斗** | TransferPipeline 统一传输 + 黑白名单 + 跨容器 + WASD 配置 | [living-hopper-tech.md](../tech/living-hopper-tech.md) |
-| **活箱子** | 堆叠倍增 + UUID 映射 + LRU 缓存 + 磁盘持久化 | [living-chest-tech.md](../tech/living-chest-tech.md) |
+| **活箱子** | 27 槽虚拟存储（原版 `CONTAINER` 组件内嵌）+ 字节上限 + 堆叠/拆分守恒；衍生数据实时推导不落盘 | [living-chest-tech.md](../tech/living-chest-tech.md) |
 | **活末影箱** | 路由模式（共享黑板）+ 直连模式（绑定玩家末影箱） | [living-ender-chest-tech.md](../tech/living-ender-chest-tech.md) |
 | **活水车** | 力矩计算 + 应力叠加/抵消 + Create 软依赖 | [living-water-wheel-tech.md](../tech/living-water-wheel-tech.md) |
 | **活地图传送** | 三种场景 + UV 精确传送 + 跨维度 + 载具 + Sable 飞艇 | [living-map-ender-pearl-tech.md](../tech/living-map-ender-pearl-tech.md) |
@@ -29,7 +29,7 @@
 | **图标系统** | 三层架构 + 声明式配置 + 上下文切换 | [icon-system.md](../system-design/icon-system.md) |
 | **Tooltip 系统** | 双层渲染架构 + 运行时缓存同步 + 显示口径（窗口均值/mFE） | [tooltip-system.md](../system-design/tooltip-system.md) |
 | **红电架构演进** | SensorPort 感知端口 + 事件流/元件接口化路线（信号层⇄电力层解耦） | [redstone-evolution-roadmap.md](../buffer/redstone-evolution-roadmap.md) |
-| **红电不变量测试** | 35 条可执行不变量（七组） + 四层测试方案（属性测试/场景生成/蜕变/运行时监控） | [power-invariants.md](../system-design/power-invariants.md) |
+| **红电不变量测试** | 不变量清单（七组，**定稿待实施**）+ 四层测试方案（属性测试/场景生成/蜕变/运行时监控） | [power-invariants.md](../system-design/power-invariants.md) |
 | **容器七问总览** | 容器专题的**入口**：七问（谁是容器 / 什么形状 / 谁在看 / 在哪 / 怎么读写 / 数据存哪 / 套容器）各自的唯一入口、状态、踩过的坑 + 第三方行为台账；**改容器层前先读它定位问题属于哪一问** | [container-overview.md](../system-design/container-overview.md) |
 | **超大堆叠审计** | 模组容器堆叠上限 > 64 场景下全部活物品的表现评级（202 处调用点） | [oversized-stack-audit.md](../system-design/oversized-stack-audit.md) |
 | **基础设施** | 容器抽象 + 发现缓存 + SlotAccessor + 性能监控 | [living-item-infrastructure.md](../system-design/living-item-infrastructure.md) |

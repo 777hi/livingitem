@@ -1519,6 +1519,11 @@ processContext(context, level)
 > —— 见 [runtime-mechanization-plan.md](../archive/runtime-mechanization-plan.md) §7。
 > 原「阶段 4.5」只是调用点，不是职责归属；反转发包后 L2 不再认识网络包（消 R1）。
 
+> 📌 **性能量测入口**（Q3，2026-11-15）：完整 `processContext` 管道的基线、场景与边界见
+> [unit-testing.md](../guides/unit-testing.md)「管道性能基准（Q3）」。本节六阶段图是结构说明，
+> 不是耗时结论；单测环境下 10k 容器每拍中位：空容器 9.31 ms、普通 11.07 ms、复杂 39.63 ms
+> （**非真机 MSPT**，量不到 `onServerTick` 外层）。
+
 **阶段 1 — 扫描**：遍历容器中所有物品，将活物品按功能类型分组收集，同时校验内容签名以打破稳态跳过死锁。
 
 ```java

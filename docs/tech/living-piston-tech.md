@@ -256,7 +256,7 @@ q=2 成功；A / B 保持原位，货物漏斗剩 1；即使货物漏斗送空�
 | 板（叠加层） | piston_side 顶 4 行板缘剖面 16×4，占 x∈[−8,+8] × y∈[−8−t, −4−t]——静止贴机身前缘 = 朝向指示；滑出后原位只剩机身 | `LivingPistonOverlay` blit，⚠️ x=−8 起笔（左上角锚点，见 §10） |
 | 杆（叠加层） | piston_side 顶 4 行剖面（原版 `template_piston_head` 杆侧面 UV [16,4,0,0] 同区——原版杆与板缘本就同一块贴图），4px 宽居中 x∈[−2,+2]，从机身前缘长到板内缘 | travel > 0 才画；先杆后板 ⇒ 板盖杆顶 |
 | 行程 | **travel = 一个槽距 18px（`SLOT_PITCH`，含边框）**：静止板外缘缩进本格边框 1px（−8，格边 −9）；全伸外缘缩进邻格远端边框 1px（−26，格边 −27）——「头块原样挪了一格」 | `headOffsetUnits(progress) × SLOT_PITCH`，单常数一行可调 |
-| 位姿 | translate(cx, cy, 175) → Rz(rotationOf(direction))；z 夹在物品(150)与数量文字(200)之间 | `DirectionalLivingModel.rotationOf` 家族约定（§4.2） |
+| 位姿 | 经 `GuiOverlays.paintSlotLevel` 重置位姿 + 抬层（净 = 基座 +275：> 槽位物品 +250、< 数量文字 +300）→ Rz(rotationOf(direction))；**禁手选绝对 Z**（D-render-02；旧值 175 漏算 renderSlot +100 基座） | `DirectionalLivingModel.rotationOf` 家族约定（§4.2） |
 
 动画时长 100ms（原版活塞 2gt，`DURATION_MS` 可调）；进度纯逻辑在 `PistonRenderState`
 （伸出 / 收回插值与端点钳制、中途翻转续接、方向变化吸附、键独立、活跃键每帧剪枝——免挂点清理）。

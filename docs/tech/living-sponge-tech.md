@@ -297,21 +297,24 @@ simulate/execute 同源确定。唯一残留毛刺：存量带尘时 content 恒
 | 12 报账红线 | RoundTripTest 红线断言（净迁移无凭空产生）+ ⑪ 确定性 |
 | 13 湿态可堆叠 | RoundTripTest 堆叠 / 拆分守恒 + CODEC 往返 |
 | ⑩ 一堆一罐 | 能力单测：getTanks=1 / 报量 floor / 容量 ×count |
-| ⑭ 容器级能力 | `SpongeContainerCapabilityTest` 6 项（存在性 / 罐映射 / 抽 / 灌 / 边沿精确一次） |
+| ⑭ 容器级能力 | `SpongeContainerCapabilityTest`（存在性 / 罐映射 / 抽 / 灌 / 边沿精确一次） |
 | GUI 汲 | 汲单测（复用 `LivingBucketInteractSupport` 测试模式，ceil 口径） |
 
 ---
 
 ## §10 测试地图（sponge 域 5 个测试类 + 共享内核）
 
+> 逐类条数不列（随加测试必漂，D-doc-08「条数不进文档」）；条数查
+> `python tools/test_inventory.py` 或全量快照。
+
 | 测试类 | 守什么 |
 |---|---|
-| `LivingSpongeDataTest`（7 项） | 组件形状契约：干/湿不变量归一 / 容量 long 域 / CODEC 湿·干·岩浆往返 / 未知流体降级 / wither 不可变 |
-| `LivingSpongeAbsorbTest`（10 项） | 吸收行为：一拍净邻 / 节拍门锁相 / 异种跳过不挡 / 方向序取首流体 / 快满停拍恢复 / 均分损耗有界 / 账本即时删不双吃 / 斜对角非邻居 / ultraWarm 反向守卫 / processContext 冒烟 |
-| `SpongeFluidRoundTripTest`（12 项） | **守恒主战场**：附录算例 / 拆分恒等式 / 往返零漂移 / 净迁移无凭空产生 / 溢出拒收 / 异种拒绝 / 零负请求 / 尘量行为 / 一堆一罐 / 7 堆实测场景 / simulate=execute / fill 全域扫描与尘区收敛 |
-| `SpongeContainerCapabilityTest`（6 项） | 容器级能力：存在性（干 = 空罐）/ 罐映射槽位序 / 指名罐抽 / 跨堆续抽 / 多罐灌装 / 边沿精确一次 |
-| `LivingSpongeTooltipTest`（4 项，2026-11-06） | tooltip 堆口径：单枚 64000/64000 / 2·7·64 堆分子分母同乘 count 且与 `getFluidInTank`·`getTankCapacity` 逐字一致 / 半满余量 / 干态无内容行 |
-| `PerItemLedgerTest`（6 项，living/util） | 均分内核：floor 记账同源 / 整步保护 / 容量防御 / 满堆不动 / 退化输入 / 损耗 ≤ count−1 |
+| `LivingSpongeDataTest` | 组件形状契约：干/湿不变量归一 / 容量 long 域 / CODEC 湿·干·岩浆往返 / 未知流体降级 / wither 不可变 |
+| `LivingSpongeAbsorbTest` | 吸收行为：一拍净邻 / 节拍门锁相 / 异种跳过不挡 / 方向序取首流体 / 快满停拍恢复 / 均分损耗有界 / 账本即时删不双吃 / 斜对角非邻居 / ultraWarm 反向守卫 / processContext 冒烟 |
+| `SpongeFluidRoundTripTest` | **守恒主战场**：附录算例 / 拆分恒等式 / 往返零漂移 / 净迁移无凭空产生 / 溢出拒收 / 异种拒绝 / 零负请求 / 尘量行为 / 一堆一罐 / 7 堆实测场景 / simulate=execute / fill 全域扫描与尘区收敛 |
+| `SpongeContainerCapabilityTest` | 容器级能力：存在性（干 = 空罐）/ 罐映射槽位序 / 指名罐抽 / 跨堆续抽 / 多罐灌装 / 边沿精确一次 |
+| `LivingSpongeTooltipTest`（2026-11-06） | tooltip 堆口径：单枚 64000/64000 / 2·7·64 堆分子分母同乘 count 且与 `getFluidInTank`·`getTankCapacity` 逐字一致 / 半满余量 / 干态无内容行 |
+| `PerItemLedgerTest`（living/util） | 均分内核：floor 记账同源 / 整步保护 / 容量防御 / 满堆不动 / 退化输入 / 损耗 ≤ count−1 |
 
 ---
 

@@ -167,57 +167,18 @@ ContainerRuntimeCache（容器缓存键 + 物理槽）
 
 ### 2.1 Tick 主循环
 
-```java
-@Override
-public void tick(List<SlotEntry> entries, ContainerContext context, TickContext tick, Level level) {
-    if (level.isClientSide) return;
+仅服务端执行，逐槽处理（流程总览见 §1.2）。实现以
+`LivingFurnaceFunction.tick()` 源码为准，每槽顺序：
 
-    for (SlotEntry entry : entries) {
-        ItemStack stack = entry.stack();
-        LivingFurnaceData data = LivingFurnaceData.of(stack);
-
-        // 0. 从运行时缓存恢复瞬态数据（progress/fuel/transform 不再写 DataComponent）
-        // 容器缓存键 + 物理槽映射由缓存入口处理
-        RuntimeSegments cached = ContainerRuntimeCache.get(context, slot);
-        FurnaceRuntime fr = cached.get(FurnaceSegment.INSTANCE);
-        if (fr != null) { data = data.withProgress(...).withFuel(...).withTransform(...); }
-
-        // 1. 解析方向 → 计算槽位
-        DirectionSlotsData dir = data.direction();
-        int inputSlot = SlotResolver.resolve(slot, dir.getDirection("input"), containerSize, containerWidth);
-        int fuelSlot = SlotResolver.resolve(slot, dir.getDirection("fuel"), containerSize, containerWidth);
-        int outputSlot = SlotResolver.resolve(slot, dir.getDirection("output"), containerSize, containerWidth);
-
-        // 2. 更新配方缓存 + 检查是否可以继续熔炼
-        data = tickTransform(context, data, inputSlot, level);
-        boolean canProgress = checkCanProgress(context, level, inputSlot, fuelSlot, outputSlot, data);
-
-        // 3. 推进或回退
-        if (canProgress) {
-            data = tickProgress(data, stack.getCount());
-            data = tickFuel(context, data, fuelSlot, stack.getCount());
-            if (data.progress().isComplete() && data.fuel().isBurning()) {
-                if (executeTransform(...)) data = data.withProgress(data.progress().reset());
-            }
-        } else {
-            data = pauseTick(data);
-        }
-
-        // 4. 写运行时缓存（tooltip 数据源，不写 DataComponent）
-        ContainerRuntimeCache.update(context, slot, RuntimeSegments.EMPTY.with(FurnaceSegment.INSTANCE,
-            new FurnaceRuntime(data.progress().progress(), data.progress().total(),
-                               data.fuel().burnTime(), data.transform())));
-
-        // 5. 燃烧状态翻转 → 写 LIVING_FURNACE_BURNING 标志组件 + 槽位同步（图标切换）
-        boolean nowBurning = data.fuel().isBurning();
-        if (nowBurning != FurnaceComponents.isBurning(stack)) {
-            FurnaceComponents.setBurning(stack, nowBurning);
-            context.syncSlotToClients(slot, stack);
-        }
-        // （方向变化时的 DataComponent 写入与同步此处省略）
-    }
-}
-```
+1. 从 `ContainerRuntimeCache` 回读瞬态 progress / fuel / transform（缓存键带维度前缀，
+   裸容器键会让主世界/下界同坐标箱子串燃料）
+2. 方向配置为空时回填 `DEFAULT_DIRECTION`；`SlotResolver` 解析 input / fuel / output 槽位
+3. `tickTransform()` 更新配方缓存 → `checkCanProgress()` 前置检查（§3.1）
+4. 可推进：进度 `advanceBy(1 + count/8)` + `tickFuel()`；进度完成且在燃烧 →
+   `executeTransform()`，成功才 `reset()`。不可推进：`pauseTick()` 回退进度 + 消耗余热
+5. 写运行时缓存（tooltip 数据源，**不写 DataComponent**）
+6. **仅变化时写组件**：燃烧状态翻转 → 写 `LIVING_FURNACE_BURNING` + 同步（稳态零写入，
+   标志过期自愈）；方向变化 → 写方向组件 + 同步
 
 ### 2.2 关键配置
 
@@ -237,29 +198,24 @@ public void tick(List<SlotEntry> entries, ContainerContext context, TickContext 
 checkCanProgress(ctx, level, inputSlot, fuelSlot, outputSlot, data)
   ├─ inputSlot < 0 或 outputSlot < 0 → return false
   ├─ 输入槽为空 或 是活物品 → return false
-  ├─ 燃料检查
-  │   ├─ 正在燃烧？→ 通过
-  │   ├─ fuelSlot 无效？→ return false
-  │   ├─ 燃料槽为空？→ return false
-  │   ├─ 燃料值 <= 0？→ return false
-  │   └─ 燃料是活物品？→ return false
-  └─ hasMatchingRecipe() → 返回配方匹配结果
+  ├─ 燃料检查（仅在未燃烧时）
+  │   ├─ fuelSlot 无效 / 燃料槽为空 → return false
+  │   └─ 燃料值 <= 0 或 燃料是活物品 → return false
+  ├─ hasMatchingRecipe() → 无配方 return false
+  └─ 输出槽预检（缓存产物非空且输出槽非空时）
+      ├─ 物品 ID 与缓存产物不同 → return false
+      └─ 组件级空间判断：取真实配方产物探针，calculateOutputSpace <= 0 → return false
 ```
+
+⚠️ **输出预检必须组件级**（2026-10-27 审查 P1-2）：曾只比物品 ID ⇒ 输出槽放「同物品不同组件」
+（改名铁锭 / 活铁锭）时预检放行、完成写不进 ⇒ 进度卡 `isComplete` 不复位、燃料无限烧、零产出。
+探针与写入判据（`isSameItemSameComponents`）同源；代价是产出槽非空期间每 tick 一次配方查询。
 
 ### 3.2 进度推进
 
-进度推进逻辑已收拢到 `ProgressData.advanceBy(amount)` 方法，堆叠加速倍率由 Function 计算：
-
-```java
-// Function 中
-int step = 1 + stackCount / 8;
-data = data.withProgress(data.progress().advanceBy(step));
-
-// ProgressData — 纯数学，不关心游戏规则
-public ProgressData advanceBy(int amount) {
-    return new ProgressData(Math.min(total, progress + amount), total);
-}
-```
+分工：**Function 负责游戏规则倍率**（`step = 1 + stackCount / 8`），
+**`ProgressData.advanceBy(amount)` 负责纯数学推进**（`min(total, progress + amount)`，
+不关心游戏规则）。倍率见 §2.2，实现见源码。
 
 | 堆叠数 | 倍率 | 完成时间 |
 |--------|------|---------|
@@ -271,15 +227,8 @@ public ProgressData advanceBy(int amount) {
 
 ### 3.3 暂停回退
 
-当活熔炉无法继续处理时（无输入/无燃料/输出满），暂停逻辑调用 `ProgressData.recede()` 和 `FuelData.tick(1)`：
-
-```java
-// ProgressData
-public ProgressData recedeBy(int amount) {
-    return new ProgressData(Math.max(0, progress - amount), total);
-}
-public ProgressData recede() { return recedeBy(1); }
-```
+当活熔炉无法继续处理时（无输入/无燃料/输出满），`pauseTick()` 调用
+`ProgressData.recede()`（回退 1）和 `FuelData.tick(1)`（消耗 1 余热）：
 
 | 状态 | 行为 |
 |------|------|
@@ -292,39 +241,21 @@ public ProgressData recede() { return recedeBy(1); }
 
 ### 4.1 燃料消耗
 
-```java
-private LivingFurnaceData tickFuel(ContainerContext ctx, LivingFurnaceData data, int fuelSlot, int stackCount) {
-        FuelData fuel = data.fuel();
-        if (fuel.isBurning()) {
-            // 正在燃烧 → 消耗燃料（堆叠加速倍率由 Function 计算）
-            return data.withFuel(fuel.tick(Math.max(1, stackCount)));
-        }
+`tickFuel()`（实现见源码）：
 
-    // 燃料耗尽 → 尝试消耗新燃料
-    ItemStack fuelStack = ctx.getItem(fuelSlot);
-    int fuelValue = getFuelValue(fuelStack);
-    if (fuelValue > 0 && !LivingItemManager.isLivingItem(fuelStack)) {
-        consumeFuel(ctx, fuelSlot, fuelStack);  // 消耗 1 个燃料物品（带残留物语义）
-        return data.withFuel(new FuelData(fuelValue));
-    }
-    return data;
-}
-```
+- **正在燃烧** → `FuelData.tick(max(1, stackCount))`，消耗倍率 = 堆叠数（§4.3）
+- **未燃烧** → 燃料槽有效、燃料值 > 0 且非活物品时，先 `consumeFuel()` 扣燃料，
+  **扣成功才点燃**（`new FuelData(fuelValue)`）；一件没扣到（容器违约）本拍不点燃
 
 **合成残留物**（对齐原版 `AbstractFurnaceBlockEntity#serverTick`）：点燃燃料时若燃料带
 crafting remainder，**燃料槽整体替换为残留物**（岩浆桶 → 空桶）；普通燃料只扣 1 个、
 耗尽后清空槽位。
 
-```java
-static void consumeFuel(ContainerContext ctx, int fuelSlot, ItemStack fuelStack) {
-    if (fuelStack.hasCraftingRemainingItem()) {
-        ctx.setItem(fuelSlot, fuelStack.getCraftingRemainingItem());   // 岩浆桶 → 空桶
-        return;
-    }
-    fuelStack.shrink(1);
-    ctx.setItem(fuelSlot, fuelStack.copy());
-}
-```
+`consumeFuel()` 走容器数量原语，返回 boolean（false = 没扣到，调用方不得点燃）：
+
+- 带残留物 → `ctx.transform(fuelSlot, ItemStack::getCraftingRemainingItem)`：同槽 1:1 替换
+  带回读。**不走 `produce` 的准入**——燃料槽在原版语义下拒收空桶
+- 普通燃料 → `ctx.consume(fuelSlot, 1) > 0`：抽取权限 + 写后回读，扣不到返回 0
 
 ### 4.2 燃料值获取
 
@@ -354,21 +285,11 @@ static void consumeFuel(ContainerContext ctx, int fuelSlot, ItemStack fuelStack)
 
 ### 5.1 进度完成判断
 
-```java
-public boolean isComplete() {
-    return progress >= total;
-}
-```
-
-完成条件：`progress >= total`（默认 total = 200）。
+完成条件：`progress >= total && total > 0`（`ProgressData.isComplete()`，默认 total = 200）。
 
 ### 5.2 进度重置
 
-转化成功后，进度重置为 0：
-
-```java
-data = data.withProgress(data.progress().reset());
-```
+转化成功后 `ProgressData.reset()` 进度归零（total 保留）。
 
 ---
 
@@ -376,32 +297,15 @@ data = data.withProgress(data.progress().reset());
 
 ### 6.1 配方缓存 `tickTransform()`
 
-为避免每 tick 查询配方管理器，活熔炉使用缓存机制：
+为避免每 tick 查询配方管理器，活熔炉使用缓存机制（优化背景见 §8.5 历史记录）。
+现行规则（实现见 `LivingFurnaceFunction.tickTransform()`）：
 
-```java
-private LivingFurnaceData tickTransform(ContainerContext ctx, LivingFurnaceData data, int inputSlot, Level level) {
-    ItemStack inputStack = ctx.getItem(inputSlot);
-    String inputKey = BuiltInRegistries.ITEM.getKey(inputStack.getItem()).toString();
-    TransformData transform = data.transform();
-
-    // 缓存命中：输入物品没变
-    if (inputKey.equals(transform.cachedInput()) && transform.cachedResult() == 1) {
-        return data;  // 直接使用缓存
-    }
-
-    // 缓存未命中 → 查询配方
-    var recipeHolderOpt = level.getRecipeManager()
-        .getRecipeFor(RecipeType.SMELTING, new SingleRecipeInput(inputStack), level);
-    if (recipeHolderOpt.isPresent()) {
-        // 缓存配方结果
-        transform = transform.withCache(inputKey, 1, outputKey, resultCount, cookingTime);
-    } else {
-        // 缓存"无配方"
-        transform = transform.withCache(inputKey, 0, "", 0, 0);
-    }
-    return data.withTransform(transform);
-}
-```
+- 输入槽无效 / 为空 / 是活物品 → 缓存清空（`TransformData.EMPTY`）
+- **相同输入且 `cachedResult ∈ {0, 1}` → 命中，不查配方**。⚠️ **「无配方」也缓存**
+  （2026-10-27 审查 P2-3：曾只认 1 ⇒ 无配方物品每 tick 重查；曾要求 inputItem 非空 ⇒
+  全新熔炉塞泥土永远写不进缓存）
+- 未命中 → 查询 `RecipeManager`，写 `withInputItem` / `withOutputItem` / `withCache`
+  （有配方 = 1，无配方 = 0）
 
 ### 6.2 转化执行 `executeTransform()`
 
@@ -409,33 +313,27 @@ private LivingFurnaceData tickTransform(ContainerContext ctx, LivingFurnaceData 
 executeTransform(ctx, level, data, inputSlot, outputSlot, stackCount)
   ├─ 输入/输出槽位有效？→ 否 → return false
   ├─ 输入是活物品？→ return false
-  ├─ RecipeManager 查询配方
+  ├─ RecipeManager 查询配方（取真实产物，不只读缓存）
   ├─ 无配方 → return false
   ├─ 计算转化数量
-  │   ├─ outputSpace = 输出槽可用空间
+  │   ├─ outputSpace = calculateOutputSpace(输出槽, 产物)
   │   ├─ maxByOutput = outputSpace / resultCount
   │   └─ transformCount = min(stackCount, inputCount, maxByOutput)
   ├─ transformCount <= 0 → return false
-  ├─ 消耗输入：inputStack.shrink(transformCount)
-  └─ 生成产物：outputStack.grow(transformCount * resultCount)
+  ├─ consume 先行：ctx.consume(inputSlot, transformCount)，扣减经回读核验
+  │   └─ consumed <= 0 → return false
+  └─ 按实际扣减量生成：ctx.produce(outputSlot, result, consumed × resultCount)（long 运算防回绕）
 ```
+
+⚠️ **consume 先行**（I-C13 分批加工）：只扣实际处理量，产物按实际扣减量放置。
+若 `produce` 少交付（容器 simulate 撒谎），损失方向是「少产出」且原语内部已 WARN——
+绝不反向多产出。**丢 ≤ 复制**，所以不先写产物再扣输入。
 
 ### 6.3 输出空间计算
 
-```java
-private int calculateOutputSpace(ContainerContext ctx, int outputSlot, ItemStack result) {
-    ItemStack outputStack = ctx.getItem(outputSlot);
-    int slotLimit = ctx.getSlotLimit(outputSlot);
-    if (outputStack.isEmpty()) {
-        return Math.min(slotLimit, result.getMaxStackSize());
-    }
-    if (ItemStack.isSameItemSameComponents(outputStack, result)) {
-        int maxCount = Math.min(slotLimit, outputStack.getMaxStackSize());
-        return maxCount - outputStack.getCount();
-    }
-    return 0;  // 不同物品，无空间
-}
-```
+**容量问容器**（I-C14 ①）：`calculateOutputSpace` 直接委托
+`ctx.insertableSpace(outputSlot, result)`——超堆叠槽的产出批量不再被物品上限钳住。
+不自算 `min(slotLimit, maxStackSize)`；选型见 [槽位操作选型](../guides/slot-ops.md)。
 
 ---
 

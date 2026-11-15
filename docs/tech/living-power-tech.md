@@ -59,7 +59,7 @@
 
 **能力清单**：✅ 相位检测与按锈级发电 · ✅ 铜灯储能（按盏 DataComponent，无池）
 · ✅ 双向充放（容器级 `ContainerEnergyStorage` + 物品级 `EnergyStorage.ITEM`）
-· ✅ 网络级共振（不同锈级之间的和声，§3.7）· ✅ 相位快照跨会话续接（§6.5）
+· ✅ 网络级共振（不同锈级之间，§3.7）· ✅ 相位快照跨会话续接（§6.5）
 · ✅ 双箱拆半相位清空重算（A6，见规则 12）· ✅ Tooltip 仪表盘
 
 **未实现计划**统一登记在 [TODO.md](../TODO.md)「红电」节（2026-10-10 起，D-doc-06）。
@@ -101,7 +101,7 @@ FE               = RE × K，K = 1/16
 |---|---|---|
 | √|Δ_i| 求和 | 铜块网络中各边信号的上升沿幅度，经 √ 压缩后求和 | 信号源堆叠数²，√ 压缩后差异缩小 |
 | n（相数） | 同周期域内不同偏移量去重 | 布线（同相合并，不跨域累加） |
-| 调谐效率 | 输入周期 vs 偏好周期 | 堆叠数 = 调谐旋钮 |
+| 调谐效率 | 输入周期 vs 偏好周期 | 堆叠数 = 调谐参数 |
 | 解锁度 u | eff × n / 偏好周期 | 相数越多解锁度越高，建造难度也越高 |
 | 铜块网络 | 按网络组件遍历（TopoKey + rep 锚点 BFS + copyFrom 共享） | 不同锈蚀级形成独立网络，同组件多机共享相位历史 |
 
@@ -405,11 +405,11 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
 - **显示均值与记账分离（v19.1）**：脉冲 EMA 对高频信号有固定峰谷纹波（P=2 时约 1.4×，超过量化步长 → tooltip 数字闪烁）。tooltip / 锈级柱状图 / 共振读数（平衡度 s、增益 R²、活跃锈级数 N）一律使用**显示窗口均值**：per-generator 窗口 = ceil(32/pref)×pref（偏好周期整倍数，稳态零纹波），per-oxidation 窗口 = 32t 固定；记账 EMA（α=1/8）保持快响应不动。共振增益由平滑窗口值算出、仍作用在本 tick 基础出力（v18 语义），三条铁律结构不变。
 - **毫 FE（mFE）定点显示（v19.1）**：K=1/16 下整数 FE 粒度会吞掉 <0.5 FE/t 的读数——显示链遥测字段改毫 FE 定点（`emaPowerMilliFe` / `levelEmaPowerMilliFe` / `levelPowerMilliFe`），tooltip 格式化 ≥1 FE 显示整数、不足两位小数（如 0.94 FE/t）。
 
-### 3.7 网络级共振（不同锈蚟级之间的「和声」）
+### 3.7 网络级共振（不同锈级之间）
 
 块级感应是「铜块采样边信号」，网络级共振是「锈蚟级之间互相感应」——
 **同一套机制抬高一个维度**。这也让 §3.5 的「氧化等级网络隔离」从单纯的消极隔离，
-变成有积极意义的机制：锈蚟级不再只是「互不连通」，而是**和弦里的锈级**。
+变成有积极意义的机制：锈蚟级不再只是「互不连通」，而是**参与共振的锈级**。
 
 #### 锈级单位是「锈蚟级」，不是 BFS 连通块
 
@@ -434,7 +434,7 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
 |---|---|
 | 平衡度 s | 各锈级出力的接近程度；尺度无关（只关心比例，不关心绝对值） |
 | 锈级数 N | 有出力的锈蚟级数；零出力的级不计入 |
-| exp = 2 | `PowerMath.RESONANCE_EXPONENT`，**唯一的强度标定旋钮** |
+| exp = 2 | `PowerMath.RESONANCE_EXPONENT`，**唯一的强度标定参数** |
 
 #### 边界性质（结构性，非靠常数压住）
 
@@ -513,13 +513,13 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
 | `PowerMath.balanceFactor` | 平衡度 s（GM/AM） |
 | `PowerMath.resonanceFactor` | 共振倍率 R = 1 + (N−1)s |
 | `PowerMath.resonanceGain` | 增益 R^exp |
-| `PowerMath.RESONANCE_EXPONENT` | 强度旋钮（默认 2.0） |
+| `PowerMath.RESONANCE_EXPONENT` | 强度参数（默认 2.0） |
 | `ContainerPowerData.emaPowerByOxidation` | 4 槽按锈蚟级的基础 EMA |
 | `ContainerPowerData.updateOxidationEma` | EMA 推进 + 归零截断 |
 | `LivingWaxedCopperFunction.accountEnergy` | 按锈蚟级累加基础出力 |
 | `LivingWaxedCopperFunction.tickContainerData` | tick 末单遍套用增益（v18：逐锈级 `voiceRe[k] = round(baseReByOx[k] × gain)`） |
 | `LivingWaxedCopperFunction.distributeToBulbs` | v18：直存时按 `getOxidationLevel(bulb) == k` 过滤灯堆 |
-| `NetworkResonanceTest` | 16 项（含回代安全、上界、EMA 衰减） |
+| `NetworkResonanceTest` | 网络级共振守卫（含回代安全、上界、EMA 衰减） |
 
 ---
 
@@ -626,8 +626,8 @@ if (neighbor >= 0) {
 全部退役，切制 H/V 双通道拆除）——三形态的个性全部迁移到「解读规则」上，
 基座铜块退役为纯基准（只会「读」不会「造」）。
 
-**测试**：`AccountingGateTest`（4 项：无跳变零产出、停机冻结、offset 去重、4t vs 12t
-中性化）+ `PhaseInterpretationTest`（8 项：移相/移相链（2026-09-08 起为关闭态
+**测试**：`AccountingGateTest`（无跳变零产出、停机冻结、offset 去重、4t vs 12t
+中性化）+ `PhaseInterpretationTest`（移相/移相链（2026-09-08 起为关闭态
 回归守卫）/环自熄/死源熄灭/裂相/加法/去重诚实）。
 
 ---
@@ -640,7 +640,7 @@ if (neighbor >= 0) {
 | **FE**（NeoForge Energy） | 对外：电池、IEnergyStorage（阶段四） | 通用能源货币 |
 
 边界换算：`FE = RE × K`，`K = 1/16`（`PowerMath.RE_TO_FE`，全 mod 唯一标尺常量）。
-整体调产量只改这一个数，**严禁**把 K 绑到最大周期等设计旋钮上。
+整体调产量只改这一个数，**严禁**把 K 绑到最大周期等设计参数上。
 
 **分配口径差异是刻意设计（2026-10-09 定案，禁抹平）**：三处「按剩余容量比例分配」的
 取整口径**有意不同** —— 物品接口报 `ceil(实充/1000)`、容器对外接口
@@ -657,7 +657,7 @@ if (neighbor >= 0) {
 储能标定：每盏容量 `C = 1,000,000 FE`（`PowerMath.BULB_UNIT_CAPACITY_FE`，与 K 并列的
 第二个硬数；标定史 1,000 → 10,000 → 1,000,000，当前值 2026-09-09 定——决策记录见
 红电系统.md §3.6「容量涌现」；一堆(64) = 64M FE，对齐科技生态中高档单格电池
-（Mek 能量立方 / Flux 储存器档位），充电宝物流彻底实用（一盏 = 一个满配方块电池）；
+（Mek 能量立方 / Flux 储存器档位），便携储能彻底实用（一盏 = 一个满配方块电池）；
 q 按 mFE 绝对值存储，扩容无迁移问题。**int 收窄警戒线**：对外 IEnergyStorage 是
 int FE，单堆读数溢出需 count ≥ 2,148 盏（2³¹ / 1M = 2,147.48）——超大堆叠容器（抽屉类）已可触达，
 fail-safe 不崩不刷（详见 oversized-stack-audit.md §2.8），long 内部全程无损）。
@@ -772,22 +772,25 @@ fail-safe 不崩不刷（详见 oversized-stack-audit.md §2.8），long 内部�
 
 ## 6. 测试
 
-| 测试文件 | 项数 | 覆盖 |
-|---|---|---|
-| `PowerMathTest` | 5 | 调谐效率曲线、合因子计算、√|Δ| 求和、K 换算 |
-| `ContainerPowerDataTest` | 6+ | 单路锁相、三相 6t 部分解锁、五相 5t 满相、杂讯排除、同相合并、EMA 账本 |
-| `AccountingGateTest` | 4 | **v19 跳变门控**：无跳变 tick 零产出、停机冻结、offset 去重、4t vs 12t 谐波中性化 |
-| `PhaseInterpretationTest` | 8 | **v19 相位解读三元件**：移相、移相链（奇数偏移）、移相环自熄、死源熄灭、裂相、加法求和、去重诚实 |
-| `ChannelStateTest` | 10 | 偏移活性剪枝（拆振荡器 n 回落）、稳态不误剪、长周期跨心跳存活 |
-| `CoilGroupingTest` | 5 | 形态识别 + 单通道状态机 |
-| `NetworkTraversalTest` | 5 | copyFrom 深拷贝、同组件共享历史、能量可加、锈级隔离、E2E 真实传播 |
-| `NetworkResonanceTest` | 18 | 网络级共振（含回代安全、上界、EMA 衰减） |
-| `WaxedCopperCouplingIT` | 3 | 多跳耦合链集成 |
-| `WaxedCopperOscillatorIT` | 5 | 振荡器→发电全链路 |
-| `WaxedCopperStorageTest` | 20 | 发电直存分配、无铜灯弃、满溢、模组容器取电、充电、容量 clamp、超取、未活化排除、EMA 功率 |
-| `BulbItemEnergyStorageTest` | 8 | 双向充放、容量 clamp、simulate、拆分守恒、线性读数、未活化无能力 |
-| `RoundTripConservationIT` | 4 | **往返守恒（2026-09-09）**：箱A灯→电缆→箱B灯 1000t 原样往返断言总能量不增（精确复刻 Mekanism UniversalCable + ForgeStrictEnergyHandler 传输协议：SIMULATE 探测→convertFromAndBack 钳制→EXECUTE、按返回值记账，feConversionRate=2.5）+ 拉侧/推侧单侧拆解诊断 + extract 记账契约最小复现 |
-| `PhaseSnapshotWarmupTest` | 8 | **账本重生相位连续性（2026-09-09~11 三轮）**：新账本默认 warmup / 回填保留宽限 / 快照过滤未锁相与死边 / φ 跨会话平移守恒 / 空快照保持宽限 / 回填锚存活（二次退出不丢相位）/ 首跳 interval=P（φ 反推锚自洽）/ **世界轴快照往返（重进场景直接守卫）**（§6.5） |
+> 逐类条数不列（随加测试必漂，D-doc-08「条数不进文档」）；条数查
+> `python tools/test_inventory.py` 或全量快照，逐条守什么见本表。
+
+| 测试文件 | 覆盖 |
+|---|---|
+| `PowerMathTest` | 调谐效率曲线、合因子计算、√|Δ| 求和、K 换算 |
+| `ContainerPowerDataTest` | 单路锁相、三相 6t 部分解锁、五相 5t 满相、杂讯排除、同相合并、EMA 账本 |
+| `AccountingGateTest` | **v19 跳变门控**：无跳变 tick 零产出、停机冻结、offset 去重、4t vs 12t 谐波中性化 |
+| `PhaseInterpretationTest` | **v19 相位解读三元件**：移相、移相链（奇数偏移）、移相环自熄、死源熄灭、裂相、加法求和、去重诚实 |
+| `ChannelStateTest` | 偏移活性剪枝（拆振荡器 n 回落）、稳态不误剪、长周期跨心跳存活 |
+| `CoilGroupingTest` | 形态识别 + 单通道状态机 |
+| `NetworkTraversalTest` | copyFrom 深拷贝、同组件共享历史、能量可加、锈级隔离、E2E 真实传播 |
+| `NetworkResonanceTest` | 网络级共振（含回代安全、上界、EMA 衰减） |
+| `WaxedCopperCouplingIT` | 多跳耦合链集成 |
+| `WaxedCopperOscillatorIT` | 振荡器→发电全链路 |
+| `WaxedCopperStorageTest` | 发电直存分配、无铜灯弃、满溢、模组容器取电、充电、容量 clamp、超取、未活化排除、EMA 功率 |
+| `BulbItemEnergyStorageTest` | 双向充放、容量 clamp、simulate、拆分守恒、线性读数、未活化无能力 |
+| `RoundTripConservationIT` | **往返守恒（2026-09-09）**：箱A灯→电缆→箱B灯 1000t 原样往返断言总能量不增（精确复刻 Mekanism UniversalCable + ForgeStrictEnergyHandler 传输协议：SIMULATE 探测→convertFromAndBack 钳制→EXECUTE、按返回值记账，feConversionRate=2.5）+ 拉侧/推侧单侧拆解诊断 + extract 记账契约最小复现 |
+| `PhaseSnapshotWarmupTest` | **账本重生相位连续性（2026-09-09~11 三轮）**：新账本默认 warmup / 回填保留宽限 / 快照过滤未锁相与死边 / φ 跨会话平移守恒 / 空快照保持宽限 / 回填锚存活（二次退出不丢相位）/ 首跳 interval=P（φ 反推锚自洽）/ **世界轴快照往返（重进场景直接守卫）**（§6.5） |
 
 > **历史 BUG：零头回收记账 count 倍放大（2026-09-09 修复）**——
 > `ContainerEnergyStorage.receive` 的零头回收循环给堆写 `q+1`（实充 = 每盏 +1 ×
@@ -909,12 +912,12 @@ sinceRise` 平移，整数周期下 φ 不变——**多路相对相位跨会话
 也得拦；② 防污染入口（首拍无沿）不够——**坐标系本身重进会换**；③ 换轴后锚定
 数学必须以**不变量（φ）**为基准反推，不能信跨轴平移量（sinceRise）。
 
-**测试**：`PhaseSnapshotWarmupTest`（8 项：新账本默认宽限 / 回填保留宽限（语义
+**测试**：`PhaseSnapshotWarmupTest`（新账本默认宽限 / 回填保留宽限（语义
 修正）/ 快照过滤未锁相与死边 / φ 跨会话平移守恒 / 空快照保持宽限 / **回填锚存活
 （二次退出不丢相位）** / **首跳 interval=P（φ 反推锚自洽）** / **世界轴快照往返
 （capture@世界W → restore@W+1000 → φ 不变——重进场景直接守卫，旧轴下必失败）**）；
 E2E 测试驱动循环补首拍热身——对齐真实时序，其中 seam 注入类由 `ensureTestGrid`
-自动声明历史。全量 235 用例全绿。
+自动声明历史。
 
 **停机重启语义（A5，2026-10-28 定案）**：振荡器停跳超过失活窗口
 （`aliveWindow(P) = max(32, 2P)` 夹 [32,1200]）后恢复，**旧周期作废、重新计时**：
@@ -948,7 +951,7 @@ E2E 测试驱动循环补首拍热身——对齐真实时序，其中 seam 注�
 
 | 限制 | 影响 | 计划 |
 |---|---|---|
-| 非 BE 容器不支持 | 充电宝搬入非 BE 容器时暂不可对外取电（发电本就需要 BE） | 有需求再补 Block 级注册 |
+| 非 BE 容器不支持 | 铜灯搬入非 BE 容器时暂不可对外取电（发电本就需要 BE） | 有需求再补 Block 级注册 |
 | **Pipez 能量管道不兼容** | Pipez（master 线）使用新 Transfer API 的 `Energy.BLOCK`（EnergyHandler 类型），非 FE 的 `EnergyStorage.BLOCK` | 用 Mekanism 电缆取电；中期软依赖注册 EnergyHandler 适配 |
 | **Flux Networks 取电方块（Flux Plug）不取电** | Flux Plug 从不主动拉取邻块电量——它只暴露「可被充入」的电池面等邻块推电（源码+1.20.1 原版 jar 字节码双重验证：拉取 API `receiveFrom`/`canReceiveFrom` 全源码零调用）。我们的容器是标准被动电池面（`canExtract=true`），对「纯被动等待」的 Plug 不可见。存电方块（Flux Point）是推送方，充电正常 | 设计上不跟（「限流职责归用电侧」）；如需兼容可让容器 tick 主动向邻块 `canReceive` 的推电，待需求驱动 |
 | **第三方模组红石元件的跨容器信号不保证相位连续（2026-09-11 实测定界）** | 相位时钟换轴（§6.5 第三轮）后，**原版红石线路 + 活红石线路**（含跨箱）重进相位已稳定；但**其它模组的红石元件**（第三方 mod 的中继器/比较器等）跨容器输入活红石网络时，其信号源的相位由**该 mod 自己的方块内部状态**驱动——重进后 mod 方块的重建时序不受我们控制，跨容器边界注入的相位仍可能漂移 | **不属于我方缺陷**：我方已保证「输入信号一旦进入活红石网络，相位跨会话稳定」；第三方元件到容器边界的相位漂移源于其自身状态机重进行为，无 API 可介入。边界契约记录于此，玩家遇此场景应改用活红石元件搭振荡源 |

@@ -8,28 +8,41 @@
 
 ## 本轮评估执行队列（2026-11-15 登记）
 
-> **性质**：工作层执行队列，不是新规格，也不复制机制正文。状态用 ⏳ 待办 / 🟢 进行中 / ✅ 完成；**每次只从队首取一项**，一个批次做完、全量测试与门禁绿、文档同步后再取下一项；完成项保留删除线 + 日期。
-> **当前队首**：Q2。涉及代码口径变化的批次，完成判据统一包含 `./gradlew test --rerun`、CI 同款门禁和对应 tech / system-design 文档同步。
+> **性质**：工作层执行队列，不是新规格，也不复制机制正文。状态用 ⏳ 待办 / 🟢 进行中 / ✅ 完成 / ⏸ 暂缓（不占队首）；**每次只从队首取一项**，一个批次做完、全量测试与门禁绿、文档同步后再取下一项；完成项保留删除线 + 日期。
+> **当前队首**：Q5（Q3 已完成；Q2 内容签名、Q4 空容器早退均暂缓，见第 2、4 项）。涉及代码口径变化的批次，完成判据统一包含 `./gradlew test --rerun`、CI 同款门禁和对应 tech / system-design 文档同步。
 
 1. ✅ **Q1 大箱相位文档结案** —— ~~待办~~ ✅ 已结案（2026-11-15）：旧结论「未修」改为 A6 已修 + 指针；稳定层补规则，真机证据沿用 2026-10-28 A6 复验的「红电重新锁相、拆半前相位布局不作数」。
    - 留痕：`PhaseDataMigration.clearPhaseOnChestSplit` / `ContainerDrops.otherChestHalf` / `PhaseDataMigrationChestSplitTest` / `tech/living-power-tech.md` §0 规则 12；archive 与 buffer 的历史描述按规约保留，**未改生产代码**。
    - 实机：既有 A6 真机复验已覆盖双箱拆半后的红电重锁；本轮未另起客户端，「多相电力 + 分两次破坏两半」不再单列为未修 bug，后续出现实际反例再按新 bug 立项。
 
-2. ⏳ **Q2 内容签名漏组件变化** —— 当前签名只看物品 ID + 数量；同 ID、同数量、不同 DataComponent 的两件活物品经原版 GUI 交换时，不 bump 修订计数，可能按旧过滤器 / 活箱子容量算一拍。
-   - 下一步：先写会红的回归（两枚方向或过滤链不同的活漏斗互换），再把功能分组、活槽收集、内容签名合并为单遍扫描，并纳入组件哈希。
-   - 完成判据：同类换组件能刷新快照；全槽扫描由两遍降为一遍；不新增物品实例 ID，不改堆叠语义。
+2. ⏸ **Q2 内容签名漏组件变化** —— **暂缓（2026-11-15），不占队首**：核查后确认它牵涉组件语义口径、扫描重构与 Q3 基线，不是「换个哈希函数」的小修，本轮先跳过。
+   - 现状：`ContainerLivingItemHandler.computeContentSignature`（:474-486）逐槽只混入物品 ID + 数量；同 ID / 同数量 / 不同 DataComponent 的两件活物品经原版 GUI 交换时不 bump 修订计数，快照按旧过滤链或活箱子容量算一拍，写回后下一 tick 自愈。不复制、不坏档。
+   - 已查清（避免重查）：① `ItemStack.hashItemAndComponents(stack)` 是静态方法，字节码口径为「物品 ID + `getComponents().hashCode()`」，**含全部组件、不含数量**，直接替换会漏掉数量变化，必须保留逐槽 count；② **不能复用 `getIgnoredComponentTypes()` 过滤** —— 它服务于可堆叠性，`LivingHopperFunction`（:358-363）把 `LIVING_HOPPER_FILTER` 列入忽略，而过滤链正是 `ContainerSnapshot.filterOf` 的数据源，复用会把本项要修的洞挖回去；③ 全量哈希会把每 tick 变化的运行时组件算进去，可能让缓存频繁失效，与 Q3/Q4 性能目标对冲；④ Q6 的可变 `ContainerFluidData` 缺 `equals/hashCode`，会放大哈希不稳。
+   - 建议口径（做时再定案）：先「全量组件哈希 + 保留 count」最小正确修复，不引入新清单 / 新机制；Q3 顺带记录快照重建次数与缓存命中率；仅当数据支持，才在 Q4 由 `SnapshotProvider` 自声明依赖组件来收窄。**不手工白名单、不复用堆叠忽略清单。**
+   - 恢复条件：Q3 拿到基线数字后重新排期；出现玩家可见的「同类换组件」反例时提前插队。完成判据不变：同类换组件能刷新快照；全槽扫描由两遍降为一遍；不新增物品实例 ID，不改堆叠语义。
 
-3. ⏳ **Q3 管道性能基准** —— 自维持函数使空容器的 `grouped.isEmpty()` 理论不可达，空容器仍创建 TickContext、多个集合、执行空 tick 与 PerfMetrics；本机开发包日志出现 39 chunks / 67 containers 反复 11–14ms，但尚不能当生产基准。
-   - 下一步：新增 `@Tag("perf")` 的 `processContext` 管道量测，分别覆盖空容器 / 普通容器 / 复杂容器，记录 scan、func_tick、container_data、flush_slots 分阶段数据。
-   - 完成判据：拿到可复算的基线数字，再和服主约定 tick 预算；**本批只量测，不提前优化。**
+3. ✅ **Q3 管道性能基准** —— ~~待办~~ ✅ 已完成（2026-11-15）：新增 `ContainerPipelinePerfTest`（`@Tag("perf")`，默认排除），量完整 `processContext` 管道；**未改 `src/main` 的 tick 逻辑**。
+   - 基线（本机 FML / JDK 21.0.11，10k 容器 × 54 槽，每拍中位）：空容器 **9.31 ms**、普通 **11.07 ms**、复杂 **39.63 ms**；每容器每拍 0.93 / 1.11 / 3.96 µs，1k / 5k / 10k 三档线性度好；P90 @10k 为 9.67 / 11.89 / 48.20 ms。
+   - 结论：三个自维持功能（`living_redstone` / `living_nether_portal` / `living_fluid`）每容器每拍各跑一次，空容器也不例外 ⇒ 早退上限约 9 ms/拍；但复杂场景 39.63 ms/拍 的增量集中在 `container_data`（10k 稳态 avg 1.3 µs vs 空场景 0.2 µs）⇒ **Q4 不能只做早退**，收益取决于真实存档的空容器占比。按 50 ms/tick 粗算，10k 复杂容器已占约 79%，且未计外层。
+   - 留痕：落盘 `build/minecraft-junit/build/_perf_pipeline.txt`；分阶段见同轮 `[Phases]` 日志；入口与口径见 `docs/guides/unit-testing.md`「管道性能基准（Q3）」；`docs/reference/test-map.md` 已登记测试类；`living-item-infrastructure.md` §8.2 补指针。
+   - 边界：单测无真实 `Level` / BE / 玩家列表，量不到 L4 外层；依赖 `level.isClientSide` 的领域功能（活漏斗）未纳入，复杂场景只用 `tick` 为空实现的活红石粉。数字只用于同环境前后比较，**不能宣称真机 MSPT**；快照命中率计数器仍缺，留到 Q2 定案前补。
+   - 口径（2026-11-15 定）：**性能基准是仪表盘读数，不设 tick 预算阈值、不需要约定数值**；Q4 及后续优化一律按「同环境 / 同口径 / 优化前后对比」判定，真机开销另由专用服务端实测留痕。Q2 暂缓期间量到的是「两遍扫描」现状，Q2 落地后本基线需重测。
 
-4. ⏳ **Q4 空容器早退与缓冲复用** —— 在 Q3 数据出来后按收益排序，优先做「无本功能活物品且无持久容器数据 ⇒ 创建 TickContext 前早退」，再评估 `getProcessableChunks` / 区块 BE 列表的缓冲复用。
-   - 完成判据：空容器仍完成 last-seen、运行时作废和清理；活流体 / 红石自维持行为不变；10k 空容器达到 Q3 约定预算。
+4. ⏸ **Q4 空容器早退与缓冲复用** —— **暂缓（2026-11-15），不占队首**：Q3 基线已给，但核查后确认这是队列里第一个改生产逻辑、且踩缓存生命周期 / 自维持语义的批次，工作量与风险都明显高于 Q3，本轮不动。
+   - 已核查（避免重查）：① 早退点必须在 `trackLivingSlots`（`ContainerLivingItemHandler.java:235-264`）**之后** —— 它同时是 LAST_SEEN 盖章、槽位运行时作废与位置索引补建，注释 `:228-231` 明确「必须在任何早退 / 清理分支之前」；`syncContentRevision`（`:628`）也不能跳，否则 Q2 的签名洞更大。② `grouped.isEmpty()`（`:650`）因自维持函数注入（`:641-643`）恒不可达，判定门需另写。
+   - 判据两个坑：③ 「无持久容器数据」不能走 `getOrCreate` 型接口 —— `ContainerFluidWriteback.onTickStart`（`:32-36`）无条件建流体数据；`RedstoneRegistration.java:52-56` 已警告 getOrCreate 会让 `peek == null` 恒假、零开销路径失效 ⇒ 用 `peek` / `ContainerDataStore.isEmpty()`（`:48`）。④ 自维持函数（红石归零 / 流体）在**无活物品但有容器级数据**时仍须运行，不能一刀切跳过。⑤ 创建 `TickContext` 经 `setTickContext` 触发 `fireTickStart`，现有 4 个 `onTickStart` 钩子（流体写回 / 海绵 / 传送门同步 / 红石复位），早退会一并跳过，需逐个确认。
+   - 缓冲复用边界：`getProcessableChunks`（`ContainerChunkCache.java:314`）每 tick 新建 `ObjectOpenHashSet`，但注释 `:303-304` 明确返回副本是为避免区块加载 / 卸载回调引发 CME，**不能直接复用成视图**；`reusableHandlerMap` / `reusableKeySet`（`LivingItem.java:338-339`）**已在复用**；更值得看的是 `processChunkContainers` 每 tick 每区块 `new ArrayList<>(chunk.getBlockEntities().values())`（`:681`）；`processBlockEntities` 的 `new HashSet`（`:927`）是另一入口、非主链路。
+   - 收益错位（Q3）：早退上限是 10k 全空容器 **9.31 ms/拍**（0.93 µs/容器）；复杂场景 39.63 ms/拍 的增量在 `container_data`（1.3 µs vs 0.2 µs），早退帮不上 ⇒ 收益取决于真实存档的空容器占比。
+   - 建议拆分（做时再定案）：**Q4a 早退**（先补「行为不变」回归：空容器仍盖章 / 作废 / 清理、红石归零、流体自维持、放置后立刻放活物品能被扫到）；**Q4b 缓冲复用**（先验证 CME 约束，只处理 BE 列表）。两批独立验收。
+   - 恢复条件：拿到真实存档的空容器占比后重新排期；或先做不依赖该数据的 Q4b。本条不设预算阈值。完成判据不变：空容器仍完成 last-seen、运行时作废和清理；活流体 / 红石自维持行为不变；同环境同口径复测，10k 空容器每拍中位较 9.31 ms 基线有可复算下降。
    - 不做：无实测支撑的活跃容器索引、重写分层、把传给功能实现的 List/Map 直接池化。
 
 5. ⏳ **Q5 创造模式活化** —— 活按钮明确排除创造背包，服务端读不到创造模式的虚拟 carried；现有 `resolveCarriedTag` 与 `CarriedUpdatePacket` 已能支撑双程同步。
-   - 下一步：先定 UI 范围（只 INVENTORY 页 / 所有标签页放在面板下方），再给 `LivingTagPacket` 加 menuId + 可选 carriedTag；只在服务端创造模式下临时恢复、活化、回传并清空。
-   - 完成判据：创造背包可直接活化 / 取消活化光标物品；非创造路径不变；补包与权限测试及真机 GUI 烟测。
+   - **已拍板（2026-11-15）**：① UI 只做**创造背包 INVENTORY 页**，按钮放**玩家小人框底部**（与生存背包同款位置），不做「所有标签页」版本；② **玩法语义完全同生存，不为创造模式搞区别对待** —— 取消活化活箱子照常 `dropAllItems` 掉物（`LivingChestFunction.java:334-355` 掉后 `clearStorage`，守恒不复制）。差异只留在协议 / 安全边界：仅创造模式带 `carriedTag`、服务端 `isCreative()` + menuId 双闸，这是服务端读不到虚拟 carried 的技术必需，不是玩法分支。
+   - 协议范本现成（避免重查）：`GuiInteractionPacket`（`:44-50` 已有 `carriedTag` + `menuId`，`:65-87` 编解码，`:94-151` 服务端恢复 / 校验 / 清空 / 回传）；`CarriedUpdatePacket.handle`（`:57-73`）已会写回 `screen.getMenu()`；`GuiInteractionHelper.resolveCarriedTag`（`:202-211`）只在创造界面返回非空。
+   - 下一步：① `LivingTagPacket` 从无状态 record 改成 `record(int menuId, @Nullable CompoundTag carriedTag)`，保留无参构造委托 `(-1, null)` 兼容旧调用点；② `handle` 用 try/finally 做「临时恢复 → **现有** `evaluate/apply` → 无条件 `setCarried(EMPTY)` + 回传」，所有拒绝 / 异常分支都不许残留临时物品（防复制）；③ `resolveCarriedTag` 提为 public，`LivingButton.onPress` 带 menuId + tag 发包；④ 移除 `AbstractContainerScreenMixin:235-245` 的创造排除，按钮常驻、按 `selectedTab` 切 visible（切页不重跑 init），位置走小人框底部。
+   - 完成判据：创造背包可直接活化 / 取消活化光标物品；非创造路径不变；补包往返 / menuId 不匹配 / 非创造忽略 tag / 临时 carried 必清空 / 活箱子掉物守恒测试，以及真机 GUI 烟测。实现时同步 `docs/system-design/gui-interaction-system.md` §6.2（现写「创造界面维持排除」）。
+   - 不做：不为创造模式另写活化逻辑、不新增协议种类、不做所有标签页版本。
 
 6. ⏳ **Q6 流体组件值不可变化** —— `CONTAINER_FLUID_DATA_ITEM` 当前存可变的 `ContainerFluidData`，违反组件值语义；实际只在 contentRetaining 且无容器 UUID 的兜底迁移路径写入，开发期组件校验会抛，生产主要影响值语义与未来可堆叠容器。
    - 下一步：改成只保存派生源的不可变 snapshot record，维持现有 NBT list 形状；`moveOut` 写快照，`moveIn` 再还原成运行时对象。

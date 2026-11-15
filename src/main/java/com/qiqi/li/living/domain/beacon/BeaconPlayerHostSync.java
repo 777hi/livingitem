@@ -42,7 +42,7 @@ public final class BeaconPlayerHostSync {
      * 广播半径（格）—— <b>256，对齐原版</b>（{@code BeaconRenderer.getViewDistance()}，
      * 与 {@code BeaconChestHost.RADIUS} 保持一致）。
      *
-     * <p>玩家宿主的<b>实际</b>上限另有天花板：对方玩家实体本身要同步给你（玩家实体
+     * <p>玩家宿主的<b>实际</b>上限另受约束：对方玩家实体本身要同步给你（玩家实体
      * {@code clientTrackingRange = 32} 区块，实际受你的视距限制）⇒ 半径 256 已足够
      * "你看得见他，就看得见他的光束"。</p>
      */

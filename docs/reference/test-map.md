@@ -131,6 +131,7 @@ src/test/java/com/qiqi/li/
 │   ├── ContainerPersistRoutingTest.java      # 容器级数据**持久层二分**（2026-10-29）·有身份⇒只写 SavedData（附件一次不写）/ 无身份⇒只写附件 / 回填优先级：内存空 + 有身份 ⇒ 从 SavedData 取回
 │   ├── ContainerRuntimeCacheLifecycleTest.java # 运行时缓存生命周期(方案A)·物品离开槽位/换物品⇒登记作废·同类持续⇒不作废·drain 取走即空·null 键忽略·整容器作废键==运行时存储键
 │   ├── ContainerTickHooksTest.java            # tick 钩子注册表（2026-10-29）·同类去重 / 两阶段按注册顺序 / ctx+tick 透传 / 默认空实现
+│   ├── ContainerPipelinePerfTest.java        # 管道性能量测（Q3，@Tag("perf") 默认不跑；`-Pperf` 才计入）·空/普通/复杂容器 × 1k/5k/10k 的 processContext 每拍中位与 P90 + 每容器每拍 µs + 线性外推/JIT 预热/组间清缓存与冷启动+稳定轮不计/复杂场景只放不读 Level 的活红石粉/沿用 PerfMetrics 五阶段 `[Phases]` 明细/只防病态回归/落盘 build/_perf_pipeline.txt·**不改 src/main 生产逻辑**
 │   └── ContainerTickIsolationTest.java        # tick 异常隔离（2026-10-30，R-01）·RuntimeException 不向外抛且可重复调用 / 取 key 本身抛异常仍隔离 / Error 不被吞
 ├── living/domain/maid/
 │   ├── LivingSoulSlabClockTest.java           # 概率活跃度I·初始7/成功失败±1/1-49钳位/非法值

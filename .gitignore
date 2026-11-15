@@ -65,6 +65,7 @@ libs/
 .trae/
 .zcode/
 .codebuddy/
+.workbuddy/
 
 ### 笔记工具（工具侧，不入库）###
 # Obsidian 的库配置：workspace.json 每次开软件都变，且只对本地有意义。

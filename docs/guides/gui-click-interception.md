@@ -312,6 +312,8 @@ private Slot living_item$findSlot(double mouseX, double mouseY) { return null; }
 
 ## 最终解决方案
 
+> ⚠️ **历史方案（已被取代，勿照搬）**：本节是 2026-09 排查当时的结论。其中「第三层 `@Redirect` slotClicked 双保险」**已退役**——现行拦截 = `mouseClicked` HEAD 拦截 + 置位原版 `skipNextRelease`（坑10，释放阶段原版自我跳过），不需要 `@Redirect`；且 **`@Redirect` 已被禁用**（排他注入器，撞点即加载崩溃，见 AGENTS.md「Mixin 铁律」/ `tools/check_mixins.py` R5，需要包裹处一律 `@WrapOperation`）。渲染也已迁出本 mixin、统一挂 `ContainerScreenEvent.Render.Foreground`。现行架构见 [gui-interaction-system §2 / §5.2](../system-design/gui-interaction-system.md)。下方踩坑历程保留作考古。
+
 ### 三层拦截架构
 
 ```
@@ -340,7 +342,7 @@ private Slot living_item$findSlot(double mouseX, double mouseY) { return null; }
 ## 通用经验总结
 
 1. **不要依赖事件取消**：NeoForge 事件在复杂场景下不够可靠，优先使用 Mixin 直接拦截
-2. **`cancellable=true` 不是万能的**：需要配合 `@Redirect` 在更深层做双保险
+2. **释放阶段残留要处理**：按下取消拦不住释放阶段的 PICKUP——现行置位原版 `skipNextRelease`（坑10）；`@Redirect` 已禁用（见「最终解决方案」横幅）
 3. **鼠标双阶段都要拦截**：`mouseClicked` + `mouseReleased` 都会触发槽位交互
 4. **子类覆盖要单独处理**：`InventoryScreen`/`CreativeModeInventoryScreen` 有不调 `super` 的路径
 5. **创造模式光标虚拟化**：服务端无法验证客户端的虚拟光标物品

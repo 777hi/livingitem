@@ -268,6 +268,7 @@ jar 不在此限。引入例外只有一个前提：许可证允许再分发且�
 **数量增减必须走原语**，不得用裸 `setItem` 拼「先写目标、再无条件扣源」
 （`setItem` 是覆盖语义，写失败无法表达——守恒不变量 `I-C12` 的根因）。
 棘轮门禁 `tools/check_stack_ops.py` 把 domain/function 的存量裸写冻结为只减不增。
+另有**双槽关系操作 `swap`**（整栈互换、不改数量），不是数量原语，见 §1.9。
 
 | 原语 | 签名 | 语义 / 契约 |
 |---|---|---|
@@ -320,6 +321,29 @@ jar 不在此限。引入例外只有一个前提：许可证允许再分发且�
 **调用方责任**：在副本上计算组件变化；提交 false 时停止相应交付，批量操作只返回此前
 已成功提交的量。本入口只保证上述核验与恢复尝试，不替调用方回滚外部流体或其它资产。
 选型见 [slot-ops §2.1](../guides/slot-ops.md#21-只改组件不改物品与数量)。
+
+### 1.9 双槽关系操作 swap（2026-11-12 生效）
+
+`swap(from, to)` 是 `ContainerContext` 上的公开**关系操作**（首个用户：活魂符换位），
+**不是数量操作原语**——整栈互换两槽内容、不改总量，与 §1.7 的四原语并列。
+
+| 入口 | 契约 |
+|---|---|
+| `MoveResult swap(int from, int to)` | 双方非空、整栈互换、不拆分不合并（一空一非空走 `moveStack`）。成功 `Success.moved` = 移入 `to` 的数量（即原 `from` 栈数量）；**不返回撤销凭据**（逆操作 = 再 swap，与 `UndoToken` 单向快照语义不匹配） |
+| `boolean canFullyReceive(int slot, ItemStack stack)` | swap 配套预检：「假定槽位清空后能否完整接纳整栈」（纯准入 + 数量上界）。区别于 `canAcceptAll` 走 `simulateInsertItem` 的「现有内容之上合并」——后者表达不了「槽内原有物品即将让位」的互换场景；实现若有 `simulateInsertItem` 独有的准入桥接应覆写补齐 |
+
+**I-C12 三维度**：容量与准入用 `canFullyReceive`（互换场景两槽都被占用，`canAcceptAll` 不适用）；
+抽取权限双向必查（`simulateExtractItem`）；精确写双向必查（`supportsExactWrite`，整栈覆盖语义与 `moveStack` 同档）。
+
+**验证式原子**：写入后逐槽回读，任一步不符即恢复双槽到操作前快照并报 `BackendViolation`；
+末尾再做一次双槽终验，防「后续写入引发回调改动先前槽」。
+
+**拒绝态**：无效槽 / `from == to` ⇒ `INVALID_ADDRESS`；任一槽空 ⇒ `SOURCE_EMPTY`；
+无精确写面 ⇒ `EXACT_WRITE_UNSUPPORTED`；抽取权限不足 ⇒ `SOURCE_NOT_EXTRACTABLE`；
+`canFullyReceive` 不过 ⇒ `TARGET_INSUFFICIENT`。
+
+活物品隔离由**调用方**把关（与 `move` 同责），内核不认「活物品」概念。
+守卫并入 `ContainerSlotOpsTest`；不变量叙述见 [container-boundary I-C12](container-boundary.md)。
 
 ## 2. 待决 / 未生效（⛔ 不得当现状引用）
 

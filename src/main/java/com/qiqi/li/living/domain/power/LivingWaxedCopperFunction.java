@@ -215,7 +215,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             e.getValue().drainAndEndTick();
         }
 
-        // ── 网络级共振：不同锈蚟级之间的「和声」（见 living-power-tech.md §3.7）──
+        // ── 网络级共振：不同锈级之间（见 living-power-tech.md §3.7）──
         // 单遍前馈：只用本 tick 的基础出力 baseReByOx 推进 EMA，再取增益套用一次。
         // 增益绝不回灌 baseReByOx，因此「A 增益↑ → A 出力↑ → A 增益再↑」的
         // 回代环在结构上不存在（这是本机制唯一的安全红线）。

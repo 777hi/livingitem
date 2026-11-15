@@ -142,7 +142,7 @@ public final class LivingToolModelRenderer {
     //  RING_RADIUS_HALF_SAT=21  半饱和数量：n = 21 时半径 = 上限的一半（越大=饱和越晚）。
     //                            半径 = 1.77·n/(n+21) ⇒ 先快后慢（1 把 0.08 / 10 把 0.57 / 36 把 1.12）
     //
-    //  ⚠️ 环【没有朝向旋钮】—— 法线恒为"水平前方"，斧刃恒朝前。详见常量区说明块。
+    //  ⚠️ 环【没有朝向参数】—— 法线恒为"水平前方"，斧刃恒朝前。详见常量区说明块。
     //
     //  ── 动画（所有形态共用）──────────────────────────────────────────────────
     //  SPIN_PERIOD_MIN          4 tick/圈       转圈【最快】档。
@@ -276,7 +276,7 @@ public final class LivingToolModelRenderer {
      * </ul>
      *
      * <p>⚠️ 它<b>只</b>管"脸朝哪"，<b>不</b>影响自转轴 —— 自转写在它的内侧，轴恒为板面法线
-     * （见 {@link #drawModel}）。曾误把它当自转轴的旋钮，导致自转变成"横着翻滚"。</p>
+     * （见 {@link #drawModel}）。曾误把它当作自转轴的控制参数，导致自转变成"横着翻滚"。</p>
      */
     private static final float RAY_ROLL_FIX = (float) Math.PI;
 

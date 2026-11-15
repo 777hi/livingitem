@@ -14,7 +14,7 @@
 
 | 文件 | 作用 |
 |---|---|
-| `assets/living_item/interaction_rules.json`（模组 jar 内） | 内置规则（13 条）—— **也是格式示范，照抄即可** |
+| `assets/living_item/interaction_rules.json`（模组 jar 内） | 内置规则 —— **也是格式示范，照抄即可**；当前条数与清单查 `/livingitem interaction list` |
 | `config/living_item/interaction_rules.json` | **你的规则**（只写差异；没写过就不存在，手写即可） |
 
 改完执行 `/livingitem interaction reload` 生效；`/livingitem interaction list`
@@ -48,10 +48,11 @@
 **匹配规则**：精确触发的条目优先于通配（`trigger` 省略的）条目 ——
 「骨粉催熟」不会被「任意光标种植」抢走，与配置顺序无关。
 
-**内置的全部动作**（`action` 可选值，共 9 个）：
+**可用动作**（`action` 可选值，**以代码注册为准、随版本增加，下表非穷举**）：
 `ignite`（点燃）· `ignite_carried`（反向点燃）· `button_press`（按钮按压）·
 `lever_toggle`（拉杆）· `repeater_cycle`（中继器调档）· `comparator_toggle`（比较器切换）·
-`till_to_farmland`（耕地）· `plant_crop`（种植）· `bonemeal`（催熟）
+`till_to_farmland`（耕地）· `plant_crop`（种植）· `bonemeal`（催熟）· `beacon_feed`（信标喂锭）·
+`soul_slab_sit`（魂符入座）等。完整清单查 `/livingitem interaction list` 或各域 `Registration.registerHandler`。
 
 > ⭐ **安全边界**：`action` 只能引用上面这些已有动作 —— 你能把已有行为接到新的
 > 物品组合上，**不能**让活物品做出模组没写过的行为。

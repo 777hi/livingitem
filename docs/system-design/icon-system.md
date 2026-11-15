@@ -367,12 +367,29 @@ if (flag) Lighting.setupFor3DItems();            // 3D 光照：按法线做明�
 > 原实现依赖 `leftPos/topPos`，而 **HUD 快捷栏不经过 `AbstractContainerScreen`**，
 > 导致快捷栏里画不出来。见下方「种子图标改走装饰器路径」。
 
+> **现行协议（D-render-02，2026-11-14；挂点迁移 2026-10-29）**：容器自绘叠加层已统一挂
+> `ContainerScreenEvent.Render.Foreground`（不再注入 `render` TAIL——照抄型第三方界面不调父实现，
+> TAIL 注入永不执行），Z 层级一律走 `GuiOverlays`「界面基座 + 相对量」，**禁止手选绝对 Z**
+> （绝对 Z 跨界面不稳定：第三方基座如 TLM +200 会把它抬走）。三族分流：
+>
+> | 族 | 入口 | 相对基线 | 深度 | 谁用 |
+> |---|---|---|---|---|
+> | 覆盖层族 | `GuiOverlays.paintOverContent` | 基座 +350 | 关 | 流体 / 门面 / 地图 / HUD / 种植提示 |
+> | 槽位级族 | `GuiOverlays.paintSlotLevel` | 基座 +275 | 开 | 活塞板 / 作物大图（夹在物品 +250 与数量文字 +300 之间） |
+> | 装饰器族 | `IItemDecorator`（继承槽位位姿） | 自抬 ≤200 ⇒ 净 ≤+300 | NeoForge 代管 | 海绵 / 进度条 / 耕地种子 / 白幕 |
+>
+> 原版相对梯子（相对事件位姿基座）：背景 0 / renderSlot 基座 +100 / 物品 +250 / 装饰器·数量文字 +290~300 /
+> 覆盖层 +350 / 光标物品 +382 / tooltip +400 / 光标数量 +432。
+> ⚠️ **下方「名义层级表（绝对 z）」与「TAIL 手选 z=175 代码」是历史方案**（已被本协议取代，保留作深度原理考古）；
+> 「种子图标改走装饰器路径」一节的**装饰器相对自抬仍现行有效**。源码见
+> [GuiOverlays.java](../../src/main/java/com/qiqi/li/client/render/GuiOverlays.java)。
+
 ### 两个窗口
 
 | 窗口 | 深度测试 | 内容 | 时机 |
 |------|---------|------|------|
 | **槽位渲染窗口** | **关闭**（纯绘制顺序，恒可见） | 槽位背景 → 物品模型（名义 z=150）→ IItemDecorator（NeoForge 在 renderItemDecorations 末尾调用，`resetRenderState` 会**重开深度测试**）→ 堆叠数文字（名义 z=200，pose translate）→ 耐久条/冷却覆盖（guiOverlay） | `AbstractContainerScreen.renderSlot` 循环内 |
-| **render TAIL** | **开启**（与世界深度缓冲竞争） | 各类 @TAIL 注入（活水流、活耕地作物贴图、扩展地图等） | render 方法末尾 |
+| **Foreground 事件**（原 render TAIL，2026-10-29 迁出） | **开启**（与世界深度缓冲竞争） | 容器自绘叠加层（流体 / 门面 / 地图 / HUD / 作物大图 / 活塞），经 `GuiOverlays` 代管位姿与 Z | `ContainerScreenEvent.Render.Foreground` |
 
 ### 名义层级表（GuiGraphics pose z）
 
@@ -457,7 +474,7 @@ RenderSystem.disableBlend();
 （比物品远）⇒ BufferSource 换 RenderType 时物品段先 endBatch 写深度（z=150），HUD 段帧末后画但
 深度测试失败 ⇒ 被**深度裁掉**，表现为「被物品图标挡住」；`guiGraphics.flush()` 只改绘制顺序、
 **改不了深度** ⇒ 救不了。⇒ **判据：GUI 里做常驻悬浮信息 = 用 `renderTooltip`（整条进批量缓冲
-队列，原版深度处理白拿）；坚持自绘则必须显式传高 z（>150，同种子 200/300 约定），
+队列，原版深度处理白拿）；自绘叠加层走 `GuiOverlays`（基座 + 相对量，禁手选绝对 Z，见本节顶部横幅），
 `fill` 默认 z=0 必被物品深度裁掉。** 本项目方向 HUD 最终取 renderTooltip（`7a93eba`）。
 原结论中仍成立的部分：立即叠加层画完物品已在屏（深度已写），故会**遮挡**堆叠数数字
 ——要避免盖住堆叠数数字，有两条路：**缩小叠加层/居中避让数字角**、或**按原版同位

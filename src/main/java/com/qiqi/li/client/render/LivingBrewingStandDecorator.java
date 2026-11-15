@@ -49,7 +49,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>批次时长 = {@code BREW_TIME / 堆叠数} —— 与服务端 {@code stepFor(count)} 的加速口径严格同源，
  * 而堆叠数就在栈上（{@code stack.getCount()}）⇒ 不需要任何新组件字段。</p>
  *
- * <h3>为什么不用原版冷却（addCooldown）白嫖</h3>
+ * <h3>为什么不复用原版冷却（addCooldown）</h3>
  * <p>服务端 {@code player.getCooldowns().addCooldown(Items.BREWING_STAND, …)} 确实能零代码
  * 蹭到原版渲染与同步，但三条语义债：按<b>物品类型 × 玩家</b>而非按实例（所有酿造台一起糊）、
  * 冷却期内该物品类型<b>右键使用被丢包</b>（{@code MultiPlayerGameMode} 源码实证，酿造台会被

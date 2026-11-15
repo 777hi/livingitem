@@ -542,7 +542,7 @@ setBackpackStack → cacheSlotNumbers` ⇒ **ClassCastException**。
 「箱类物品」（`ContainerLikeItems.isContainerLike`），而**精妙背包也是箱类** ⇒ 活末影箱 /
 活漏斗可以把玩家物品栏里（或某个容器里）的背包当普通货物搬走。拾取路径已排除
 （上游只在 `isShiftKeyDown() && heldItem.isEmpty()` 时调 `putInPlayersHandAndRemove`）。
-**崩不崩已经不是问题了，玩家会不会丢背包才是。**
+**关键不是崩溃，而是背包数据是否丢失。**
 
 #### 审查留档：一个既存缺陷（非本次引入，未修）
 
