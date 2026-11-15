@@ -42,10 +42,9 @@ import com.qiqi.li.living.domain.water.FluidFlowVector;
  * <p>NeoForge 的容器界面渲染事件，原版与这类第三方界面 <b>都会发</b> ⇒ 一个挂点两边通吃，
  * 也不再需要「为每个模组补一个 Mixin」。</p>
  *
- * <p>⚠️ **坐标**：该事件在<span>已按 (leftPos, topPos) 平移</span>的位姿里触发
- * （两类界面皆然）⇒ 这里<b>先把位姿重置为 identity</b>，再按
- * {@code leftPos + slot.x} / {@code topPos + slot.y} 画，与原先 render TAIL 的坐标空间完全一致。
- * 不这么做会多乘一次 leftPos/topPos。</p>
+ * <p>⚠️ **坐标与 Z 层级**：该事件在<span>已按 (leftPos, topPos) 平移</span>的位姿里触发
+ * （两类界面皆然）⇒ 位姿重置与 Z 抬升统一由 {@link GuiOverlays#paintOverContent} 代管，
+ * 本类按屏幕绝对坐标（{@code leftPos + slot.x}）画，不自行碰 Z。</p>
  */
 public final class ContainerFluidOverlay {
 
@@ -57,24 +56,6 @@ public final class ContainerFluidOverlay {
     /** 每流体的渲染参数缓存（贴图位置 + 染色 + level 上限）。贴图 sprite 每帧取，资源重载安全。 */
     private static final Map<FluidType, FluidVisual> FLUID_VISUAL_CACHE = new java.util.HashMap<>();
 
-    /**
-     * GUI 叠加层的 Z 高度 —— 与 {@code LivingSpongeFluidDecorator} / {@code ProgressBarDecorator}
-     * 同族约定：{@link net.neoforged.neoforge.client.IItemDecorator} 由 NeoForge 代管
-     * {@code resetRenderState}，叠加层必须自己抬 pose。
-     *
-     * <p>2026-11-14 真机：TLM 女仆 GUI 的 {@code renderBg} 里有一次
-     * {@code translate(0,0,200)} 且<b>没有配对 popPose</b> ⇒ 该界面后续所有内容都在 Z≥200；
-     * 而 Foreground 事件触发时深度测试是<b>开着</b>的（实机日志 {@code depth=true}），
-     * 本层若停在 Z=0 会被深度剔除 ⇒ 女仆背包里的水「功能正常但一点不画」。
-     * 原版箱子的 renderBg 没有这个未配对的 Z 平移，所以一直正常。</p>
-     *
-     * <p>为什么是 400（不要随手改）：深度函数是 {@code GL_LEQUAL}（{@code RenderSystem}
-     * 初始化即 {@code _depthFunc(515)}），同深度<b>后画者胜</b>。GUI 内容在 Z=200（TLM）
-     * 或 0（原版），装饰器在 200/400；tooltip 固定 Z=400 且在 Foreground 之后画
-     * （TLM 再叠 +200 ⇒ 600）。取 400 ⇒ 盖住内容与装饰器，又不挡 tooltip。</p>
-     */
-    private static final int OVERLAY_Z = 400;
-
     private ContainerFluidOverlay() {}
 
     /** 事件入口：给当前容器界面画活流体覆盖层。 */
@@ -85,28 +66,18 @@ public final class ContainerFluidOverlay {
         final int leftPos = screen.getGuiLeft();
         final int topPos = screen.getGuiTop();
 
-        PoseStack pose = guiGraphics.pose();
-        pose.pushPose();
-        // 事件在 (leftPos, topPos) 平移位姿里触发 ⇒ 重置，坐标统一用屏幕绝对坐标
-        pose.setIdentity();
-        // 只抬 Z、不动 XY ⇒ 绝对坐标口径对所有界面零变化，见 OVERLAY_Z 的说明
-        pose.translate(0, 0, OVERLAY_Z);
-
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.setShader(GameRenderer::getPositionTexShader);
-        RenderSystem.setShaderTexture(0, TextureAtlas.LOCATION_BLOCKS);
-
-        for (FluidCellRender cell : cells) {
-            net.minecraft.world.inventory.Slot slot = screen.getMenu().getSlot(cell.menuIndex());
-            if (slot == null) continue;
-            drawFluidCell(guiGraphics, leftPos + slot.x, topPos + slot.y,
-                cell.level(), cell.direction(), fluidVisual(cell.fluid()));
-        }
-
-        RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
-        RenderSystem.disableBlend();
-        pose.popPose();
+        // Z 层级走统一协议（基座 + 350 + 禁深度），见 GuiOverlays —— 2026-11-14 的绝对 Z=400
+        // 盖住了光标物品（+382），随 D-container-27 一并翻转
+        GuiOverlays.paintOverContent(guiGraphics, () -> {
+            RenderSystem.setShader(GameRenderer::getPositionTexShader);
+            RenderSystem.setShaderTexture(0, TextureAtlas.LOCATION_BLOCKS);
+            for (FluidCellRender cell : cells) {
+                net.minecraft.world.inventory.Slot slot = screen.getMenu().getSlot(cell.menuIndex());
+                if (slot == null) continue;
+                drawFluidCell(guiGraphics, leftPos + slot.x, topPos + slot.y,
+                    cell.level(), cell.direction(), fluidVisual(cell.fluid()));
+            }
+        });
     }
 
     /**

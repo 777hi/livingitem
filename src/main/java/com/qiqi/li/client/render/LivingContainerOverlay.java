@@ -3,7 +3,6 @@ package com.qiqi.li.client.render;
 import java.util.List;
 import java.util.Optional;
 
-import com.mojang.blaze3d.vertex.PoseStack;
 import com.qiqi.li.client.gui.LivingButton;
 import com.qiqi.li.client.input.FarmlandPlantHint;
 import com.qiqi.li.client.input.LivingItemInputHandler;
@@ -14,7 +13,7 @@ import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
 
 /**
- * 容器界面里的活物品<b>自绘叠加层</b>：展开地图 / 方向配置 HUD / 活耕地种植提示 / 生长槽大图。
+ * 容器界面里的活物品<b>自绘叠加层</b>：展开地图 / 方向配置 HUD / 活耕地种植提示 / 生长槽大图 / 活活塞伸缩态。
  *
  * <h3>挂点：{@code ContainerScreenEvent.Render.Foreground}</h3>
  * <p>这四项原先都注入在 {@code AbstractContainerScreen.render} 的 TAIL。2026-10-29 真机：
@@ -24,10 +23,12 @@ import net.minecraft.network.chat.Component;
  * （见 {@link ContainerFluidOverlay} 的类注释），当时的结论是「形似的问题不止流体」——
  * 这次把剩下的四项一起收编到同一个事件挂点，不再按模组逐个补 Mixin。</p>
  *
- * <h3>坐标</h3>
+ * <h3>坐标与 Z 层级</h3>
  * <p>事件在<span>已按 (leftPos, topPos) 平移</span>的位姿里触发（原版与照抄型界面皆然）
- * ⇒ 这里先把位姿重置为 identity，之后一律用屏幕绝对坐标（{@code leftPos + slot.x}），
- * 与原先 render TAIL 的坐标空间完全一致。不重置会多乘一次 leftPos/topPos。</p>
+ * ⇒ 位姿重置与 Z 抬升统一由 {@link GuiOverlays} 协议代管（2026-11-14 起，取代各自手选 Z），
+ * 本类只做两族分流：地图 / HUD / 种植提示走覆盖层族（盖住一切内容），
+ * 活耕地生长槽大图 / 活活塞伸缩态走槽位级族（夹在槽位物品与数量文字之间）。
+ * 两族内部一律用屏幕绝对坐标（{@code leftPos + slot.x}），不自行碰 Z。</p>
  */
 public final class LivingContainerOverlay {
 
@@ -36,18 +37,15 @@ public final class LivingContainerOverlay {
     /** 事件入口：给当前容器界面画全部活物品叠加层。 */
     public static void render(GuiGraphics guiGraphics, AbstractContainerScreen<?> screen,
                               int mouseX, int mouseY) {
-        PoseStack pose = guiGraphics.pose();
-        pose.pushPose();
-        pose.setIdentity();
-        try {
+        GuiOverlays.paintOverContent(guiGraphics, () -> {
             LivingMapOverlay.render(guiGraphics, screen, mouseX, mouseY);
             renderDirectionHud(guiGraphics, screen, mouseX, mouseY);
             renderPlantHint(guiGraphics, screen, mouseX, mouseY);
+        });
+        GuiOverlays.paintSlotLevel(guiGraphics, () -> {
             LivingFarmlandOverlay.render(guiGraphics, screen);
             LivingPistonOverlay.render(guiGraphics, screen);
-        } finally {
-            pose.popPose();
-        }
+        });
     }
 
     /**

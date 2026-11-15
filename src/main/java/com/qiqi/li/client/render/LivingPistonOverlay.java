@@ -39,8 +39,11 @@ import net.minecraft.world.item.Items;
  * 静止时板贴机身前缘（= 朝向指示），动画时板滑出、原位只剩机身（推出残影根源已除）。
  *
  * <h3>位姿与行程</h3>
- * pushPose → translate(cx, cy, 175) → Rz({@link DirectionalLivingModel#rotationOf}) →
- * 框架坐标（活塞朝上；机身 [-8,8]×[-4,8]，前缘 y=−4）内 blit。行程 travel = 一个槽距
+ * pushPose → translate(cx, cy, 0) → Rz({@link DirectionalLivingModel#rotationOf}) →
+ * 框架坐标（活塞朝上；机身 [-8,8]×[-4,8]，前缘 y=−4）内 blit。Z 层级走
+ * {@link GuiOverlays} 槽位级基线（净 = 基座+275：&gt; 槽位物品 +250、&lt; 数量文字 +300——
+ * 旧值 175 是按「物品 150 / 文字 200」的旧梯子算的，漏了 renderSlot 的 +100 基座）。
+ * 行程 travel = 一个槽距
  * 18px（含边框）：静止板外缘缩进本格边框 1px（−8，格边 −9），全伸缩进邻格远端边框
  * 1px（−26，格边 −27）——「头块原样挪了一格」，复刻原版全伸板顶头块远端的观感。
  *
@@ -50,9 +53,6 @@ import net.minecraft.world.item.Items;
  * （{@code ClientSlotResolve} 同族已知边界）。
  */
 public final class LivingPistonOverlay {
-
-    /** 原物品 z=150、数量文字 z=200；活塞叠加层固定夹在二者之间。 */
-    private static final float OVERLAY_Z = 175f;
 
     /** 板 / 杆的 blit 源：原版 piston_side 顶 4 行 = 板缘剖面（侧视普通 / 粘性同貌）。 */
     private static final ResourceLocation PISTON_SIDE =
@@ -98,7 +98,7 @@ public final class LivingPistonOverlay {
         PoseStack pose = guiGraphics.pose();
         pose.pushPose();
         try {
-            pose.translate(cx, cy, OVERLAY_Z);
+            pose.translate(cx, cy, 0f);
             pose.mulPose(Axis.ZP.rotationDegrees(DirectionalLivingModel.rotationOf(direction)));
 
             // 杆（travel > 0 才画）：4px 宽居中，从机身前缘长到板内缘；

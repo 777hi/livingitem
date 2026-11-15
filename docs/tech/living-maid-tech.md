@@ -154,12 +154,14 @@ Gecko与Bedrock复用TLM原生`beg`/头部与可选骨骼，YSM响应由具体�
 不与服务器同步。倍率在每帧从volatile缓存读取，Loading/Reloading刷新后下一帧生效，不重建预览、不回正、
 不停声、不清气泡；同一最终倍率同时用于模型与头部追光标参考点。GUI空模型握手的16倍矩阵与此无关，不改。
 
-**叠加层位姿（2026-11-14，`D-container-27`）**：`AbstractMaidContainerGui.renderBg` 里
+**叠加层位姿（2026-11-14，`D-container-27` 起因 → `D-render-02` 口径）**：`AbstractMaidContainerGui.renderBg` 里
 `graphics.pose().translate(0, 0, 200)` **没有配对 `popPose`** ⇒ 该界面后续内容全在 Z≥200。
-任何挂在 `ContainerScreenEvent.Render.Foreground` 的自绘叠加层（活流体覆盖层等）若把位姿
+任何挂在 `ContainerScreenEvent.Render.Foreground` 的自绘叠加层若把位姿
 `setIdentity()` 到 Z=0，会被深度测试剔除（实机诊断 `depth=true`）——表现为「数据/发包/指令全正常，
-但完全看不见」。⇒ 叠加层统一 `setIdentity()` 后 `translate(0, 0, 400)`：**只抬 Z、不动 XY**，
-绝对坐标口径不变。活海绵的 `IItemDecorator` 走的正是同族「pose 自抬」约定，所以一直正常。
+但完全看不见」。⇒ 自绘叠加层统一走 `client/render/GuiOverlays` 协议：**捕获事件位姿基座
+（本界面 = +200）后按基座 + 相对量抬层**，覆盖层族（流体 / 门面 / 地图等）另禁深度测试。
+不要手选绝对 Z——女仆界面上绝对的 400 已实测把普通界面的光标物品挡住（基座+382）。
+活海绵的 `IItemDecorator` 走的是槽位位姿相对自抬，本来就是相对位协议，所以一直正常。
 
 ### 2.1 展示朝向与光标（2026-11-08）
 
@@ -249,7 +251,7 @@ INIT并未存有具体女仆，原地活化生成属于另一个玩法，不是�
 ① **派发目标**：实体容器 viewer 按位置匹配 ⇒ 女仆坐箱船时水串到箱船界面、女仆自己界面不渲染
 （已改按宿主 UUID，见 `D-container-26` / 本页 §2 与 [活流体 §7](living-fluid-tech.md#7-渲染与同步)）；
 ② **绘制位姿**：覆盖层停在 Z=0，被 TLM `renderBg` 未配对的 `translate(0,0,200)` 深度剔除
-（已统一自抬 Z=400，见 `D-container-27` / 本页 §2）。
+（起因记录见 `D-container-27`；口径已收口到 `GuiOverlays` 基座+相对位协议，见 `D-render-02` / 本页 §2）。
 诊断手段（临时日志）已在确认后全部删除，未进提交。
 
 **分配抖动优化（2026-11-14）**：用户反馈箱内数十枚活魂符时「似乎有点不顺滑」（体感反馈，非逐帧测量）。

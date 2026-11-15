@@ -33,7 +33,7 @@ import org.joml.Matrix4f;
  * 里的字节码永远不执行。改挂 NeoForge 的容器界面渲染事件，原版与照抄型第三方界面都会发。</p>
  *
  * <p>⚠️ <b>坐标</b>：该事件在<span>已按 (leftPos, topPos) 平移</span>的位姿里触发（两类界面皆然），
- * 故 {@link LivingContainerOverlay} 先把位姿重置为 identity，本类内部一律用屏幕绝对坐标。</p>
+ * 故 {@link LivingContainerOverlay} 经 {@link GuiOverlays} 重置位姿并抬层，本类内部一律用屏幕绝对坐标。</p>
  */
 public final class LivingMapOverlay {
 
@@ -48,14 +48,12 @@ public final class LivingMapOverlay {
     /** 扩展地图的垫底颜色，与 ExpandedMapTexture 的未探索区域填充色一致，避免纹理未上传时闪黑块。 */
     private static final int MAP_BACKDROP_COLOR = 0xFFD6BE96;
 
-    /** 扩展地图底图的 z 深度。物品模型 z=150、原版堆叠数文字 z=200，需高于两者。 */
-    private static final int MAP_BASE_Z = 300;
-
     /**
-     * 装饰图标相对底图的 z 抬升量。
+     * 装饰图标相对底图（= GuiOverlays 覆盖层基线）的 z 抬升量。
      * <p>GUI 坐标系 z 越大越靠前，而 RenderType.text 带 LEQUAL 深度测试，
-     * 底图已写入 z=300，因此装饰必须整体抬到底图之上，且预留足够余量容纳
+     * 底图已先写入基线深度，因此装饰必须整体抬到底图之上，且预留足够余量容纳
      * MapItemSavedData.TRACKED_DECORATION_LIMIT(256) 个装饰的层间步进。
+     * ⚠️ 基线 + 本值 + 步进累计必须仍小于光标物品（基线+32），不得随手调大。</p>
      */
     private static final int DECORATION_Z_OFFSET = 2;
 
@@ -112,7 +110,6 @@ public final class LivingMapOverlay {
 
         PoseStack pose = guiGraphics.pose();
         pose.pushPose();
-        pose.translate(0, 0, MAP_BASE_Z);
 
         guiGraphics.fill(areaX, areaY, areaX + areaSize, areaY + areaSize, MAP_BACKDROP_COLOR);
         guiGraphics.blit(tex.location, areaX, areaY, 0, 0, areaSize, areaSize, areaSize, areaSize);

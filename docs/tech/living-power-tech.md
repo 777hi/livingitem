@@ -55,11 +55,12 @@
 | 9 | **Pipez 能量管道不兼容** | 它用新 Transfer API 的 `Energy.BLOCK`，非 FE 的 `EnergyStorage.BLOCK`；取电改用 Mekanism 电缆（§8） |
 | 10 | **Flux Plug 不取电**（Flux Networks） | 它只等邻块推电，我方是被动电池面；设计上不跟（§8） |
 | 11 | **容器充放按提交确认报账**：取电聚合选定整 FE，合计不足整 FE 不扣、跨堆零头可凑整且交付不超请求；组件提交失败即停，只结算已确认前缀；均分与中断取整只许损耗 | 保留聚合语义，禁止副本/拒写假成功；充放报账与迁移边界见 §4.2，抽屉限制见 §8 |
+| 12 | **双箱拆半 = 相位清空重算**：原版大箱拆成两个半箱时，存活半不继承旧锁相，按新布局重新识别信号 | 相位是旧容器结构的属性，不能随两半各复制一份；与流体「拆半清源重算」同族 |
 
 **能力清单**：✅ 相位检测与按锈级发电 · ✅ 铜灯储能（按盏 DataComponent，无池）
 · ✅ 双向充放（容器级 `ContainerEnergyStorage` + 物品级 `EnergyStorage.ITEM`）
 · ✅ 网络级共振（不同锈级之间的和声，§3.7）· ✅ 相位快照跨会话续接（§6.5）
-· ✅ Tooltip 仪表盘
+· ✅ 双箱拆半相位清空重算（A6，见规则 12）· ✅ Tooltip 仪表盘
 
 **未实现计划**统一登记在 [TODO.md](../TODO.md)「红电」节（2026-10-10 起，D-doc-06）。
 
@@ -72,6 +73,7 @@
 | 5 取消活化清电 | `LivingWaxedCopperFunction.getOwnedComponentTypes()`（**声明式**清理，漏列即孤儿数据） |
 | 8 无出身论 · 双向充放 | `BulbItemEnergyStorageTest` · `RoundTripConservationIT`（往返守恒） |
 | 11 容器提交确认与失败报账 | `ContainerEnergyStorage` · §4.2 · [power-invariants.md](../system-design/power-invariants.md) **I-D5** |
+| 12 双箱拆半相位清空重算 | `PhaseDataMigrationChestSplitTest` · `PhaseDataMigration.clearPhaseOnChestSplit` · TODO 真机复验 A6 项 |
 | 相位快照跨会话续接 | `PhaseSnapshotWarmupTest`（8 例，含世界轴往返） |
 | 对外能力存在性 = 真有活铜灯（§4.1） | `ContainerEnergyCapabilityTest` |
 

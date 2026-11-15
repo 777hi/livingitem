@@ -1,6 +1,5 @@
 package com.qiqi.li.client.render;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import com.qiqi.li.living.domain.portal.PortalClientCache;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -31,28 +30,23 @@ public final class ContainerPortalOverlay {
         var snapshots = PortalClientCache.snapshots(menuId);
         if (snapshots.isEmpty()) return;
         var sprite = Minecraft.getInstance().getTextureAtlas(TextureAtlas.LOCATION_BLOCKS).apply(PORTAL);
-        var pose = graphics.pose();
-        pose.pushPose();
-        pose.setIdentity();
-        pose.translate(0, 0, 400);
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        graphics.setColor(1, 1, 1, 0.55f);
-        for (var snapshot : snapshots) {
-            for (var entry : snapshot.menuSlots().entrySet()) {
-                if (!snapshot.cells().contains(entry.getValue())) continue;
-                int index = entry.getKey();
-                if (index < 0 || index >= screen.getMenu().slots.size()) continue;
-                var slot = screen.getMenu().getSlot(index);
-                if (!com.qiqi.li.client.util.PortalMenuSlots.isStorageSlot(screen.getMenu(), slot)
-                        || com.qiqi.li.client.util.PortalMenuSlots.serverMenuSlot(screen.getMenu(), slot) != index) continue;
-                graphics.blit(screen.getGuiLeft() + slot.x - 1, screen.getGuiTop() + slot.y - 1,
-                    0, 18, 18, sprite);
+        // Z 层级走统一协议（基座 + 350 + 禁深度），见 GuiOverlays
+        GuiOverlays.paintOverContent(graphics, () -> {
+            graphics.setColor(1, 1, 1, 0.55f);
+            for (var snapshot : snapshots) {
+                for (var entry : snapshot.menuSlots().entrySet()) {
+                    if (!snapshot.cells().contains(entry.getValue())) continue;
+                    int index = entry.getKey();
+                    if (index < 0 || index >= screen.getMenu().slots.size()) continue;
+                    var slot = screen.getMenu().getSlot(index);
+                    if (!com.qiqi.li.client.util.PortalMenuSlots.isStorageSlot(screen.getMenu(), slot)
+                            || com.qiqi.li.client.util.PortalMenuSlots.serverMenuSlot(screen.getMenu(), slot) != index) continue;
+                    graphics.blit(screen.getGuiLeft() + slot.x - 1, screen.getGuiTop() + slot.y - 1,
+                        0, 18, 18, sprite);
+                }
             }
-        }
-        graphics.setColor(1, 1, 1, 1);
-        RenderSystem.disableBlend();
-        pose.popPose();
+            graphics.setColor(1, 1, 1, 1);
+        });
     }
 
     @SubscribeEvent

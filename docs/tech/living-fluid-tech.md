@@ -740,17 +740,20 @@ slot/level/fromSlot）→ 客户端 `FluidFlowClientCache` → `ContainerFluidOv
   `ServerLevel` 取宿主，再用 `EntityContainers.menuPhysicalSlot` 逐槽确认菜单里真有它的**存储格**
   ⇒ 共格 / 移动 / 换维度都不串台，装备饰品槽与其它实体也不冒领；与 `syncWorldContainer`
   的实体分支同源。`ContainerViewersTest` 守同格两实体互不串台、空/null 位置可用、宿主不在本世界不发。
-- 🔴 **叠加层必须自抬 Z，不能停在 Z=0**（2026-11-14 真机，`D-container-27`）：
-  `ContainerFluidOverlay` 用 `pose.setIdentity()` 换绝对坐标后，位姿的 Z 也一起归零；
-  而 **TLM 女仆 GUI 的 `AbstractMaidContainerGui.renderBg` 里有一次 `translate(0,0,200)`
-  没有配对 `popPose`** ⇒ 该界面后续内容全在 Z≥200，且 Foreground 事件触发时**深度测试是开着的**
-  （实机诊断 `depth=true / scissor=false`）⇒ Z=0 的水被深度剔除 ⇒
-  **女仆背包里的水「服务端发包、客户端 out=2、渲染指令都发了，但一点看不见」**。
-  原版箱子的 `renderBg` 没有这个未配对的 Z 平移，所以一直正常。
-  ⇒ 统一口径：`pose.setIdentity()` 之后 `pose.translate(0, 0, OVERLAY_Z=400)`，
-  **只抬 Z、不动 XY**（绝对坐标口径对所有界面零变化）；与
-  `LivingSpongeFluidDecorator` / `ProgressBarDecorator` 的「pose 自抬 Z」同族约定。
+- 🔴 **叠加层 Z 走统一协议（基座捕获 + 350 + 禁深度），禁止手选绝对 Z**（2026-11-14，`D-render-02`，
+  取代 `D-container-27` 的「绝对 Z=400」）：
+  演进两段：① 真机（`D-container-27` 起因）——TLM 女仆 GUI 的 `renderBg` 有未配对
+  `translate(0,0,200)` ⇒ 界面基座被抬走，Z=0 的水被深度剔除（「发包正常但一点不画」），
+  当时修成绝对 Z=400；② 同日第二段真机——绝对 400 高过**光标物品**（原版梯子里光标物品
+  模型在基座+382）⇒ 普通界面上光标物品被流体贴图挡住。根因是同一条：**Foreground 事件位姿
+  里累计着界面基座（第三方 renderBg 未配对平移会抬走它），任何绝对 Z 跨界面都不稳定**。
+  ⇒ 统一口径：全部 Foreground 自绘叠加层走 `client/render/GuiOverlays`
+  （`paintOverContent` 覆盖层族 / `paintSlotLevel` 槽位级族）——捕获事件位姿基座
+  （`pose.last().pose().m32()`）、`setIdentity` 后「基座 + 相对量」抬层，覆盖层族另禁深度测试；
+  Z 梯子全表与两条不变量见该类注释。IItemDecorator 族（海绵 / 进度条等）不动：
+  继承槽位位姿、自抬 ≤200 ⇒ 净 ≤+300，本来就是相对位协议。
   ⚠️ 这条属于**渲染位姿**，单测不可覆盖（`ProgressBarDecoratorTest` 同款边界）⇒ 走实机验收。
+  用户本轮整体复测反馈“基本都正常了”；不外推为所有界面、资源包重载及极端组合逐项通过。
 - **边沿清屏**：数据从有变无（汲走最后一个源）⇒ 一次性下发空快照
   （`CLIENT_ACTIVE` 状态机），否则客户端旧水永不清除；
 - **跨存档**：`CLIENT_ACTIVE` 挂 `onServerStopped`；客户端缓存挂

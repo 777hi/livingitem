@@ -209,8 +209,9 @@
    只覆盖了 `moveOut`，`moveIn` 是 default 空实现 ⇒ 放置方向**静默失效**（真机第 4 轮才找到）。
    修法：去掉 default（漏实现编译期报错）+ 反射守卫。
 
-**未修**（移交 [TODO](../TODO.md)）：大箱子两半相位可能各得一份（3.1）；
-`ContainerFluidData` 当数据组件值违反 NeoForge 约定（3.3，缺 equals/hashCode，只在开发校验下暴露）。
+**已修（A6，2026-10-27；2026-10-28 实测）**：大箱子两半相位各得一份 —— `ContainerDrops.otherChestHalf` 判拆半，`PhaseDataMigration.clearPhaseOnChestSplit` 先清存活半的快照，旧锁相不复制、不分摊；规则见 `../tech/living-power-tech.md` §0 规则 12，回归见 `../reference/test-map.md`，[TODO 3.1](../TODO.md) 仅留完成记录。
+
+**未修**（移交 [TODO](../TODO.md)）：`ContainerFluidData` 当数据组件值违反 NeoForge 约定（3.3，缺 equals/hashCode，只在开发校验下暴露）。
 
 ---
 
@@ -256,13 +257,12 @@
 
 | # | 事项 | TODO 编号 |
 |---|---|---|
-| 1 | 大箱子两半相位可能各得一份 | 3.1 |
-| 2 | `ContainerFluidData` 当数据组件值违反 NeoForge 约定 | 3.3 |
-| 3 | 实体容器列数**校准入口**没做（`register`/`inspect` 只认准心方块） | 3.4 |
-| 4 | 自动学两条硬局限：fxntstorage 全部 + twilightforest 三件落在启发式 | 5.5 |
-| 5 | 同键多布局（槽位会变的容器），用户点名「慢慢讨论」 | 5.1 |
-| 6 | 池端点（AE2 ME / RS 网络），**不做**池宿主（`D-container-07`/`I-C8`） | 5 |
-| 7 | 真机台账稀疏：11 条接入清单多数靠替身测试 | 5.6 |
+| 1 | `ContainerFluidData` 当数据组件值违反 NeoForge 约定 | 3.3 |
+| 2 | 实体容器列数**校准入口**没做（`register`/`inspect` 只认准心方块） | 3.4 |
+| 3 | 自动学两条硬局限：fxntstorage 全部 + twilightforest 三件落在启发式 | 5.5 |
+| 4 | 同键多布局（槽位会变的容器），用户点名「慢慢讨论」 | 5.1 |
+| 5 | 池端点（AE2 ME / RS 网络），**不做**池宿主（`D-container-07`/`I-C8`） | 5 |
+| 6 | 真机台账稀疏：11 条接入清单多数靠替身测试 | 5.6 |
 
 **明确不做**（不是待办，是已否的边界）：
 
