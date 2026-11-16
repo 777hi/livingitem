@@ -10,6 +10,8 @@ import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.lang.reflect.Field;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -48,15 +50,25 @@ import net.neoforged.neoforge.items.SlotItemHandler;
 /** 菜单动作访问边界；真实物品存取结果不替代状态授权。 */
 class MenuActionAccessTest {
     private static final InteractionHandler UNUSED_HANDLER = (player, target) -> {};
+    private final List<MenuActionAccess.Resolver> addedResolvers = new ArrayList<>();
+    private List<MenuActionAccess.Resolver> resolvers;
 
     @BeforeEach
-    void setUp() {
-        MenuActionAccess.clearForTest();
+    @SuppressWarnings("unchecked")
+    void setUp() throws ReflectiveOperationException {
+        Field field = MenuActionAccess.class.getDeclaredField("RESOLVERS");
+        field.setAccessible(true);
+        resolvers = (List<MenuActionAccess.Resolver>) field.get(null);
     }
 
     @AfterEach
     void tearDown() {
-        MenuActionAccess.clearForTest();
+        if (resolvers != null) resolvers.removeAll(addedResolvers);
+    }
+
+    private void registerResolver(MenuActionAccess.Resolver resolver) {
+        addedResolvers.add(resolver);
+        MenuActionAccess.register(resolver);
     }
 
     @Test
@@ -96,7 +108,7 @@ class MenuActionAccessTest {
             assertEquals(scope, request.logicalSlots());
             return MenuActionAccess.Decision.ALLOW;
         });
-        MenuActionAccess.register(resolver);
+        registerResolver(resolver);
         InteractionAction action = new InteractionAction(kind, UNUSED_HANDLER,
             (p, slot, carried) -> new InteractionAction.Scope(context, scope));
 
@@ -110,6 +122,144 @@ class MenuActionAccessTest {
         assertEquals(2, resolver.checks.get());
         assertTrue(storage.getStackInSlot(10).isEmpty());
         verifyNoInteractions(player);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1})
+    void duplicateRealHandlerTargetUsesSelectedExactAliasWithoutInferringAccess(int selected) {
+        ItemStackHandler storage = new ItemStackHandler(9);
+        SlotItemHandler first = new SlotItemHandler(storage, 5, 0, 0);
+        SlotItemHandler second = new SlotItemHandler(storage, 5, 18, 0);
+        TestMenu menu = new TestMenu(first, second);
+        ServerPlayer player = playerFor(menu);
+        Slot target = menu.getSlot(selected);
+        TickableContainerContext context = new IdentityContext("alias_owner");
+        MenuActionAccess.Request request = new MenuActionAccess.Request(player, menu, target,
+            InteractionAction.Kind.CONTAINER_STATE, context, Set.of(5));
+        InteractionAction action = InteractionAction.container(UNUSED_HANDLER);
+
+        try (MockedStatic<ContainerContexts> owners = mockStatic(ContainerContexts.class)) {
+            owners.when(() -> ContainerContexts.resolve(player, first)).thenReturn(context);
+            owners.when(() -> ContainerContexts.resolve(player, second)).thenReturn(context);
+            assertSame(storage, first.getItemHandler());
+            assertSame(storage, second.getItemHandler());
+            assertEquals(5, first.getContainerSlot());
+            assertEquals(5, second.getContainerSlot());
+            assertTrue(target.isActive());
+            assertFalse(target.mayPickup(player));
+            assertSame(target, MenuActionAccess.scopeSlot(request, 5));
+            assertEquals(MenuActionAccess.Decision.UNKNOWN, MenuActionAccess.check(request));
+            assertFalse(action.permits(player, target, ItemStack.EMPTY));
+
+            RecordingResolver access = new RecordingResolver(menu, checked -> {
+                assertSame(target, checked.target());
+                assertEquals(selected, checked.target().index);
+                assertEquals(Set.of(5), checked.logicalSlots());
+                assertSame(context, checked.context());
+                return MenuActionAccess.Decision.ALLOW;
+            });
+            registerResolver(access);
+            assertEquals(MenuActionAccess.Decision.ALLOW, MenuActionAccess.check(request));
+            assertTrue(action.permits(player, target, ItemStack.EMPTY));
+            assertEquals(2, access.checks.get());
+        }
+        assertTrue(storage.getStackInSlot(5).isEmpty());
+        verifyNoInteractions(player);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1})
+    void duplicateStandardTargetAllowsSelectedAliasButOtherScopeSlotsStillRequireUniqueness(int selected) {
+        SimpleContainer storage = new SimpleContainer(13);
+        Slot first = new Slot(storage, 11, 0, 0);
+        Slot second = new Slot(storage, 11, 18, 0);
+        TestMenu menu = new TestMenu(first, second);
+        ServerPlayer player = playerFor(menu);
+        Slot target = menu.getSlot(selected);
+        ContainerContext context = offsetContext("owner");
+        MenuActionAccess.Request request = new MenuActionAccess.Request(player, menu, target,
+            InteractionAction.Kind.CONTAINER_STATE, context, Set.of(1));
+
+        try (MockedStatic<ContainerContexts> owners = mockStatic(ContainerContexts.class)) {
+            owners.when(() -> ContainerContexts.resolve(player, first)).thenReturn(context);
+            owners.when(() -> ContainerContexts.resolve(player, second)).thenReturn(context);
+            assertSame(target, MenuActionAccess.scopeSlot(request, 1));
+            assertEquals(MenuActionAccess.Decision.ALLOW, MenuActionAccess.check(request));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"wrong_owner", "wrong_level", "missing_owner", "inactive", "detached", "roundtrip"})
+    void exactAliasCannotBorrowAnotherDisplaySlotsOwnerOrLifecycle(String condition) {
+        ItemStackHandler storage = new ItemStackHandler(9);
+        Slot target = condition.equals("inactive") ? new SlotItemHandler(storage, 5, 0, 0) {
+            @Override public boolean isActive() { return false; }
+        } : new SlotItemHandler(storage, 5, 0, 0);
+        Slot other = new SlotItemHandler(storage, 5, 18, 0);
+        TestMenu menu = new TestMenu(target, other);
+        ServerPlayer player = playerFor(menu);
+        if (condition.equals("detached")) {
+            menu.slots.set(0, new SlotItemHandler(storage, 5, 0, 0));
+        }
+        TickableContainerContext context = condition.equals("roundtrip")
+            ? new IdentityContext("owner") {
+                @Override public int toPhysicalSlot(int logical) { return logical + 1; }
+            } : new IdentityContext("owner");
+        TickableContainerContext resolved = switch (condition) {
+            case "wrong_owner" -> new IdentityContext("foreign");
+            case "wrong_level" -> {
+                IdentityContext foreignLevel = new IdentityContext("owner");
+                foreignLevel.withGameTime(0);
+                yield foreignLevel;
+            }
+            case "missing_owner" -> null;
+            default -> context;
+        };
+        RecordingResolver access = new RecordingResolver(menu, request -> MenuActionAccess.Decision.ALLOW);
+        registerResolver(access);
+        MenuActionAccess.Request request = new MenuActionAccess.Request(player, menu, target,
+            InteractionAction.Kind.CONTAINER_STATE, context, Set.of(5));
+
+        try (MockedStatic<ContainerContexts> owners = mockStatic(ContainerContexts.class)) {
+            owners.when(() -> ContainerContexts.resolve(player, target)).thenReturn(resolved);
+            owners.when(() -> ContainerContexts.resolve(player, other)).thenReturn(context);
+            assertEquals(target.getContainerSlot(), other.getContainerSlot());
+            assertNull(MenuActionAccess.scopeSlot(request, 5));
+            assertEquals(MenuActionAccess.Decision.DENY, MenuActionAccess.check(request));
+        }
+        assertEquals(0, access.supports.get());
+        assertTrue(storage.getStackInSlot(5).isEmpty());
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1})
+    void explicitAllowStillRejectsDuplicateNonTargetRealHandlerScopeSlot(int selected) {
+        ItemStackHandler storage = new ItemStackHandler(9);
+        SlotItemHandler first = new SlotItemHandler(storage, 5, 0, 0);
+        SlotItemHandler second = new SlotItemHandler(storage, 5, 18, 0);
+        Slot neighbor = new SlotItemHandler(storage, 6, 0, 18);
+        Slot duplicateNeighbor = new SlotItemHandler(storage, 6, 18, 18);
+        TestMenu menu = new TestMenu(first, second, neighbor, duplicateNeighbor);
+        ServerPlayer player = playerFor(menu);
+        TickableContainerContext context = new IdentityContext("owner");
+        Slot target = menu.getSlot(selected);
+        MenuActionAccess.Request request = new MenuActionAccess.Request(player, menu, target,
+            InteractionAction.Kind.CONTAINER_STATE, context, Set.of(5, 6));
+        RecordingResolver access = new RecordingResolver(menu, checked -> MenuActionAccess.Decision.ALLOW);
+        registerResolver(access);
+
+        try (MockedStatic<ContainerContexts> owners = mockStatic(ContainerContexts.class)) {
+            for (Slot slot : menu.slots) {
+                owners.when(() -> ContainerContexts.resolve(player, slot)).thenReturn(context);
+            }
+            assertSame(target, MenuActionAccess.scopeSlot(request, 5));
+            assertNull(MenuActionAccess.scopeSlot(request, 6));
+            assertEquals(MenuActionAccess.Decision.DENY, MenuActionAccess.check(request));
+            assertFalse(new InteractionAction(request.kind(), UNUSED_HANDLER,
+                (p, slot, carried) -> new InteractionAction.Scope(context, request.logicalSlots()))
+                .permits(player, target, ItemStack.EMPTY));
+        }
+        assertEquals(0, access.supports.get());
     }
 
     @Test
@@ -149,7 +299,7 @@ class MenuActionAccessTest {
         assertTrue(target.mayPickup(player));
         assertSame(candidate, storage.insertItem(0, candidate, true));
         assertEquals(MenuActionAccess.Decision.UNKNOWN, check(player, target));
-        MenuActionAccess.register(new RecordingResolver(menu, request -> MenuActionAccess.Decision.ALLOW));
+        registerResolver(new RecordingResolver(menu, request -> MenuActionAccess.Decision.ALLOW));
         assertTrue(InteractionAction.item(UNUSED_HANDLER).permits(player, target, candidate));
         assertSame(contents, storage.getStackInSlot(0));
         assertEquals(1, candidate.getCount());
@@ -285,8 +435,8 @@ class MenuActionAccessTest {
         });
         first.failSupports = outcome.equals("supports_exception");
         RecordingResolver second = new RecordingResolver(menu, request -> MenuActionAccess.Decision.ALLOW);
-        MenuActionAccess.register(first);
-        MenuActionAccess.register(second);
+        registerResolver(first);
+        registerResolver(second);
 
         assertEquals(outcome.equals("deny") ? MenuActionAccess.Decision.DENY : MenuActionAccess.Decision.UNKNOWN,
             check(player, target));
@@ -306,7 +456,7 @@ class MenuActionAccessTest {
         TestMenu menu = new TestMenu(target);
         ServerPlayer player = playerFor(menu);
         RecordingResolver unrelated = new RecordingResolver(new TestMenu(), request -> MenuActionAccess.Decision.DENY);
-        MenuActionAccess.register(unrelated);
+        registerResolver(unrelated);
 
         assertEquals(MenuActionAccess.Decision.ALLOW, check(player, target));
         assertTrue(InteractionAction.item(UNUSED_HANDLER).permits(player, target, ItemStack.EMPTY));
@@ -334,7 +484,7 @@ class MenuActionAccessTest {
             assertFalse(menu.getSlot(0) == target);
         }
         RecordingResolver resolver = new RecordingResolver(menu, request -> MenuActionAccess.Decision.ALLOW);
-        MenuActionAccess.register(resolver);
+        registerResolver(resolver);
 
         assertFalse(MenuActionAccess.validTarget(player, target));
         assertEquals(MenuActionAccess.Decision.DENY, MenuActionAccess.check(new MenuActionAccess.Request(
@@ -353,7 +503,7 @@ class MenuActionAccessTest {
         TestMenu menu = new TestMenu(other, target);
         ServerPlayer player = playerFor(menu);
         RecordingResolver resolver = new RecordingResolver(menu, request -> MenuActionAccess.Decision.ALLOW);
-        MenuActionAccess.register(resolver);
+        registerResolver(resolver);
         assertEquals(1, target.index);
         target.index = forgedIndex;
 
@@ -371,7 +521,7 @@ class MenuActionAccessTest {
         TestMenu stale = new TestMenu();
         ServerPlayer player = playerFor(current);
         RecordingResolver resolver = new RecordingResolver(stale, request -> MenuActionAccess.Decision.ALLOW);
-        MenuActionAccess.register(resolver);
+        registerResolver(resolver);
 
         assertEquals(current.containerId, stale.containerId);
         assertTrue(MenuActionAccess.validTarget(player, target));
@@ -394,7 +544,7 @@ class MenuActionAccessTest {
             default -> Set.of(1);
         };
         RecordingResolver resolver = new RecordingResolver(menu, request -> MenuActionAccess.Decision.ALLOW);
-        MenuActionAccess.register(resolver);
+        registerResolver(resolver);
         InteractionAction action = new InteractionAction(InteractionAction.Kind.CONTAINER_STATE, UNUSED_HANDLER,
             (p, slot, carried) -> new InteractionAction.Scope(context, scope));
 
@@ -499,7 +649,7 @@ class MenuActionAccessTest {
         TickableContainerContext context = offsetContext("requested");
         TickableContainerContext foreign = offsetContext("foreign");
         RecordingResolver access = new RecordingResolver(menu, request -> MenuActionAccess.Decision.ALLOW);
-        MenuActionAccess.register(access);
+        registerResolver(access);
         MenuActionAccess.Request request = new MenuActionAccess.Request(player, menu, target,
             InteractionAction.Kind.CONTAINER_STATE, context, Set.of(1, 2));
 
@@ -540,6 +690,15 @@ class MenuActionAccessTest {
         ServerPlayer player = mock(ServerPlayer.class);
         player.containerMenu = menu;
         return player;
+    }
+
+    /** 无偏移的我方菜单上下文；不依赖真实世界或第三方实现。 */
+    private static class IdentityContext extends FakeContainerContext implements TickableContainerContext {
+        IdentityContext(String key) { super(9, 3, key); }
+        @Override public void setTickContext(TickContext tick) {}
+        @Override public void flushDirtySlots() {}
+        @Override public List<BlockEntity> getAssociatedBlockEntities() { return List.of(); }
+        @Override public Inventory getInventory() { return null; }
     }
 
     /** 我方逻辑槽接口夹具；物理索引前置十格，不访问世界注册表。 */

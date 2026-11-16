@@ -100,12 +100,20 @@ public final class MenuActionAccess {
         }
     }
 
-    /** 按真实容器身份取唯一范围槽；同物理编号或相同物品内容不是身份。 */
+    /** 点击格使用已证明身份的精确显示槽；其它范围格仍须唯一映射。 */
     @Nullable
     public static Slot scopeSlot(Request request, int logical) {
         ContainerContext ctx = request.context();
         if (ctx == null || !ctx.isValidSlot(logical)) return null;
         int physical = ctx.toPhysicalSlot(logical);
+        Slot target = request.target();
+        if (logical == ctx.toLogicalSlot(target.getContainerSlot())) {
+            if (request.menu() != request.player().containerMenu
+                    || !validTarget(request.player(), target) || target.getContainerSlot() != physical) return null;
+            ContainerContext owner = ContainerContexts.resolve(request.player(), target);
+            return owner != null && owner.getContainerKey().equals(ctx.getContainerKey())
+                && owner.getLevel() == ctx.getLevel() ? target : null;
+        }
         Slot found = null;
         for (Slot slot : request.menu().slots) {
             if (!slot.isActive() || slot.getContainerSlot() != physical) continue;

@@ -288,7 +288,7 @@ src/test/java/com/qiqi/li/
 │   ├── SpongeContainerCapabilityTest.java     # 容器级能力·存在性/客户端零罐只读探针（Jade取数闸门）/槽序罐/填充/边沿·多堆剩余预算与混种/代表流体/模拟·BLOCK副本计算与原槽提交/原引用和副本后端/拒写不报账/只读不抽插/第二槽失败报先前提交量/超大堆叠与无关组件保留
 │   └── LivingSpongeTooltipTest.java           # tooltip 堆口径（2026-11-06 回归）·分子分母同乘 count（旧实现分母写死枚容量 ⇒「128000 / 64000 mB」）/ 与 getFluidInTank·getTankCapacity 逐字一致 / 半满余量 / 干态无内容行
 ├── living/interaction/
-│   ├── MenuActionAccessTest.java               # 菜单/槽身份与范围/原版存储契约/真实NeoForge空槽/显式访问/拒绝未知异常不回落/过滤不等于权限
+│   ├── MenuActionAccessTest.java               # 菜单/槽身份与范围/原版存储契约/真实NeoForge空槽/精确点击别名与非目标歧义/显式访问/拒绝未知异常不回落/过滤不等于权限
 │   ├── InteractionActionTest.java              # 物品与容器语义/只读范围/逻辑映射/准入拒绝不执行/规则匹配不能授权
 │   ├── InteractionRegistryTest.java           # 两趟优先级匹配·通配遮蔽+triggerFilter 回归守卫
 │   ├── InteractionRuleConfigTest.java         # 交互规则 JSON 加载语义·内置全有效/玩家覆盖与removed/坏值跳过/未知字段忽略/version守卫/reload幂等（自带 mock handler 不依赖测试执行顺序）
@@ -313,7 +313,7 @@ src/test/java/com/qiqi/li/
 │   └── PerItemLedgerTest.java                 # 均分记账内核（2026-11-02，power/sponge 两域共享）·floor 均分记账=写入×count（同源）/ 不足整步不写 / 容量防御截断 / 已满不动 / 退化输入 / 损耗 ≤ count−1（设计稿 §3.1；灯泡行为不变由 RoundTripConservationIT 全量回归守）
 └── network/
     ├── ContainerMenuInfoPacketTest.java         # 菜单信息载荷·全形态/来源codec/状态独立/request关联/服务端限频/错菜单拒绝/实际回包/退出清理/几何有效性
-    ├── GuiInteractionDispatchTest.java        # 真实分发当前菜单/精确双槽/同号异库存/访问拒绝无后置维护/创造候选授权后借入与finally恢复/正常物品及空槽容器动作
+    ├── GuiInteractionDispatchTest.java        # 真实分发当前菜单/精确双槽与显示别名/同号异库存/真实桶倒汲守恒与创造无限桶/访问拒绝零副作用/创造候选授权后借入与finally恢复
     ├── GuiInteractionPacketTest.java          # 所有动作精确双槽号/越界与inactive拒绝/不按物理号回退；物品动作仅非空活物品
     └── LivingItemSyncPacketTest.java          # 运行时同步包编解码往返（档 2 安全网）·三组字段往返/空数据/多槽混合/两种键形态/容器种类 kind 往返(背包·末影箱·世界·掉落物)/子记录哨兵/未登记 id 报错
     └── LivingItemRuntimeSyncTest.java         # （门控判定已迁 ContainerViewersTest）+ **物品形态容器按菜单锚点发包（真机 tooltip 不显示容器信息的回归）**

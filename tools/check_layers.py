@@ -72,8 +72,10 @@ ORDER = (R1, R2, R3, R4, R5)
 REGISTRY_METHODS = [
     "LivingItemManager.registerFunction",
     "EntityContainers.registerProvider",
+    "ItemFormContainers.register",
     "InteractionRegistry.register",
     "InteractionRegistry.registerHandler",
+    "MenuActionAccess.register",
     "InteractionPredicates.register",
     "FluidFlowBehaviors.register",
     "SlotInteractions.register",
@@ -104,6 +106,7 @@ R4_EXEMPT_CALLS = {
     "LivingMapEventHandler.register",
     "ItemFrameMapTeleportHandler.register",
     "MenuSlotOwners.registerEntityResolver",
+    "MenuSlotOwners.registerMenuResolver",
 }
 
 REGISTRY_RE = re.compile(

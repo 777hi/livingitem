@@ -5,8 +5,6 @@ import org.slf4j.LoggerFactory;
 
 import net.neoforged.fml.ModList;
 
-import com.qiqi.li.living.container.MenuSlotOwners;
-
 /**
  * 精妙背包联动模块的加载门面（与 {@code ModCreate} / {@code ModSable} 同构）。
  *
@@ -33,13 +31,7 @@ public final class ModSophisticated {
     /** 启动时调用一次（{@code LivingItem#commonSetup}）。 */
     public static void init() {
         if (!isLoaded()) return;
-        MenuSlotOwners.registerMenuResolver(new SophisticatedMenuResolver());
-        com.qiqi.li.living.interaction.MenuActionAccess.register(new SophisticatedMenuAccess());
-        LOGGER.info("[ModSophisticated] 已注册菜单位置解析器（容器 GUI 的 tooltip / 流体渲染依赖它）");
-
-        // 活背包（2026-10-22）：把精妙背包登记为「物品形态容器」来源 ⇒
-        // 活化的背包会被 LivingBackpackFunction tick 内部。核心不认识精妙类型。
-        com.qiqi.li.living.container.ItemFormContainers.register(new SophisticatedBackpackSource());
-        LOGGER.info("[ModSophisticated] 已注册物品形态容器来源（活背包内部 tick 依赖它）");
+        SophisticatedRegistration.register();
+        LOGGER.info("[ModSophisticated] 已注册菜单位置、动作访问与物品形态容器来源");
     }
 }

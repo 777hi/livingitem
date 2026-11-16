@@ -2,6 +2,7 @@ package com.qiqi.li.network;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -14,35 +15,46 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.MockedStatic;
 
+import com.qiqi.li.living.api.FluidSourceLedger;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.ContainerContexts;
+import com.qiqi.li.living.container.ContainerDataKey;
+import com.qiqi.li.living.container.ContainerDataStore;
+import com.qiqi.li.living.container.TickContext;
+import com.qiqi.li.living.container.TickableContainerContext;
 import com.qiqi.li.living.domain.portal.PortalInteractHandlers;
+import com.qiqi.li.living.domain.water.ContainerFluidData;
+import com.qiqi.li.living.domain.water.LivingBucketInteractHandlers;
 import com.qiqi.li.living.interaction.InteractionAction;
 import com.qiqi.li.living.interaction.InteractionEntry;
 import com.qiqi.li.living.interaction.InteractionHandler;
 import com.qiqi.li.living.interaction.InteractionRegistry;
 import com.qiqi.li.living.interaction.MenuActionAccess;
+import com.qiqi.li.testutil.FakeContainerContext;
 
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.player.Inventory;
@@ -50,18 +62,27 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.material.Fluids;
+import net.neoforged.neoforge.items.ItemStackHandler;
+import net.neoforged.neoforge.items.SlotItemHandler;
 import net.neoforged.neoforge.network.PacketDistributor;
 
-/** 真实服务端分发入口；测试动作不触发世界操作，门面维护在静态边界隔离。 */
+/** 真实服务端分发与桶源账本；世界门面维护在静态边界隔离。 */
 class GuiInteractionDispatchTest {
     private static final String ACTION = "test_dispatch_item";
+    private static final String POUR = "living_bucket_pour";
+    private static final String SCOOP = "living_bucket_scoop";
     private static final int PHYSICAL = 4;
+    private static final int ALIAS_PHYSICAL = 5;
 
-    private List<InteractionEntry> savedEntries;
-    private Map<String, InteractionAction> savedActions;
-    private List<MenuActionAccess.Resolver> savedResolvers;
+    private final Map<String, InteractionAction> savedActions = new HashMap<>();
+    private final List<InteractionEntry> addedEntries = new ArrayList<>();
+    private final List<MenuActionAccess.Resolver> addedResolvers = new ArrayList<>();
     private MockedStatic<PortalInteractHandlers> portal;
     private ServerPlayer player;
     private FakeMenu menu;
@@ -71,11 +92,9 @@ class GuiInteractionDispatchTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        savedEntries = InteractionRegistry.getEntries();
-        savedActions = new HashMap<>(registeredActions());
-        savedResolvers = new ArrayList<>(registeredResolvers());
-        clear(InteractionRegistry.class);
-        clear(MenuActionAccess.class);
+        for (String action : List.of(ACTION, POUR, SCOOP)) {
+            savedActions.put(action, registeredActions().get(action));
+        }
         portal = mockStatic(PortalInteractHandlers.class);
 
         player = mock(ServerPlayer.class);
@@ -96,11 +115,13 @@ class GuiInteractionDispatchTest {
         try {
             if (portal != null) portal.close();
         } finally {
-            clear(InteractionRegistry.class);
-            clear(MenuActionAccess.class);
-            savedEntries.forEach(InteractionRegistry::register);
-            savedActions.forEach(InteractionRegistry::registerHandler);
-            savedResolvers.forEach(MenuActionAccess::register);
+            registeredEntries().removeAll(addedEntries);
+            registeredResolvers().removeAll(addedResolvers);
+            Map<String, InteractionAction> actions = registeredActions();
+            savedActions.forEach((id, action) -> {
+                if (action == null) actions.remove(id);
+                else actions.put(id, action);
+            });
         }
     }
 
@@ -162,6 +183,185 @@ class GuiInteractionDispatchTest {
         assertEquals(1, menu.broadcasts);
     }
 
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1})
+    void sharedHandlerAliases_packetSelectsExactDisplaySlotAndSingleLogicalScope(int selected) {
+        HandlerContext context = useHandlerAliases();
+        Slot selectedTarget = menu.getSlot(selected);
+        ExactAccess access = new ExactAccess(menu, context, MenuActionAccess.Decision.ALLOW);
+        registerResolver(access);
+        InteractionRegistry.registerHandler(ACTION, InteractionAction.container(handler));
+
+        try (MockedStatic<ContainerContexts> contexts = resolveAliases(context)) {
+            assertSame(context.storage, ((SlotItemHandler) menu.getSlot(0)).getItemHandler());
+            assertSame(context.storage, ((SlotItemHandler) menu.getSlot(1)).getItemHandler());
+            assertEquals(ALIAS_PHYSICAL, menu.getSlot(0).getContainerSlot());
+            assertEquals(ALIAS_PHYSICAL, menu.getSlot(1).getContainerSlot());
+            GuiInteractionPacket.handle(packet(selected, ALIAS_PHYSICAL, ACTION, null), player);
+        }
+
+        verify(handler).handle(player, selectedTarget);
+        org.mockito.Mockito.verifyNoMoreInteractions(handler);
+        assertEquals(1, access.requests.size());
+        assertSame(selectedTarget, access.requests.getFirst().target());
+        assertEquals(selected, access.requests.getFirst().target().index);
+        assertEquals(Set.of(ALIAS_PHYSICAL), access.requests.getFirst().logicalSlots());
+        portal.verify(() -> PortalInteractHandlers.afterInteraction(player, selectedTarget));
+        portal.verifyNoMoreInteractions();
+        assertSame(original, menu.getCarried());
+        assertEquals(1, menu.broadcasts);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1})
+    void sharedHandlerAliases_withoutAdapterRemainUnknownAndPacketDoesNotExecute(int selected) {
+        HandlerContext context = useHandlerAliases();
+        Slot selectedTarget = menu.getSlot(selected);
+        InteractionRegistry.registerHandler(ACTION, InteractionAction.container(handler));
+
+        try (MockedStatic<ContainerContexts> contexts = resolveAliases(context)) {
+            MenuActionAccess.Request request = new MenuActionAccess.Request(player, menu, selectedTarget,
+                InteractionAction.Kind.CONTAINER_STATE, context, Set.of(ALIAS_PHYSICAL));
+            assertSame(selectedTarget, MenuActionAccess.scopeSlot(request, ALIAS_PHYSICAL));
+            assertEquals(MenuActionAccess.Decision.UNKNOWN, MenuActionAccess.check(request));
+            assertRejected(packet(selected, ALIAS_PHYSICAL, ACTION, null));
+        }
+        assertTrue(context.storage.getStackInSlot(ALIAS_PHYSICAL).isEmpty());
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1})
+    void sharedHandlerAliases_wrongSelectedOwnerCannotBorrowSameNumberAuthorizedAlias(int selected) {
+        HandlerContext requested = useHandlerAliases();
+        HandlerContext foreign = new HandlerContext();
+        Slot selectedTarget = menu.getSlot(selected);
+        Slot authorizedAlias = menu.getSlot(1 - selected);
+        ExactAccess access = new ExactAccess(menu, requested, MenuActionAccess.Decision.ALLOW);
+        registerResolver(access);
+        InteractionRegistry.registerHandler(ACTION, new InteractionAction(
+            InteractionAction.Kind.CONTAINER_STATE, handler,
+            (p, slot, carried) -> new InteractionAction.Scope(requested, Set.of(ALIAS_PHYSICAL))));
+
+        try (MockedStatic<ContainerContexts> contexts = mockStatic(ContainerContexts.class)) {
+            contexts.when(() -> ContainerContexts.resolve(player, selectedTarget)).thenReturn(foreign);
+            contexts.when(() -> ContainerContexts.resolve(player, authorizedAlias)).thenReturn(requested);
+            assertEquals(selectedTarget.getContainerSlot(), authorizedAlias.getContainerSlot());
+            assertRejected(packet(selected, ALIAS_PHYSICAL, ACTION, null));
+        }
+        assertTrue(access.requests.isEmpty());
+        assertTrue(requested.storage.getStackInSlot(ALIAS_PHYSICAL).isEmpty());
+        assertTrue(foreign.storage.getStackInSlot(ALIAS_PHYSICAL).isEmpty());
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1})
+    void realBucketPackets_pourAndScoopThroughOppositeAliasesConserveWater(int selected) {
+        HandlerContext context = useHandlerAliases();
+        ExactAccess access = registerBucketAccess(context, MenuActionAccess.Decision.ALLOW);
+        ContainerFluidData data = ContainerFluidData.getOrCreate(context);
+        FluidSourceLedger ledger = data;
+        ItemStack fullBucket = living(Items.WATER_BUCKET);
+        menu.setCarried(fullBucket);
+        menu.carriedWrites = 0;
+        Slot pouredAt = menu.getSlot(selected);
+        Slot scoopedAt = menu.getSlot(1 - selected);
+
+        try (MockedStatic<ContainerContexts> contexts = resolveAliases(context)) {
+            GuiInteractionPacket.handle(packet(selected, ALIAS_PHYSICAL, POUR, null), player);
+
+            assertSame(data, ContainerFluidData.getOrCreate(context));
+            assertEquals(Map.of(ALIAS_PHYSICAL, Fluids.WATER.getFluidType()), data.getGeneratedSources());
+            assertSame(Fluids.WATER.getFluidType(), ledger.sourceAt(ALIAS_PHYSICAL));
+            assertTrue(menu.getCarried().is(Items.BUCKET));
+            assertEquals(1, menu.getCarried().getCount());
+            assertTrue(LivingItemManager.isLivingItem(menu.getCarried()));
+            assertTrue(context.getItem(ALIAS_PHYSICAL).isEmpty());
+            assertSame(context.getItem(ALIAS_PHYSICAL), pouredAt.getItem());
+            assertSame(pouredAt.getItem(), scoopedAt.getItem());
+            assertTrue(fullBucket.is(Items.WATER_BUCKET));
+
+            data.tick(context);
+            assertSame(Fluids.WATER.getFluidType(), data.sourceFluid(ALIAS_PHYSICAL));
+            GuiInteractionPacket.handle(packet(1 - selected, ALIAS_PHYSICAL, SCOOP, null), player);
+
+            assertNull(ledger.sourceAt(ALIAS_PHYSICAL));
+            assertTrue(data.getGeneratedSources().isEmpty());
+            assertTrue(menu.getCarried().is(Items.WATER_BUCKET));
+            assertEquals(1, menu.getCarried().getCount());
+            assertTrue(LivingItemManager.isLivingItem(menu.getCarried()));
+            data.tick(context);
+            assertNull(data.sourceFluid(ALIAS_PHYSICAL));
+        }
+
+        assertEquals(2, access.requests.size());
+        assertSame(pouredAt, access.requests.get(0).target());
+        assertSame(scoopedAt, access.requests.get(1).target());
+        portal.verify(() -> PortalInteractHandlers.afterInteraction(player, pouredAt));
+        portal.verify(() -> PortalInteractHandlers.afterInteraction(player, scoopedAt));
+        portal.verifyNoMoreInteractions();
+        assertEquals(2, menu.carriedWrites);
+        assertEquals(2, menu.broadcasts);
+        verifyNoInteractions(handler);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1})
+    void realBucketPackets_creativePourDoesNotConsumeAndScoopStillClearsSource(int selected) {
+        HandlerContext context = useHandlerAliases();
+        ExactAccess access = registerBucketAccess(context, MenuActionAccess.Decision.ALLOW);
+        ContainerFluidData data = ContainerFluidData.getOrCreate(context);
+        FluidSourceLedger ledger = data;
+        when(player.hasInfiniteMaterials()).thenReturn(true);
+        ItemStack fullBucket = living(Items.WATER_BUCKET);
+        menu.setCarried(fullBucket);
+
+        try (MockedStatic<ContainerContexts> contexts = resolveAliases(context)) {
+            GuiInteractionPacket.handle(packet(selected, ALIAS_PHYSICAL, POUR, null), player);
+            assertSame(fullBucket, menu.getCarried());
+            assertEquals(1, fullBucket.getCount());
+            assertTrue(fullBucket.is(Items.WATER_BUCKET));
+            assertSame(Fluids.WATER.getFluidType(), ledger.sourceAt(ALIAS_PHYSICAL));
+            data.tick(context);
+
+            menu.setCarried(living(Items.BUCKET));
+            GuiInteractionPacket.handle(packet(1 - selected, ALIAS_PHYSICAL, SCOOP, null), player);
+            assertNull(ledger.sourceAt(ALIAS_PHYSICAL));
+            assertTrue(menu.getCarried().is(Items.WATER_BUCKET));
+            assertEquals(1, menu.getCarried().getCount());
+            assertTrue(LivingItemManager.isLivingItem(menu.getCarried()));
+        }
+        assertEquals(2, access.requests.size());
+        Slot pouredAt = menu.getSlot(selected);
+        Slot scoopedAt = menu.getSlot(1 - selected);
+        portal.verify(() -> PortalInteractHandlers.afterInteraction(player, pouredAt));
+        portal.verify(() -> PortalInteractHandlers.afterInteraction(player, scoopedAt));
+        portal.verifyNoMoreInteractions();
+        assertEquals(2, menu.broadcasts);
+        verifyNoInteractions(handler);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "0, true, DENY", "1, true, DENY", "0, true, UNKNOWN", "1, true, UNKNOWN",
+        "0, false, DENY", "1, false, DENY", "0, false, UNKNOWN", "1, false, UNKNOWN"
+    })
+    void realBucketPackets_deniedOrUnknownPreserveBucketAndSourceWithoutMaintenance(
+            int selected, boolean pour, MenuActionAccess.Decision decision) {
+        HandlerContext context = useHandlerAliases();
+        ExactAccess access = registerBucketAccess(context, decision);
+        assertBucketPacketRejected(context, selected, pour);
+        assertEquals(1, access.requests.size());
+        assertSame(menu.getSlot(selected), access.requests.getFirst().target());
+    }
+
+    @ParameterizedTest
+    @CsvSource({"0, true", "1, true", "0, false", "1, false"})
+    void realBucketPackets_withoutAdapterPreserveBucketAndSource(int selected, boolean pour) {
+        HandlerContext context = useHandlerAliases();
+        registerBucketActions();
+        assertBucketPacketRejected(context, selected, pour);
+    }
+
     @Test
     void unknownHandler_rejectsWithoutMaintenance() {
         assertRejected(packet(0, PHYSICAL, "unregistered_dispatch_action", null));
@@ -177,7 +377,9 @@ class GuiInteractionDispatchTest {
 
     @Test
     void itemAction_rejectsDifferentLivingItemDeclaredByRule() {
-        InteractionRegistry.register(new InteractionEntry(Items.STONE_BUTTON, null, 1, ACTION));
+        InteractionEntry entry = new InteractionEntry(Items.STONE_BUTTON, null, 1, ACTION);
+        addedEntries.add(entry);
+        InteractionRegistry.register(entry);
         assertRejected(packet(0, PHYSICAL, ACTION, null));
     }
 
@@ -224,7 +426,7 @@ class GuiInteractionDispatchTest {
         when(context.isValidSlot(3)).thenReturn(true);
         InteractionAction.Scope scope = new InteractionAction.Scope(context, Set.of(2, 3));
         AtomicReference<MenuActionAccess.Request> checked = new AtomicReference<>();
-        MenuActionAccess.register(new MenuActionAccess.Resolver() {
+        registerResolver(new MenuActionAccess.Resolver() {
             @Override public boolean supports(AbstractContainerMenu candidate) { return candidate == menu; }
             @Override public MenuActionAccess.Decision check(MenuActionAccess.Request request) {
                 checked.set(request);
@@ -377,6 +579,72 @@ class GuiInteractionDispatchTest {
         portal.verifyNoInteractions();
     }
 
+    private HandlerContext useHandlerAliases() {
+        HandlerContext context = new HandlerContext();
+        menu = new FakeMenu(17);
+        menu.attach(new SlotItemHandler(context.storage, ALIAS_PHYSICAL, 0, 0));
+        menu.attach(new SlotItemHandler(context.storage, ALIAS_PHYSICAL, 18, 0));
+        player.containerMenu = menu;
+        when(player.level()).thenReturn(context.level);
+        menu.setCarried(original);
+        menu.carriedWrites = 0;
+        return context;
+    }
+
+    private MockedStatic<ContainerContexts> resolveAliases(HandlerContext context) {
+        MockedStatic<ContainerContexts> contexts = mockStatic(ContainerContexts.class);
+        for (Slot alias : menu.slots) {
+            contexts.when(() -> ContainerContexts.resolve(player, alias)).thenReturn(context);
+        }
+        return contexts;
+    }
+
+    private void registerBucketActions() {
+        InteractionRegistry.registerHandler(POUR, LivingBucketInteractHandlers.POUR_ACTION);
+        InteractionRegistry.registerHandler(SCOOP, LivingBucketInteractHandlers.SCOOP_ACTION);
+    }
+
+    private ExactAccess registerBucketAccess(HandlerContext context, MenuActionAccess.Decision decision) {
+        registerBucketActions();
+        ExactAccess access = new ExactAccess(menu, context, decision);
+        registerResolver(access);
+        return access;
+    }
+
+    private void assertBucketPacketRejected(HandlerContext context, int selected, boolean pour) {
+        ContainerFluidData data = ContainerFluidData.getOrCreate(context);
+        FluidSourceLedger ledger = data;
+        if (!pour) {
+            data.registerGeneratedSource(ALIAS_PHYSICAL, Fluids.WATER.getFluidType());
+            data.tick(context);
+            assertSame(Fluids.WATER.getFluidType(), data.sourceFluid(ALIAS_PHYSICAL));
+        }
+        ItemStack bucket = living(pour ? Items.WATER_BUCKET : Items.BUCKET);
+        menu.setCarried(bucket);
+        menu.carriedWrites = 0;
+        ItemStack before = bucket.copy();
+        Map<Integer, net.neoforged.neoforge.fluids.FluidType> beforeSources =
+            new HashMap<>(data.getGeneratedSources());
+        Map<Integer, ContainerFluidData.FlowEntry> beforeFlows = new HashMap<>(data.getFlows());
+        Slot selectedTarget = menu.getSlot(selected);
+
+        try (MockedStatic<ContainerContexts> contexts = resolveAliases(context)) {
+            GuiInteractionPacket.handle(packet(selected, ALIAS_PHYSICAL, pour ? POUR : SCOOP, null), player);
+        }
+        assertSame(bucket, menu.getCarried());
+        assertTrue(ItemStack.isSameItemSameComponents(before, bucket));
+        assertEquals(before.getCount(), bucket.getCount());
+        assertEquals(beforeSources, data.getGeneratedSources());
+        assertEquals(beforeFlows, data.getFlows());
+        assertSame(pour ? null : Fluids.WATER.getFluidType(), ledger.sourceAt(ALIAS_PHYSICAL));
+        assertTrue(context.storage.getStackInSlot(ALIAS_PHYSICAL).isEmpty());
+        assertTrue(selectedTarget.getItem().isEmpty());
+        assertEquals(0, menu.carriedWrites);
+        assertEquals(0, menu.broadcasts);
+        portal.verifyNoInteractions();
+        verifyNoInteractions(handler);
+    }
+
     private GuiInteractionPacket packet(int index, int physical, String action, CompoundTag tag) {
         return new GuiInteractionPacket(index, physical, action, tag, menu.containerId);
     }
@@ -391,11 +659,16 @@ class GuiInteractionDispatchTest {
         assertEquals(0, menu.broadcasts);
     }
 
+    private void registerResolver(MenuActionAccess.Resolver resolver) {
+        addedResolvers.add(resolver);
+        MenuActionAccess.register(resolver);
+    }
+
     private MenuActionAccess.Resolver registerAccess(MenuActionAccess.Decision decision) {
         MenuActionAccess.Resolver resolver = mock(MenuActionAccess.Resolver.class);
         when(resolver.supports(player.containerMenu)).thenReturn(true);
         when(resolver.check(isA(MenuActionAccess.Request.class))).thenReturn(decision);
-        MenuActionAccess.register(resolver);
+        registerResolver(resolver);
         return resolver;
     }
 
@@ -414,7 +687,11 @@ class GuiInteractionDispatchTest {
     }
 
     private static ItemStack living() {
-        ItemStack stack = new ItemStack(Items.LEVER);
+        return living(Items.LEVER);
+    }
+
+    private static ItemStack living(Item item) {
+        ItemStack stack = new ItemStack(item);
         LivingItemManager.setLiving(stack, true);
         return stack;
     }
@@ -433,10 +710,64 @@ class GuiInteractionDispatchTest {
         return (List<MenuActionAccess.Resolver>) field.get(null);
     }
 
-    private static void clear(Class<?> type) throws Exception {
-        Method method = type.getDeclaredMethod("clearForTest");
-        method.setAccessible(true);
-        method.invoke(null);
+    @SuppressWarnings("unchecked")
+    private static List<InteractionEntry> registeredEntries() throws Exception {
+        Field field = InteractionRegistry.class.getDeclaredField("ENTRIES");
+        field.setAccessible(true);
+        return (List<InteractionEntry>) field.get(null);
+    }
+
+    /** 我方存储与容器数据夹具；显示别名共享 handler 和同一真实流体数据。 */
+    private static final class HandlerContext extends FakeContainerContext implements TickableContainerContext {
+        final ItemStackHandler storage = new ItemStackHandler(9);
+        final ServerLevel level = mock(ServerLevel.class);
+        private final ContainerDataStore data = new ContainerDataStore();
+
+        HandlerContext() {
+            super(9, 3, "dispatch_alias_" + UUID.randomUUID());
+            when(level.dimension()).thenReturn(Level.OVERWORLD);
+        }
+
+        @Override public Level getLevel() { return level; }
+        @Override public ItemStack getItem(int logical) {
+            return isValidSlot(logical) ? storage.getStackInSlot(toPhysicalSlot(logical)) : ItemStack.EMPTY;
+        }
+        @Override public void setItem(int logical, ItemStack stack) {
+            storage.setStackInSlot(toPhysicalSlot(logical), stack);
+        }
+        @Override public <T> T peekContainerData(ContainerDataKey<T> key) { return data.peek(key); }
+        @Override public <T> T getOrCreateContainerData(ContainerDataKey<T> key) { return data.getOrCreate(key); }
+        @Override public void setTickContext(TickContext tick) {}
+        @Override public void flushDirtySlots() {}
+        @Override public List<BlockEntity> getAssociatedBlockEntities() { return List.of(); }
+        @Override public Inventory getInventory() { return null; }
+    }
+
+    /** 我方访问接口仅认领菜单实例；只读核验精确 target、宿主与单槽范围。 */
+    private static final class ExactAccess implements MenuActionAccess.Resolver {
+        final List<MenuActionAccess.Request> requests = new ArrayList<>();
+        private final AbstractContainerMenu menu;
+        private final ContainerContext context;
+        private final MenuActionAccess.Decision decision;
+
+        ExactAccess(AbstractContainerMenu menu, ContainerContext context, MenuActionAccess.Decision decision) {
+            this.menu = menu;
+            this.context = context;
+            this.decision = decision;
+        }
+
+        @Override public boolean supports(AbstractContainerMenu candidate) { return candidate == menu; }
+        @Override public MenuActionAccess.Decision check(MenuActionAccess.Request request) {
+            assertSame(menu, request.menu());
+            assertSame(context, request.context());
+            assertSame(menu.getSlot(request.target().index), request.target());
+            assertEquals(InteractionAction.Kind.CONTAINER_STATE, request.kind());
+            assertEquals(Set.of(ALIAS_PHYSICAL), request.logicalSlots());
+            assertEquals(ALIAS_PHYSICAL, request.target().getContainerSlot());
+            assertSame(request.target(), MenuActionAccess.scopeSlot(request, ALIAS_PHYSICAL));
+            requests.add(request);
+            return decision;
+        }
     }
 
     private static class FakeMenu extends AbstractContainerMenu {
