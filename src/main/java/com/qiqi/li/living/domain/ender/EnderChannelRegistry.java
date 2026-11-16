@@ -18,7 +18,7 @@ import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.api.RouteRegistrar;
 import com.qiqi.li.living.transfer.FilterData;
-import com.qiqi.li.living.components.ItemFilterComponent;
+import com.qiqi.li.living.transfer.internal.ItemFilterComponent;
 import com.qiqi.li.living.container.ContainerContext;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;

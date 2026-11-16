@@ -1,6 +1,6 @@
 package com.qiqi.li.living.domain.hopper;
 
-import com.qiqi.li.living.components.ItemFilterComponent;
+import com.qiqi.li.living.transfer.internal.ItemFilterComponent;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.model.GridDirections;

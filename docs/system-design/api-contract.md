@@ -67,22 +67,23 @@ javadoc 明写「新增 LivingItemFunction 必须回来手添」⇒ **第三方�
 #### 包级边界口径（2026-09-28 定）：默认内部，例外对外
 
 **对外包只有 5 个**：`living/api`、`living/container`、`living/transfer`、`living/model`、
-`living/interaction`（各带 package-info 契约）；**其余一切包默认内部**，
-第三方不得依赖。新类落内部包是例行公事、零负担；**新类要进对外包才是需要
-拍板的决策**（写 javadoc、按契约审查）。
+`living/interaction`（各带 package-info 契约）；**仅指这些精确包名，不自动包含子包**。
+`living/transfer/internal` 等其余包默认内部，第三方不得依赖；内部类的 Java `public`
+可见性仅供本模组跨包调用，不构成对外承诺。**新类要进对外包才是需要拍板的决策**
+（写 javadoc、按契约审查）。
 
 > 为什么不逐类标 `@ApiStatus.Internal`：曾批量标注 211 个内部类型后撤销 ——
 > 包结构已画线，逐类标注是同一信息的第二份清单（必然漂移）。先例支持：
 > Create（2539 文件仅 11 处标注）、AnvilCraft（2539 文件仅 4 处）均靠包结构
-> 表达边界。兜底是 doc_check 第 9 项按**包路径**机械校验对外文档（不依赖标注）。
+> 表达边界。`doc_check` 第 9 项只检查方法引用存在性，不校验公开包边界；包说明与本节仍须人工对照。
 
-第三方今天可以走这些口，全部 public：
+下表盘点现有注册入口；Java `public` 不等于对外 API，第三方使用范围以上述包级边界为准：
 
 | 扩展点 | 位置 | 状态 |
 |---|---|---|
 | `LivingItemManager.registerFunction` | `LivingItemManager.java` | ✅ 可用 |
-| **数据组件注册** `LivingComponents.*` | `components/LivingComponents.java`（A1 迁入 2026-09-28；**2026-10-08 ③ 从 transfer 迁出**） | ✅ 可用 —— 内容组件的常量与注册站；`LivingItemManager` 自此为纯框架类，不再牵出 domain 类型 |
-| `InteractionRegistry.register` / `registerHandler` | `LivingItem.java` | ✅ 声明式规则 + 谓词收窄（活耕地案例已证明无需枚举物品类）；**规则数据已外置**（D2）：内置 `assets/living_item/interaction_rules.json`（13 条，兼格式示范）+ 玩家差异 `config/living_item/interaction_rules.json`，谓词 ID 化走 `InteractionPredicates`，配 `/livingitem interaction reload\|list` |
+| **框架数据组件注册** `LivingComponents.*` | `components/LivingComponents.java` | 内部注册站，不是第三方扩展入口；领域组件由各领域的 `XxxComponents` 注册 |
+| `InteractionRegistry.register` / `registerHandler` | `interaction/InteractionRegistry.java` | 可用；Java 注册动作与 JSON 规则重载的边界见 [GUI交互 §5](gui-interaction-system.md#5-新增交互) |
 | `ContainerSnapshot.registerProvider` | `LivingItem.java` | ✅ 注册驱动，已解除 container 包对 domain 类的依赖 |
 | 可选接口 `HasDirection` / `HasContainerData` | `living/api/` | ✅ 新增活物品无需改核心文件 |
 | 可选接口 `RouteRegistrar`（标记） | `living/api/` | ✅（2026-11-01）实现者的槽位可作跨容器路由注册方（当前活漏斗）；路由表按能力自查注册方是否离场，不 import 注册方域 |

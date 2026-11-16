@@ -14,7 +14,7 @@ import com.qiqi.li.living.transfer.SlotAccessorFactory;
 import com.qiqi.li.living.transfer.SlotInteractions;
 import com.qiqi.li.living.transfer.TransferTargetPolicies;
 import com.qiqi.li.living.transfer.TransferTargetPolicy;
-import com.qiqi.li.living.components.ItemFilterComponent;
+import com.qiqi.li.living.transfer.internal.ItemFilterComponent;
 import com.qiqi.li.living.model.ResolvedSlots;
 
 /**

@@ -2,7 +2,7 @@ package com.qiqi.li.living.transfer;
 
 import net.minecraft.world.item.ItemStack;
 import com.qiqi.li.living.transfer.FilterData;
-import com.qiqi.li.living.components.ItemFilterComponent;
+import com.qiqi.li.living.transfer.internal.ItemFilterComponent;
 
 /**
  * 带过滤的槽位访问装饰器。

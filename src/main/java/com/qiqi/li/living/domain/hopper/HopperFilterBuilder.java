@@ -8,7 +8,7 @@ import java.util.Set;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.item.ItemStack;
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.components.ItemFilterComponent;
+import com.qiqi.li.living.transfer.internal.ItemFilterComponent;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.transfer.FilterData;
 

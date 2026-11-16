@@ -1,6 +1,7 @@
 package com.qiqi.li.living.transfer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -8,16 +9,16 @@ import java.util.List;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
+import com.qiqi.li.living.transfer.internal.ItemFilterComponent;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
-/**
- * {@link FilteredSlotAccessor} 的接缝测试。
- *
- * <p>它是活漏斗黑白名单的唯一执行点：过滤必须发生在**下层调用之前**（插入）
- * 或**发现违规后立即回滚**（抽取），否则会从错误来源抽走物品。</p>
- */
+/** 共享过滤判定与槽位访问器回归。 */
 class FilteredSlotAccessorTest {
 
     /** 最小替身：记录调用次数，并按 SlotAccessor 契约修改传入栈。 */
@@ -99,6 +100,71 @@ class FilteredSlotAccessorTest {
     private static FilterData blacklist(String id) {
         return new FilterData(List.of(id), List.of(), List.of(), List.of(),
             List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+    }
+
+    @ParameterizedTest
+    @CsvSource({"1, 1", "2, 2", "3, 3", "4, 1", "64, 1", "1024, 1", "2147483647, 1"})
+    @DisplayName("堆叠模式：仅2为NBT、仅3为Tag，其余为ID")
+    void filterMode_usesExactStackCounts(int count, int expectedMode) {
+        assertEquals(expectedMode, ItemFilterComponent.normalizeMode(count), "count=" + count);
+    }
+
+    @Test
+    @DisplayName("同级ID黑白名单冲突：黑名单优先，实际栈与类型筛选一致")
+    void equalIdPriority_blacklistWins() {
+        FilterData filter = new FilterData(List.of("minecraft:diamond"), List.of("minecraft:diamond"),
+            List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        FakeAccessor delegate = new FakeAccessor();
+        delegate.slot = new ItemStack(Items.DIAMOND);
+
+        assertTrue(new FilteredSlotAccessor(delegate, filter).simulateExtract(1).isEmpty());
+        assertFalse(ItemFilterComponent.allowsItemType(filter, "minecraft:diamond"));
+        assertFalse(ItemFilterComponent.allows(filter, new ItemStack(Items.IRON_INGOT)),
+            "存在白名单时，不匹配的物品不能放行");
+        assertEquals(1, delegate.slot.getCount());
+    }
+
+    @Test
+    @DisplayName("NBT白名单高于ID黑名单；类型筛选不冒充实际栈匹配")
+    void compositeWhitelist_overridesIdBlacklistOnlyForMatchingStack() {
+        ItemStack named = new ItemStack(Items.DIAMOND);
+        named.set(DataComponents.CUSTOM_NAME, Component.literal("filtered"));
+        FilterData filter = new FilterData(List.of("minecraft:diamond"), List.of(), List.of(), List.of(),
+            List.of(), List.of(ItemFilterComponent.getCompositeKey(named)),
+            List.of(), List.of(), List.of(), List.of());
+        FakeAccessor delegate = new FakeAccessor();
+        delegate.slot = named.copy();
+
+        ItemStack result = new FilteredSlotAccessor(delegate, filter).simulateExtract(1);
+        assertTrue(ItemStack.isSameItemSameComponents(named, result));
+        assertFalse(ItemFilterComponent.allows(filter, new ItemStack(Items.DIAMOND)));
+        assertFalse(ItemFilterComponent.allowsItemType(filter, "minecraft:diamond"));
+        assertEquals(1, delegate.slot.getCount());
+    }
+
+    @Test
+    @DisplayName("同侧NBT条目遮蔽ID条目；只有指定组件变体放行")
+    void compositeWhitelist_shadowsBroadIdWhitelist() {
+        ItemStack named = new ItemStack(Items.DIAMOND);
+        named.set(DataComponents.CUSTOM_NAME, Component.literal("filtered"));
+        FilterData filter = new FilterData(List.of(), List.of("minecraft:diamond"), List.of(), List.of(),
+            List.of(), List.of(ItemFilterComponent.getCompositeKey(named)),
+            List.of(), List.of(), List.of(), List.of());
+
+        assertTrue(ItemFilterComponent.allows(filter, named));
+        assertFalse(ItemFilterComponent.allows(filter, new ItemStack(Items.DIAMOND)));
+        assertFalse(ItemFilterComponent.allowsItemType(filter, "minecraft:diamond"));
+    }
+
+    @Test
+    @DisplayName("同级NBT黑白名单冲突：黑名单优先")
+    void equalCompositePriority_blacklistWins() {
+        ItemStack item = new ItemStack(Items.DIAMOND);
+        String composite = ItemFilterComponent.getCompositeKey(item);
+        FilterData filter = new FilterData(List.of(), List.of(), List.of(), List.of(),
+            List.of(composite), List.of(composite), List.of(), List.of(), List.of(), List.of());
+
+        assertFalse(ItemFilterComponent.allows(filter, item));
     }
 
     @Test

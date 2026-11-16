@@ -1,4 +1,4 @@
-package com.qiqi.li.living.components;
+package com.qiqi.li.living.transfer.internal;
 
 import java.util.HashMap;
 import java.util.HashSet;

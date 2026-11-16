@@ -111,6 +111,10 @@ new InteractionEntry(Items.FLINT_AND_STEEL, Items.TNT, 1, "ignite_carried")
 1. 在 `interaction_rules.json` 中新增 `InteractionEntry` 条目（内置 `assets/living_item/` 或玩家 `config/living_item/`）
 2. 注册动作。普通物品状态用 `InteractionRegistry.registerHandler("actionId", new XxxHandler())`；容器状态须显式注册 `InteractionAction` 的语义及只读范围解析器。范围解析器不能写状态、扣光标或执行世界动作。
 
+**注册与重载边界**：Java 处理器须在规则加载前注册，JSON 只能引用已注册的动作，不能定义新行为。
+`InteractionRuleConfig.load()` 会整体替换规则条目，包括通过 Java `register` 添加的条目，但保留处理器；
+手工注册规则不具有跨重载保留保证。权限与动作范围约束仍以 §1.1 为准。
+
 无需修改任何 Mixin 代码。
 
 ### 5.1 ⚠️ 通配条目（trigger=null）的遮蔽坑（2026-09-13 实测踩坑）

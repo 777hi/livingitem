@@ -145,11 +145,11 @@
 | `TransferPipeline` | `domain/hopper/TransferPipeline.java` | 统一传输入口，合并容器内传输和跨容器传输逻辑 |
 | `ItemTransferComponent` | _(已合并入 TransferPipeline)_ | 核心传输引擎，冷却管理、前置检查、SlotAccessor 调度 |
 | `DirectionModeComponent` | _(已合并入 TransferPipeline)_ | 方向配置，WASD输入解析，槽位偏移管理 |
-| `ItemFilterComponent` | `components/ItemFilterComponent.java` | 物品黑白名单过滤，扫描邻居活漏斗自动构建规则 |
+| `ItemFilterComponent` | `transfer/internal/ItemFilterComponent.java` | 共享过滤判定、模式归一化与名单 Tooltip；不构建邻接过滤链 |
 | `CrossContainerTransfer` | `domain/hopper/CrossContainerTransfer.java` | 跨容器传输，GUI→世界方向转换，大箱子处理 |
 | `HopperFilterBuilder` | `domain/hopper/HopperFilterBuilder.java` | 活漏斗过滤链构建，从 ContainerSnapshot 提取的领域逻辑 |
 | `SlotResolver` | `transfer/SlotResolver.java` | 相对方向偏移→绝对槽位索引的数学计算 |
-| `ContainerSnapshot` | `container/ContainerSnapshot.java` | 容器级共享缓存，每 tick 预计算 sourceOf/targetOf 数组，过滤构建委托给 HopperFilterBuilder |
+| `ContainerSnapshot` | `container/ContainerSnapshot.java` | 注册式快照聚合；漏斗域通过 `HopperSnapshotProvider` 贡献方向与过滤数据 |
 | `SlotAccessor` | `transfer/SlotAccessor.java` | 槽位访问器接口，统一 extract/insert/rollback/sync 操作 |
 | `PlainSlotAccessor` | `transfer/PlainSlotAccessor.java` | 普通槽位访问器，直接读写 ContainerContext |
 | `LivingChestAccessor` | `domain/chest/LivingChestAccessor.java` | 活箱子访问器，通过 LivingChestFunction API 操作虚拟存储 |
@@ -167,15 +167,9 @@
 
 ### 2.1 LivingHopperFunction — 功能入口
 
-活漏斗的功能配置类，继承 `BaseLivingFunction`。负责注册组件、配置参数。
-
-**组件注册顺序**（按 tick 执行顺序）：
-```java
-// v8: 组件已合并入 TransferPipeline，注册顺序由 TransferPipeline 内部保证
-// 1. ItemFilterComponent — 扫描黑白名单（仍独立存在）
-// 2. DirectionModeComponent — 解析方向（已合并入 TransferPipeline）
-// 3. TransferPipeline — 统一传输入口
-```
+`LivingHopperFunction` 实现 `LivingItemFunction` 与 `RouteRegistrar`。过滤链构建由
+`HopperSnapshotProvider` 在快照重建时调用 `HopperFilterBuilder`；功能 tick 在通过红石与冷却检查后
+读取快照过滤数据，变化时写回独立组件，再调用 `TransferPipeline`。`ItemFilterComponent` 不参与 tick 调度。
 
 **关键配置**：
 | 参数 | 默认值 | 说明 |
@@ -320,7 +314,8 @@ TransferPipeline.execute(ctx, level, hostSlot, sourceSlot, targetSlot, ...)
 
 ### 2.4 ItemFilterComponent — 物品过滤
 
-通用组件，通过相邻活漏斗自动构建黑白名单过滤规则。任何活物品均可使用。
+跨领域共享的内部过滤实现：按 `FilterData` 判断货物是否通过过滤，提供模式归一化与名单 Tooltip。
+邻接关系与过滤链构建仍由漏斗域的 `HopperFilterBuilder` 负责。
 
 #### 2.4.1 过滤模式（基于堆叠数量）
 
@@ -328,24 +323,31 @@ TransferPipeline.execute(ctx, level, hostSlot, sourceSlot, targetSlot, ...)
 
 | 堆叠数量 | 过滤模式 | 比较级别 | 说明 |
 |---------|---------|---------|------|
-| 1 | ID 模式 | 仅物品ID | `minecraft:diamond_sword`，不区分NBT |
+| 1 或 ≥4 | ID 模式 | 仅物品ID | `minecraft:diamond_sword`，不区分NBT |
 | 2 | NBT 模式 | 物品 DataComponents | `diamond_sword@hashCode`，区分不同附魔/属性 |
-| 3+ | Tag 模式 | 物品标签 | `#minecraft:swords`，按标签类别过滤 |
+| 3 | Tag 模式 | 物品标签 | `#minecraft:swords`，按标签类别过滤 |
 
-**设计意图**：堆叠越多 → 过滤越宽泛（Tag涵盖最广），堆叠越少 → 过滤越精确（NBT最具体）。三种模式互斥，各收集各的级别数据，不混杂。
+**数量按精确值选模式，不是递增档位**：仅 2 对应 NBT、仅 3 对应 Tag，其余为 ID。
+判据为 `ItemFilterComponent.normalizeMode()`；回归入口为 `FilteredSlotAccessorTest`。
 
-**重要：模式由邻居决定**。活漏斗自身的堆叠数不决定自己的过滤模式，而是决定**别人扫描它时**的精度。扫描时读取邻居活漏斗的堆叠数来确定模式，而非自身堆叠数。这意味着同一个活漏斗被不同堆叠数的邻居扫描时，会以不同精度收集数据。
+**模式属于被读取的漏斗**：构建我的规则时读取邻居漏斗的堆叠数；沿链继续穿透时，
+每段改用该段漏斗自身的堆叠数，而不是沿用最初调用者的模式。
 
 #### 2.4.2 过滤规则构建
 
-过滤规则由 `HopperFilterBuilder.buildForSlot()` 方法在每 tick 的 `capture()` 阶段统一预计算（由 `ContainerSnapshot` 委托调用），直接读取预计算的 `sourceOf`/`targetOf` 数组，无需重复扫描容器或调用 `SlotResolver`。计算结果由 `LivingHopperFunction.tick()` 与物品上的 `LIVING_HOPPER_FILTER` 组件比对，**仅在规则变化时**回写并 `syncSlotToClients`（稳态零写入；漏斗搬去新容器后旧规则过期，下一 tick 用重建结果自愈），利用 Minecraft 内置的 DataComponent 同步机制推送到客户端，确保 tooltip 在任何场景下都能显示。
+快照重建时，`ContainerSnapshot.capture()` 调用已注册的 `HopperSnapshotProvider`；贡献者解析
+`sourceOf`/`targetOf`，再调用 `HopperFilterBuilder.buildAll()` 构建过滤链。容器基础设施不直接依赖漏斗域。
+
+`LivingHopperFunction.tick()` **通过红石禁用与冷却检查后**读取快照过滤数据，与物品上的
+`LIVING_HOPPER_FILTER` 比对；变化时才写回并 `syncSlotToClients`，供 Tooltip 读取。
+冷却中或被红石禁用时会跳过该槽后续处理，不保证物品上的展示数据在下一 tick 立即更新。
 
 > **存储位置沿革**：过滤规则原先存放在 `LivingHopperData.filter` 字段内、每 tick 无条件回写；
 > 「tooltip优化，nbt数据简化」（b064865）删除了回写但 tooltip 仍读旧字段 → 黑白名单显示
 > 永远为空（2026-09-14 修复）。现迁至**独立组件** `LIVING_HOPPER_FILTER`（变化时回写），
 > 并加入 `getIgnoredComponentTypes()`——过滤链是容器环境的派生数据（同一容器里两个漏斗的
-> 规则必然不同），不忽略会破坏漏斗堆叠。`LivingHopperData.filter` 降级为遗留兼容字段
-> （仅为旧存档反序列化保留，逻辑不读取）。回归测试 `HopperFilterSyncTest`（5 项）。
+> 规则必然不同），不忽略会破坏漏斗堆叠。`LivingHopperData.filter` 已删除，不保留旧存档兼容字段。
+> 回归测试：`HopperFilterSyncTest`。
 >
 > **新鲜度**：快照按容器修订计数跨 tick 缓存，物品内容（签名）或组件（显式 bump）一变
 > 即失效重建，过滤链随之更新——机制详见
@@ -634,12 +636,12 @@ Tick 3: 漏斗3 继承漏斗2(上一tick的状态) → 黑名单=[ID(钻石)]
 
 **ItemFilterComponent 中的判定方法**：
 - `allows(FilterData, ItemStack)` — 静态方法，统一优先级判定，判断物品是否允许通过
-- `allowsItemType(ComponentState, String)` — 静态方法，仅基于ID的优先级判定（无NBT匹配能力）
+- `allowsItemType(FilterData, String)` — 仅持有物品 ID 时的候选筛选，支持 ID / Tag 与 NBT 条目遮蔽，不做实际栈的 NBT 匹配
 - `calcMatchPriority()` — 计算单侧（白/黑）匹配的最高优先级
 - `hasNbtEntriesForId()` — 检测NBT级条目是否遮蔽ID级条目
 - `matchesAnyTag()` — Tag级匹配检查
 - `appendFilterTooltip()` — 显示过滤模式和名单内容，使用 `appendFilterEntries()` 辅助方法减少黑白名单重复渲染
-- `normalizeMode()` — 根据堆叠数量确定过滤模式（1=ID, 2=NBT, 3+=Tag）
+- `normalizeMode()` — 根据堆叠数量确定过滤模式，精确值规则见 §2.4.1
 - `getCompositeKey()` — 计算物品的 NBT 复合键（itemId@componentHashCode）
 - `collectItemTags()` — 收集物品的所有标签
 
@@ -1103,64 +1105,8 @@ GUI右(RIGHT) → 世界西(WEST)   → 旋转后
 
 ### 7.2 过滤规则构建（ContainerSnapshot 预计算 + DataComponent 写回）
 
-过滤规则构建逻辑位于 `HopperFilterBuilder.buildForSlot()`，作为容器级预计算的一部分（由 `ContainerSnapshot` 委托调用）。
-
-**核心原则：计算归容器，展示归物品**。`FilterData` 是衍生数据（由邻居活漏斗的配置和物品推导），其**计算**归容器（`ContainerSnapshot` 统一预计算），但**展示**借物品的 DataComponent 通道同步到客户端。这样既保留了容器级预计算的性能优势，又确保 tooltip 在任何场景下（光标上、地上、聊天框）都能正常显示。
-
-**构建流程**（在 `ContainerSnapshot.capture()` 中一次性完成）：
-
-```java
-// ContainerSnapshot.capture() 中：
-// 1. 预计算 sourceOf/targetOf 数组（活漏斗连接图）
-// 2. 预计算 filterOf 数组（每个活漏斗的过滤规则）
-FilterData[] filterOf = buildAllFilters(ctx, containerSize, sourceOf, targetOf);
-
-// buildAllFilters() 遍历所有活漏斗槽位，为每个活漏斗构建过滤规则
-for (int slot = 0; slot < containerSize; slot++) {
-    if (sourceOf[slot] == -1 && targetOf[slot] == -1) {
-        // 非活漏斗直接跳过；活漏斗即使 source/target 都越界（角落位置），
-        // 仍需构建 filter，因为其他漏斗可能连接到它
-        if (!LivingHopperFunction.isLivingHopper(ctx.getItem(slot))) continue;
-    }
-    filterOf[slot] = buildFilterForSlot(slot, ctx, containerSize, sourceOf, targetOf);
-}
-
-// buildFilterForSlot() 与旧版 buildFilterChain() 逻辑相同
-// 但作为容器级预计算，每 tick 只执行一次
-for (容器中每个槽位) {
-    if (槽位 == 我的槽位) continue;
-
-    int neighborSourceSlot = sourceOf[i];
-    int neighborTargetSlot = targetOf[i];
-
-    // 非活漏斗槽位直接跳过（无需 isLivingHopper 判断）
-    if (neighborSourceSlot == -1 && neighborTargetSlot == -1) continue;
-
-    // 读取邻居堆叠数确定过滤模式（无需 getHopperData/SlotResolver.resolve）
-    int mode = ItemFilterComponent.normalizeMode(neighborStack.getCount());
-    if (邻居的 targetSlot == 我的槽位) {
-        // 邻居向我传输 → 邻居的 source 物品 = 我的黑名单
-        if (mode == MODE_TAG) {
-            blTags.addAll(物品标签)
-        } else if (mode == MODE_COMPONENT) {
-            blComp.add(compositeKey)
-        } else {
-            blacklist.add(邻居source槽位的物品ID)
-        }
-    }
-
-    if (邻居的 sourceSlot == 我的槽位) {
-        // 邻居从我取物 → 邻居的 target 物品 = 我的白名单
-        if (mode == MODE_TAG) {
-            wlTags.addAll(物品标签)
-        } else if (mode == MODE_COMPONENT) {
-            wlComp.add(compositeKey)
-        } else {
-            whitelist.add(邻居target槽位的物品ID)
-        }
-    }
-}
-```
+过滤链在容器快照重建时由漏斗域贡献，展示借物品的独立同步组件；调用边界与回写时机见 §2.4.2。
+源、目标均越界的活漏斗仍参与过滤构建：其它漏斗可能连接到它，不能只按它自身的方向槽有效性排除。
 
 ### 7.3 优先级判定
 

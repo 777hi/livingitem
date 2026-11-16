@@ -251,7 +251,7 @@ public final class EnderRouteManager {
             ItemStack sourceStack = neighborHandler.getStackInSlot(i);
             if (sourceStack.isEmpty()) continue;
             if (com.qiqi.li.living.api.LivingItemManager.isLivingItem(sourceStack)) continue;
-            if (filterData != null && !com.qiqi.li.living.components.ItemFilterComponent.allows(filterData, sourceStack)) continue;
+            if (filterData != null && !com.qiqi.li.living.transfer.internal.ItemFilterComponent.allows(filterData, sourceStack)) continue;
 
             String itemType = BuiltInRegistries.ITEM.getKey(sourceStack.getItem()).toString();
             EnderChannelEntry entry = new EnderChannelEntry(
