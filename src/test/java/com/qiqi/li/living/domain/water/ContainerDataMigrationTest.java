@@ -130,16 +130,18 @@ class ContainerDataMigrationTest {
     }
 
     @Test
-    @DisplayName("snapshot 是独立副本：改原件不影响快照（否则物品组件会被后续 tick 污染）")
-    void snapshot_isIndependent() {
+    @DisplayName("captureSources 是独立不可变快照：改/清原件不影响快照（物品组件零共享）")
+    void captureSources_isIndependent() {
         ContainerFluidData data = new ContainerFluidData();
         data.registerGeneratedSource(3, net.minecraft.world.level.material.Fluids.WATER.getFluidType());
 
-        ContainerFluidData snap = data.snapshot();
+        FluidSourcesSnapshot snap = data.captureSources();
         data.clearAll();
 
         assertEquals(0, data.getGeneratedSources().size(), "原件应已清空");
-        assertEquals(1, snap.getGeneratedSources().size(), "快照必须保持原值 —— 它已经交给物品了");
+        assertFalse(snap.isEmpty(), "快照必须保持原值 —— 它已经交给物品了");
+        // record 不可变 ⇒ 物品组件与 BE 运行时对象之间没有可变共享面
+        assertEquals(FluidSourcesSnapshot.CODEC, FluidSourcesSnapshot.CODEC);
     }
 
     @Test
@@ -187,14 +189,13 @@ class ContainerDataMigrationTest {
         data.registerGeneratedSource(3, net.minecraft.world.level.material.Fluids.WATER.getFluidType());
         BlockEntity be = beWithFluid(net.minecraft.world.level.block.entity.BlockEntityType.SHULKER_BOX, data);
 
-        // ⚠️ 用 mock 而非真 ItemStack：NeoForge 的数据组件校验要求组件值实现 equals/hashCode，
-        // 而 ContainerFluidData 是**可变对象**（`ItemStack.set` 会抛 IllegalArgumentException）。
-        // 生产环境该校验只在开发开关下启用 ⇒ 现在是「能跑但属于 UB」，已记 TODO。
-        ItemStack target = mock(ItemStack.class);
-        when(target.isEmpty()).thenReturn(false);
+        // 组件值是不可变 record（Q6）⇒ 真 ItemStack.set 可用（开发期校验放行 record），
+        // 直接覆盖「真实 set 不再抛 IllegalArgumentException」的原始回归。
+        ItemStack target = new ItemStack(Items.SHULKER_BOX);
 
-        assertTrue(ContainerDataMigration.moveOut(be, target), "潜影盒声明了 contentRetaining ⇒ 应搬");
-        verify(target).set(Mockito.eq(WaterComponents.CONTAINER_FLUID_DATA_ITEM.get()), Mockito.any());
+        assertTrue(ContainerDataMigration.moveOut(be, target));
+        assertFalse(target.get(WaterComponents.CONTAINER_FLUID_DATA_ITEM.get()).isEmpty(),
+            "组件必须真的写进了物品 —— 否则只是 mock 放行、回归不了原 bug");
         assertTrue(data.isEmpty(), "宿主必须就地清空 —— 否则另一半破坏时再搬一次 = 复制");
     }
 
@@ -230,35 +231,31 @@ class ContainerDataMigrationTest {
     // 这两条在单测里把「交出去」和「收回来」各跑一遍，看是哪个方向断了。
 
     @Test
-    @DisplayName("端到端：moveOut 把流体写进物品组件（不是空快照）")
+    @DisplayName("端到端：moveOut 把流体快照写进物品组件（不是空快照，真 ItemStack）")
     void roundTrip_moveOut_writesComponent() {
         ContainerFluidData data = new ContainerFluidData();
         data.registerGeneratedSource(3, net.minecraft.world.level.material.Fluids.WATER.getFluidType());
         BlockEntity be = beWithFluid(net.minecraft.world.level.block.entity.BlockEntityType.SHULKER_BOX, data);
 
-        ItemStack item = mock(ItemStack.class);
-        when(item.isEmpty()).thenReturn(false);
-
-        // ⚠️ 先记下期望值：moveOut 会 clearAll() 清空宿主（守恒要求），事后读 data 只剩空表
+        // 先记下期望值：moveOut 会 clearAll() 清空宿主（守恒要求），事后读 data 只剩空表
         var expectedKeys = java.util.Set.copyOf(data.getGeneratedSources().keySet());
 
+        ItemStack item = new ItemStack(Items.SHULKER_BOX);
         assertTrue(ContainerDataMigration.moveOut(be, item), "潜影盒 + 有数据 ⇒ 应搬");
 
-        org.mockito.ArgumentCaptor<ContainerFluidData> captor =
-            org.mockito.ArgumentCaptor.forClass(ContainerFluidData.class);
-        verify(item).set(Mockito.eq(WaterComponents.CONTAINER_FLUID_DATA_ITEM.get()), captor.capture());
-
-        ContainerFluidData carried = captor.getValue();
+        FluidSourcesSnapshot carried = item.get(WaterComponents.CONTAINER_FLUID_DATA_ITEM.get());
         assertNotNull(carried, "写进物品的不能是 null");
         assertFalse(carried.isEmpty(), "写进物品的不能是空快照 —— 否则放置时无数据可恢复");
-        assertEquals(expectedKeys, carried.getGeneratedSources().keySet(),
+        assertEquals(expectedKeys,
+            carried.sources().stream().map(FluidSourceEntry::slot).collect(java.util.stream.Collectors.toSet()),
             "物品上带走的源槽位必须与容器一致");
     }
 
     @Test
-    @DisplayName("端到端：moveIn 把物品组件写回新宿主（附件）")
-    void roundTrip_moveIn_writesAttachment() {        ContainerFluidData carried = new ContainerFluidData();
-        carried.registerGeneratedSource(3, net.minecraft.world.level.material.Fluids.WATER.getFluidType());
+    @DisplayName("端到端：moveIn 把物品快照写回新宿主（附件）")
+    void roundTrip_moveIn_writesAttachment() {
+        FluidSourcesSnapshot carried = new FluidSourcesSnapshot(List.of(
+            new FluidSourceEntry(3, "minecraft:water")));
 
         ItemStack source = mock(ItemStack.class);
         when(source.isEmpty()).thenReturn(false);

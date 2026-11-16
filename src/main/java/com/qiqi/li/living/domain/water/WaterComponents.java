@@ -65,12 +65,15 @@ public final class WaterComponents {
      * 破坏时由 {@code BlockDropsEvent} 把 BE 附件搬进掉落物组件，放置时由
      * {@code BlockEvent.EntityPlaceEvent} 搬回新 BE 附件。数据始终是「容器的」，只是跟着形态走。</p>
      *
-     * <p>复用 {@link ContainerFluidData#CODEC}（只序列化派生源；流动表每 tick 由 BFS 重算）。</p>
+     * <p>⚠️ 组件值 = <b>不可变</b> {@link FluidSourcesSnapshot} record（Q6）：只存派生源、
+     * 与运行时可变对象零共享（record 天然过开发期校验、按值判等）。落盘数据按口径
+     * 成对声明 persistent + networkSynchronized（同 {@link #LIVING_WATER_WHEEL_DATA}）。</p>
      */
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<ContainerFluidData>> CONTAINER_FLUID_DATA_ITEM =
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<FluidSourcesSnapshot>> CONTAINER_FLUID_DATA_ITEM =
         REG.register("container_fluid_data_item", () ->
-            DataComponentType.<ContainerFluidData>builder()
-                .persistent(ContainerFluidData.CODEC)
+            DataComponentType.<FluidSourcesSnapshot>builder()
+                .persistent(FluidSourcesSnapshot.CODEC)
+                .networkSynchronized(FluidSourcesSnapshot.STREAM_CODEC)
                 .build());
 
     private WaterComponents() {}

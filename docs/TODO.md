@@ -44,9 +44,11 @@
    - **剩余完成判据（真机 GUI 烟测）**：创造 INVENTORY 页活化/取消活化；其他标签页隐藏；小人框按钮优先于射线点击；空手拖动、缩放、重开；普通生存与创造打开普通箱子不回归；快速连点与等待中放槽/丢弃/关闭不重复结算；活箱子实际掉物并清空内容；强制退出不恢复未决旧光标。
    - 不为创造模式另写活化逻辑、不新增协议种类、不做所有标签页版本；实机未验收前不标全部完成。
 
-6. ⏳ **Q6 流体组件值不可变化** —— `CONTAINER_FLUID_DATA_ITEM` 当前存可变的 `ContainerFluidData`，违反组件值语义；实际只在 contentRetaining 且无容器 UUID 的兜底迁移路径写入，开发期组件校验会抛，生产主要影响值语义与未来可堆叠容器。
-   - 下一步：改成只保存派生源的不可变 snapshot record，维持现有 NBT list 形状；`moveOut` 写快照，`moveIn` 再还原成运行时对象。
-   - 完成判据：真实 `ItemStack.set` 不再触发开发期校验异常；值相等、CODEC 往返、破坏/放置/GUI 拖拽实测通过；不为旧存档引入迁移逻辑。
+6. ⏳ **Q6 流体组件值不可变化（代码已接线，待实机验收）** —— 原 `CONTAINER_FLUID_DATA_ITEM` 存可变的 `ContainerFluidData`（无 equals/hashCode），违反组件值语义：开发期 `ItemStack.set` 抛校验异常、生产侧引用判等使带组件物品不可堆叠；写入路径是 contentRetaining 容器无 UUID 时 `moveOut` 的**常态路径**（非旧存档兜底，见 3.3 ②）。
+   - 已接线（2026-11-16）：组件值改为不可变 record `FluidSourcesSnapshot`（与 `PhaseSnapshot` 同构），条目定义抽成共享 `FluidSourceEntry`（字段名 `slot`/`fluid` 不变 ⇒ NBT 形状零迁移）；组件按口径成对声明 persistent + networkSynchronized；`moveOut` 写 `captureSources()` 快照、`moveIn` 走 `fromSnapshot` 每次建全新运行时对象（创造多次放置互不污染）；`ContainerFluidData.snapshot()` 零调用已删。
+   - 自动回归入口：`FluidSourcesSnapshotTest`（真 set 不抛校验异常的直接回归 / 值判等 / 新旧 CODEC NBT 形状一致 + 历史字面 NBT 解析 / 往返 / 独立性 / 未知 id 丢弃 / 端到端守恒）+ `ContainerDataMigrationTest` 改造；关键守卫已做负向验证（字段名变异 ⇒ 形状守卫红；共享实例变异 ⇒ 独立性守卫红）。
+   - **剩余完成判据（真机）**：contentRetaining 三容器（潜影盒 / 精妙背包 / 无尽箱子）破坏→放置流体守恒；GUI 拖拽不复制不丢失；创造模式同物品连续放置互不串水。
+   - 不做：不为旧存档引入迁移逻辑；不改 BE/Player 附件（它们本就是可变运行时对象，校验只针对组件值）；不顺手修 3.3 末尾的 `getFlows()` 注释与实现不符（已单独记债）。
 
 > **暂缓区（不进当前队列）**：GameTest / 专用服务端与客户端启动烟测、落盘 version 字段与可选依赖上界、玩家上手说明与进度设计。它们属于 1.0 或产品拍板项，等 Q1~Q6 清完再按真实触发条件排期。
 
@@ -449,8 +451,8 @@
    `@EventBusSubscriber` 本就能被事件总线发现），但那要动 mod 入口组织、
    **只能真机验证** ⇒ 先记录。
 
-3.3 ⚠️ **`ContainerFluidData` 当数据组件值违反 NeoForge 约定**（2026-10-21 写单测时暴露；
-   2026-11-14 按代码复核，修正下面三处口径）——
+3.3 ✅ **`ContainerFluidData` 当数据组件值违反 NeoForge 约定**（2026-10-21 写单测时暴露；
+   2026-11-14 按代码复核，修正下面三处口径；**2026-11-16 Q6 已落地代码，实机待验**）——
    组件 `CONTAINER_FLUID_DATA_ITEM` 的值是可变的 `ContainerFluidData`（无 equals/hashCode），
    `ItemStack.set` 在 `CommonHooks.validateComponent` 下抛 `IllegalArgumentException`
    （`net/neoforged/neoforge/common/CommonHooks.java:1460-1485`）。开关是
@@ -468,7 +470,10 @@
    当前靠「`FlowEntry` 从不就地改」维持安全，无测试守住。
    修法方向（`architecture-evolution-roadmap.md` §1.2，已定）：不可变快照（与 `PhaseSnapshot`
    同构）或补齐值语义；`networkSynchronized` 成对声明或注明「仅服务端」；破坏/放置迁移 +
-   GUI 拖拽实测。⇒ **未开工**（方向已定，不是未定案）。
+   GUI 拖拽实测。⇒ **已落地**（2026-11-16：`FluidSourcesSnapshot` record + 成对声明 +
+   `captureSources`/`fromSnapshot`，自动回归见 `FluidSourcesSnapshotTest`；真机清单见队列 Q6）。
+   相邻债（本次不顺手修）：`getFlows()` 返回原始 `flows` 引用，而其附近注释声称「已返回只读视图」
+   ——注释与实现不符；改只读前需排查调用方是否依赖可变性，单独排期。
 
 3.4 🔮 **实体容器的列数校准入口没做**（2026-10-26 记）—— `/livingitem container register` 与
    `inspect` 都按**准心方块**解析，船 / 矿车 / 带箱驴骡无法校准。原版四类已有明确布局

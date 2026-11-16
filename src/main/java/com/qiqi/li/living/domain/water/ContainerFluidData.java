@@ -13,7 +13,6 @@ import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Set;
 import com.mojang.serialization.Codec;
-import com.mojang.serialization.codecs.RecordCodecBuilder;
 import com.qiqi.li.living.api.FluidPresence;
 import com.qiqi.li.living.api.FluidSourceLedger;
 import com.qiqi.li.living.api.LivingItemManager;
@@ -128,18 +127,19 @@ public class ContainerFluidData implements FluidPresence, FluidSourceLedger {
     }
 
     /**
-     * 只读**快照**（派生源的深拷贝）—— 把数据交给另一个载体时用。
+     * 抓取派生源的<b>不可变</b>快照（交给物品组件时用，Q6）。
      *
-     * <p>⚠️ 为什么不能直接传 this：`ItemStack#set(component, value)` 存的是<b>对象引用</b>，
-     * 而容器级流体数据是<b>可变</b>的（每 tick 重算 flows）。直接传 this 会让掉落物组件与
-     * BE 附件共享同一个对象 ⇒ 之后任何一次 tick 的改动都会漏进物品里
-     * （2026-10-19 审查发现）。</p>
+     * <p>返回 record，与运行时对象零共享 —— 物品侧组件值必须不可变
+     * （NeoForge 开发期校验 + 值判等），且 record 一旦生成就不再改写
+     * （同 {@code PhaseSnapshot} 语义）。</p>
      */
-    public ContainerFluidData snapshot() {
-        ContainerFluidData copy = new ContainerFluidData();
-        copy.generatedSources.putAll(generatedSources);
-        copy.flows.putAll(flows);
-        return copy;
+    public FluidSourcesSnapshot captureSources() {
+        return new FluidSourcesSnapshot(List.copyOf(toSources(this)));
+    }
+
+    /** 从物品快照还原全新运行时对象：每次调用各建一份（创造多次放置互不污染）。 */
+    public static ContainerFluidData fromSnapshot(FluidSourcesSnapshot snapshot) {
+        return fromSources(snapshot.sources());
     }
 
     /**
@@ -285,17 +285,9 @@ public class ContainerFluidData implements FluidPresence, FluidSourceLedger {
     // 只序列化「派生源」map（槽位 → 流体类型）；流动表每 tick 由 BFS 重算，落盘无正确性价值。
     // 桶源**不落盘** —— 桶在场时每 tick 由桶重新注册，落盘无意义且会造出幽灵源。
 
-    /** 序列化形态：一条派生源（槽位 + 流体类型注册 id）。 */
-    private record SourceEntry(int slot, String fluidId) {
-        static final Codec<SourceEntry> CODEC = RecordCodecBuilder.create(i -> i.group(
-            Codec.INT.fieldOf("slot").forGetter(SourceEntry::slot),
-            Codec.STRING.fieldOf("fluid").forGetter(SourceEntry::fluidId)
-        ).apply(i, SourceEntry::new));
-    }
-
-    /** 落盘 CODEC：只存 {@link #generatedSources}。重建后流动表为空，下一 tick 由 BFS 重算。 */
+    /** 序列化条目 = 共享的 {@link FluidSourceEntry}（槽位 + 流体 id；物品快照轨道同形）。 */
     public static final Codec<ContainerFluidData> CODEC =
-        SourceEntry.CODEC.listOf().xmap(ContainerFluidData::fromSources, ContainerFluidData::toSources);
+        FluidSourceEntry.CODEC.listOf().xmap(ContainerFluidData::fromSources, ContainerFluidData::toSources);
 
     /**
      * 按容器键索引的落盘 CODEC（B.5 第三项，2026-10-04）—— 玩家背包 / 末影箱用。
@@ -307,9 +299,9 @@ public class ContainerFluidData implements FluidPresence, FluidSourceLedger {
     public static final Codec<Map<String, ContainerFluidData>> KEYED_CODEC =
         Codec.unboundedMap(Codec.STRING, CODEC);
 
-    private static ContainerFluidData fromSources(List<SourceEntry> entries) {
+    private static ContainerFluidData fromSources(List<FluidSourceEntry> entries) {
         ContainerFluidData data = new ContainerFluidData();
-        for (SourceEntry e : entries) {
+        for (FluidSourceEntry e : entries) {
             FluidType fluid = resolveFluidType(e.fluidId());
             if (fluid != null) {
                 data.generatedSources.put(e.slot(), fluid);
@@ -323,11 +315,11 @@ public class ContainerFluidData implements FluidPresence, FluidSourceLedger {
         return data;
     }
 
-    private static List<SourceEntry> toSources(ContainerFluidData data) {
-        List<SourceEntry> out = new ArrayList<>();
+    private static List<FluidSourceEntry> toSources(ContainerFluidData data) {
+        List<FluidSourceEntry> out = new ArrayList<>();
         for (var en : data.generatedSources.entrySet()) {
             ResourceLocation rl = NeoForgeRegistries.FLUID_TYPES.getKey(en.getValue());
-            if (rl != null) out.add(new SourceEntry(en.getKey(), rl.toString()));
+            if (rl != null) out.add(new FluidSourceEntry(en.getKey(), rl.toString()));
         }
         return out;
     }

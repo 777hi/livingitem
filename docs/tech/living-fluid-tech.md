@@ -781,6 +781,7 @@ slot/level/fromSlot）→ 客户端 `FluidFlowClientCache` → `ContainerFluidOv
 | 无容器 UUID 的方块 / 实体容器 | `CONTAINER_FLUID_DATA` attachment（`.serialize(CODEC)`） | 只存 `generatedSources`（流动每 tick 重算，不落） |
 | 有容器 UUID 的方块 / 物品形态容器 | `ContainerDataSavedData`（按 UUID + `ContainerFluidData.KEY`） | 同上；持久层由 `ctx.persist` 选择 |
 | 玩家背包 / 末影箱 | **Player attachment** `CONTAINER_FLUID_DATA_PLAYER`（`KEYED_CODEC`，一个玩家两个容器键） | 同上 |
+| 物品形态过渡（contentRetaining 容器破坏⇄放置、无 UUID） | 物品组件 `CONTAINER_FLUID_DATA_ITEM`，值 = **不可变 record** `FluidSourcesSnapshot`（Q6；条目 `slot`/`fluid` 与附件 CODEC 同形 ⇒ 零迁移；persistent + networkSynchronized 成对声明） | 同上；`moveOut` 写 `captureSources()`、`moveIn` 走 `fromSnapshot` 每次建全新运行时对象（创造多次放置互不污染） |
 
 **玩家路径守卫**（2026-10-07，`PlayerFluidDataPersistenceTest` 4 项）：happy path 已由用户实测确认
 （背包 / 末影箱的源重进都在）；自动化钉的是**反方向** —— 数据变空 ⇒ map 条目被移除

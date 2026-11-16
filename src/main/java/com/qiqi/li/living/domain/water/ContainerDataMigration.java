@@ -155,9 +155,9 @@ public final class ContainerDataMigration {
             return false;
         }
 
-        // ① 交给物品的必须是**快照**：组件存的是对象引用，而 data 是可变对象（每 tick 重算 flows）
-        //    ⇒ 直接传 this 会让物品与 BE 附件共享同一对象，后续 tick 的改动漏进物品里。
-        target.set(WaterComponents.CONTAINER_FLUID_DATA_ITEM.get(), data.snapshot());
+        // 交给物品的必须是**不可变快照 record**（Q6）：与运行时可变对象零共享，
+        // 物品侧组件值不再随 BE tick 改动漏变（组件值语义，NeoForge 开发期校验也只放行 record）。
+        target.set(WaterComponents.CONTAINER_FLUID_DATA_ITEM.get(), data.captureSources());
 
         // ② 就地清空**对象本身**：大箱子两半在 tick 期间共享同一实例 ⇒ 一次清掉两半，
         //    不必按位置去找另一半（BlockDropsEvent 触发时方块可能已被移除 ⇒ 按方块状态找会漏）。
@@ -174,10 +174,11 @@ public final class ContainerDataMigration {
     }
 
     /**
-     * 反方向：把物品上的流体组件恢复进 {@code host} —— <b>放置路径与第三方交接路径共用</b>。
+     * 反方向：把物品上的流体快照恢复进 {@code host} —— <b>放置路径与第三方交接路径共用</b>。
      *
-     * <p>⚠️ 必须给**快照**而不是原对象：创造模式下放置不消耗物品，同一个 {@link ItemStack}
-     * 可以连续放置多次 ⇒ 多个 BE 会共享同一份可变数据（水在几个背包里同时出现）。</p>
+     * <p>⚠️ 组件值是不可变 record（Q6），但还原时仍必须 {@code fromSnapshot} 建全新运行时对象：
+     * 创造模式下放置不消耗物品，同一个 {@link ItemStack} 可以连续放置多次 ⇒
+     * 多个 BE 各持一份可变数据（直接共享 record 没问题，共享运行时对象会互相污染）。</p>
      *
      * <p>⚠️⚠️ <b>只写附件是无效的</b>（2026-10-21 真机日志定位）：容器级数据的**唯一真相源是内存表**
      * （{@code CONTAINER_DATA}，按 cacheKey），{@code ContainerFluidWriteback} 每 tick 用内存表里的
@@ -204,13 +205,13 @@ public final class ContainerDataMigration {
         }
 
         // ② 兜底：没有身份 ⇒ 搬组件里的数据快照（老存档）
-        ContainerFluidData fluid = source.get(WaterComponents.CONTAINER_FLUID_DATA_ITEM.get());
-        if (fluid == null || fluid.isEmpty()) {
+        FluidSourcesSnapshot snapshot = source.get(WaterComponents.CONTAINER_FLUID_DATA_ITEM.get());
+        if (snapshot == null || snapshot.isEmpty()) {
             ModLog.CONTAINER.info("[交接] moveIn 早退：物品上没有流体组件（item={}）", source.getItem());
             return;
         }
 
-        ContainerFluidData restored = fluid.snapshot();
+        ContainerFluidData restored = ContainerFluidData.fromSnapshot(snapshot);
 
         // ① 内存表：tick 路径的唯一数据源（writeback 每 tick 从这里写到附件）
         ContainerContext ctx = resolveContextOf(host);
