@@ -1,5 +1,6 @@
 package com.qiqi.li.network;
 
+import com.qiqi.li.LivingItem;
 import com.qiqi.li.living.interaction.InteractionAction;
 import com.qiqi.li.living.interaction.InteractionEntry;
 import com.qiqi.li.living.interaction.InteractionRegistry;
@@ -19,10 +20,16 @@ import com.qiqi.li.living.api.LivingItemManager;
 
 import javax.annotation.Nullable;
 
+import java.util.function.Consumer;
+
 /** 当前服务端菜单的精确交互请求；创造光标仅在授权后临时借入执行。 */
 public record GuiInteractionPacket(int slotIndex, int containerSlot, String actionId,
-                                   @Nullable CompoundTag carriedTag, int menuId)
+                                   @Nullable CompoundTag carriedTag, int menuId, long requestId)
         implements CustomPacketPayload {
+    public GuiInteractionPacket(int slotIndex, int containerSlot, String actionId,
+                                @Nullable CompoundTag carriedTag, int menuId) {
+        this(slotIndex, containerSlot, actionId, carriedTag, menuId, 0);
+    }
     public static final ResourceLocation ID = ResourceLocation.fromNamespaceAndPath("living_item", "gui_interaction");
     public static final Type<GuiInteractionPacket> TYPE = new Type<>(ID);
     public static final StreamCodec<FriendlyByteBuf, GuiInteractionPacket> STREAM_CODEC = StreamCodec.of(
@@ -35,6 +42,7 @@ public record GuiInteractionPacket(int slotIndex, int containerSlot, String acti
         buf.writeBoolean(pkt.carriedTag != null);
         if (pkt.carriedTag != null) buf.writeNbt(pkt.carriedTag);
         buf.writeVarInt(pkt.menuId);
+        buf.writeLong(pkt.requestId);
     }
 
     private static GuiInteractionPacket decode(FriendlyByteBuf buf) {
@@ -42,7 +50,7 @@ public record GuiInteractionPacket(int slotIndex, int containerSlot, String acti
         int physical = buf.readVarInt();
         String action = buf.readUtf();
         CompoundTag carried = buf.readBoolean() ? buf.readNbt() : null;
-        return new GuiInteractionPacket(slot, physical, action, carried, buf.readVarInt());
+        return new GuiInteractionPacket(slot, physical, action, carried, buf.readVarInt(), buf.readLong());
     }
 
     @Override
@@ -54,8 +62,24 @@ public record GuiInteractionPacket(int slotIndex, int containerSlot, String acti
         });
     }
 
-    /** 拒绝路径不覆盖光标、不维护容器状态；游戏线程与接缝测试使用同一入口。 */
+    /** 关联请求必回实际创造光标；未关联请求保持原有拒绝与同步路径。 */
     static void handle(GuiInteractionPacket packet, ServerPlayer player) {
+        Consumer<CarriedUpdatePacket> reply = response -> PacketDistributor.sendToPlayer(player, response);
+        if (packet.requestId() > 0) {
+            CompoundTag[] result = {packet.carriedTag() == null ? new CompoundTag() : packet.carriedTag().copy()};
+            try {
+                dispatch(packet, player, response -> result[0] = response.carriedTag());
+            } catch (Exception exception) {
+                LivingItem.LOGGER.error("服务端：创造光标交互异常，requestId={}", packet.requestId(), exception);
+            } finally {
+                reply.accept(new CarriedUpdatePacket(result[0], packet.menuId(), packet.requestId()));
+            }
+        } else {
+            dispatch(packet, player, reply);
+        }
+    }
+
+    private static void dispatch(GuiInteractionPacket packet, ServerPlayer player, Consumer<CarriedUpdatePacket> reply) {
         AbstractContainerMenu menu = player.containerMenu;
         if (menu == null || packet.menuId() != menu.containerId || !menu.stillValid(player)) return;
         Slot target = resolveSlot(menu, packet.slotIndex(), packet.containerSlot());
@@ -82,11 +106,26 @@ public record GuiInteractionPacket(int slotIndex, int containerSlot, String acti
             com.qiqi.li.living.domain.portal.PortalInteractHandlers.afterInteraction(player, target);
             if (virtualCarried) modified = menu.getCarried().copy();
         } finally {
-            if (virtualCarried) menu.setCarried(original);
+            if (virtualCarried) {
+                if (packet.requestId() > 0) {
+                    CompoundTag tag;
+                    try {
+                        tag = (CompoundTag) menu.getCarried().copy().saveOptional(player.registryAccess());
+                    } catch (Exception exception) {
+                        tag = new CompoundTag();
+                        LivingItem.LOGGER.error("服务端：创造交互结果编码失败", exception);
+                    } finally {
+                        menu.setCarried(original);
+                    }
+                    reply.accept(new CarriedUpdatePacket(tag, packet.menuId(), packet.requestId()));
+                } else {
+                    menu.setCarried(original);
+                }
+            }
         }
-        if (modified != null) {
+        if (modified != null && packet.requestId() == 0) {
             CompoundTag tag = (CompoundTag) modified.saveOptional(player.registryAccess());
-            PacketDistributor.sendToPlayer(player, new CarriedUpdatePacket(tag));
+            reply.accept(new CarriedUpdatePacket(tag));
         }
         menu.broadcastChanges();
     }

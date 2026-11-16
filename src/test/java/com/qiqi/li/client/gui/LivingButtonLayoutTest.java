@@ -52,6 +52,14 @@ class LivingButtonLayoutTest {
     }
 
     @Test
+    @DisplayName("创造 INVENTORY 页按钮位于小人框底居中，不沿用生存或通用容器坐标")
+    void creativeDefaultOffset() {
+        assertArrayEquals(new int[]{81, 41}, LivingButtonLayout.defaultOffset(false, true, 195, 136));
+        assertArrayEquals(new int[]{42, 70}, LivingButtonLayout.defaultOffset(true, false, 176, 166));
+        assertArrayEquals(new int[]{80, 72}, LivingButtonLayout.defaultOffset(false, false, 176, 166));
+    }
+
+    @Test
     @DisplayName("小人框矩形常量 = 原版 InventoryScreen.renderBg 写死实参 (26,8)-(75,78)（改动须对照原版源码）")
     void inventoryPreviewRect_matchesVanilla() {
         // 原版依据：InventoryScreen.renderBg → renderEntityInInventoryFollowsMouse(i+26, j+8, i+75, j+78, …)

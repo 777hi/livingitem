@@ -204,6 +204,11 @@ public class AbstractContainerScreenMixin extends Screen {
         LivingMapGroups.invalidate((AbstractContainerScreen<?>) (Object) this);
     }
 
+    @Inject(method = "onClose", at = @At("HEAD"), cancellable = true)
+    private void living_item$waitForCreativeActivation(CallbackInfo ci) {
+        if (com.qiqi.li.client.input.CreativeActivationRequests.pending((Screen) this)) ci.cancel();
+    }
+
     @Inject(method = "removed", at = @At("TAIL"))
     private void living_item$cleanupExpandedTextures(CallbackInfo ci) {
         LivingMapOverlay.releaseTextures();
@@ -232,28 +237,21 @@ public class AbstractContainerScreenMixin extends Screen {
             this.removeWidget(button);
         }
 
-        if ((Screen) this instanceof CreativeModeInventoryScreen) {
-            // 创造界面暂不启用（排除自 37bde65 / 2026-07-14，原因 2026-10-13 补考证）：
-            // 活化链路不通 —— LivingTagPacket 服务端读 containerMenu.getCarried()，而创造的
-            // carried 是客户端虚拟物品（服务端从不打开创造界面，拾取只走 SetCreativeModeSlotPacket
-            // 写槽位）⇒ 服务端视角恒空，点按钮必然静默无效。待活化链路定稿（carriedTag 往返 /
-            // 客户端活化）再启用；另需处理标签页维度（selectedTab 是 static，切页不重跑 init）。
-            // 详见 docs/system-design/gui-interaction-system.md §6.2。
-            this.living_item$previousLeftPos = this.leftPos;
-            this.living_item$previousTopPos = this.topPos;
-            return;
-        }
-
         if (this.menu.slots.size() > 9) {
             Slot invSlot = this.menu.slots.get(9);
-            // 位置：玩家拖动过则用保存的「相对 GUI 左上角」偏移；默认位按界面分流
-            // （生存背包 = 小人框底居中 (42,70)，其余 = 底部中央；按 Screen 类名 + GUI 尺寸分别存）
+            // 生存与创造背包均放小人框底，其余容器沿用底部中央。
             int[] def = com.qiqi.li.client.gui.LivingButtonLayout.defaultOffset(
-                (Screen) this instanceof InventoryScreen, this.imageWidth, this.imageHeight);
+                (Screen) this instanceof InventoryScreen, (Screen) this instanceof CreativeModeInventoryScreen,
+                this.imageWidth, this.imageHeight);
             int[] pos = com.qiqi.li.client.gui.LivingButtonLayout.resolve(
                 (Screen) this, this.imageWidth, this.imageHeight, def[0], def[1]);
-            this.addRenderableWidget(new LivingButton(
-                    this.leftPos + pos[0], this.topPos + pos[1], this.menu, invSlot));
+            LivingButton button = new LivingButton(
+                this.leftPos + pos[0], this.topPos + pos[1], this.menu);
+            if ((Screen) this instanceof CreativeModeInventoryScreen creative) {
+                button.visible = creative.isInventoryOpen();
+                button.active = button.visible && !com.qiqi.li.client.input.CreativeActivationRequests.pending(creative);
+            }
+            this.addRenderableWidget(button);
         }
 
         this.living_item$previousLeftPos = this.leftPos;

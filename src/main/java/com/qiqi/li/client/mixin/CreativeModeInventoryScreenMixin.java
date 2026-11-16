@@ -39,13 +39,68 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class CreativeModeInventoryScreenMixin extends EffectRenderingInventoryScreen<CreativeModeInventoryScreen.ItemPickerMenu> {
 
     @Shadow private static net.minecraft.world.item.CreativeModeTab selectedTab;
+    @org.spongepowered.asm.mixin.Unique
+    private com.qiqi.li.client.gui.LivingButton living_item$pressedButton;
 
     public CreativeModeInventoryScreenMixin(CreativeModeInventoryScreen.ItemPickerMenu menu, net.minecraft.world.entity.player.Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);
     }
 
+    @Inject(method = "init", at = @At("TAIL"))
+    private void living_item$positionButtonAfterInit(CallbackInfo ci) {
+        living_item$updateButton(true);
+    }
+
+    @Inject(method = "selectTab", at = @At("TAIL"))
+    private void living_item$updateButtonAfterTab(CreativeModeTab tab, CallbackInfo ci) {
+        living_item$updateButton(true);
+    }
+
+    @Inject(method = "containerTick", at = @At("TAIL"))
+    private void living_item$updateButtonAfterTick(CallbackInfo ci) {
+        living_item$updateButton(false);
+    }
+
+    @org.spongepowered.asm.mixin.Unique
+    private void living_item$updateButton(boolean reposition) {
+        CreativeModeInventoryScreen self = (CreativeModeInventoryScreen) (Object) this;
+        for (var child : this.children()) {
+            if (!(child instanceof com.qiqi.li.client.gui.LivingButton button)) continue;
+            button.visible = self.isInventoryOpen();
+            button.active = button.visible && !com.qiqi.li.client.input.CreativeActivationRequests.pending(self);
+            if (reposition) {
+                int[] def = com.qiqi.li.client.gui.LivingButtonLayout.defaultOffset(false, true, imageWidth, imageHeight);
+                int[] offset = com.qiqi.li.client.gui.LivingButtonLayout.resolve(self, imageWidth, imageHeight, def[0], def[1]);
+                int[] pos = com.qiqi.li.client.gui.LivingButtonLayout.clampToScreen(leftPos + offset[0], topPos + offset[1],
+                    width, height, button.getWidth(), button.getHeight());
+                button.setX(pos[0]);
+                button.setY(pos[1]);
+            }
+        }
+    }
+
     @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
     private void living_item$interceptMouseClicked(double mouseX, double mouseY, int button, CallbackInfoReturnable<Boolean> cir) {
+        if (com.qiqi.li.client.input.CreativeActivationRequests.pending((net.minecraft.client.gui.screens.Screen) this)) {
+            cir.setReturnValue(true);
+            return;
+        }
+        for (var child : this.children()) {
+            if (child instanceof com.qiqi.li.client.gui.LivingButton livingButton && livingButton.isMouseOver(mouseX, mouseY)) {
+                if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT || button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
+                    boolean emptyCarried = this.menu.getCarried().isEmpty();
+                    ((AbstractContainerScreenAccessor) this).living_item$setSkipNextRelease(!emptyCarried);
+                    if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && livingButton.mouseClicked(mouseX, mouseY, button)
+                            && emptyCarried) {
+                        living_item$pressedButton = livingButton;
+                        this.setFocused(livingButton);
+                        this.setDragging(true);
+                    }
+                    cir.setReturnValue(true);
+                    return;
+                }
+            }
+        }
         if (GuiInteractionHelper.tryInteract(this.hoveredSlot, button, false, this.menu)) {
             ((AbstractContainerScreenAccessor) this).living_item$setSkipNextRelease(true);
             cir.setReturnValue(true);
@@ -56,7 +111,10 @@ public abstract class CreativeModeInventoryScreenMixin extends EffectRenderingIn
         if (selectedTab.getType() == CreativeModeTab.Type.INVENTORY
             && (button == GLFW.GLFW_MOUSE_BUTTON_LEFT || button == GLFW.GLFW_MOUSE_BUTTON_RIGHT)
             && ToolRayTuningClicks.handle(mouseX, mouseY, button,
-                this.leftPos + 73, this.topPos + 6, this.leftPos + 105, this.topPos + 49,
+                com.qiqi.li.client.gui.LivingButtonLayout.CREATIVE_PREVIEW_X1 + this.leftPos,
+                com.qiqi.li.client.gui.LivingButtonLayout.CREATIVE_PREVIEW_Y1 + this.topPos,
+                com.qiqi.li.client.gui.LivingButtonLayout.CREATIVE_PREVIEW_X2 + this.leftPos,
+                com.qiqi.li.client.gui.LivingButtonLayout.CREATIVE_PREVIEW_Y2 + this.topPos,
                 this.menu.getCarried().isEmpty())) {
             ((AbstractContainerScreenAccessor) this).living_item$setSkipNextRelease(true);
             cir.setReturnValue(true);
@@ -66,6 +124,20 @@ public abstract class CreativeModeInventoryScreenMixin extends EffectRenderingIn
 
     @Inject(method = "mouseReleased", at = @At("HEAD"), cancellable = true)
     private void living_item$interceptMouseReleased(double mouseX, double mouseY, int button, CallbackInfoReturnable<Boolean> cir) {
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && living_item$pressedButton != null) {
+            living_item$pressedButton.mouseReleased(mouseX, mouseY, button);
+            living_item$pressedButton = null;
+            this.setDragging(false);
+            ((AbstractContainerScreenAccessor) this).living_item$setSkipNextRelease(false);
+            cir.setReturnValue(true);
+            return;
+        }
+        if (com.qiqi.li.client.input.CreativeActivationRequests.pending((net.minecraft.client.gui.screens.Screen) this)
+                || ((AbstractContainerScreenAccessor) this).living_item$getSkipNextRelease()) {
+            ((AbstractContainerScreenAccessor) this).living_item$setSkipNextRelease(false);
+            cir.setReturnValue(true);
+            return;
+        }
         if (GuiInteractionHelper.tryInteract(this.hoveredSlot, button, true, this.menu)) {
             cir.setReturnValue(true);
         }

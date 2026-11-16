@@ -35,9 +35,10 @@ src/test/java/com/qiqi/li/
 ├── testutil/
 │   └── FakeContainerContext.java              # ContainerContext 测试替身（内存数组实现）
 ├── client/gui/
+│   ├── CreativeActivationSessionTest.java      # 创造活化单请求/菜单与请求关联/同ID重开晚包拒绝/光标变化不覆盖/强制移除只丢未决预期栈
 │   ├── ContainerInfoSessionTest.java           # 菜单信息会话·初次查询/悬停限频重试/菜单与请求双关联/晚包拒绝/ID复用新会话/未请求不接收
 │   ├── ContainerInfoTooltipTest.java           # 容器提示·普通几何与末行/启发式普通警示/未知与非运行分开/高级来源和类型 ID
-│   └── LivingButtonLayoutTest.java            # 活按钮位置布局·应用位置时的屏幕夹取（屏内不动/越界夹边缘/屏幕小于按钮取 max(0,…)）+ 默认位分流（背包=小人框底居中 42,70 / 其余容器=底部中央）+ 小人框矩形常量对齐原版 (26,8)-(75,78)
+│   └── LivingButtonLayoutTest.java            # 活按钮位置布局·应用位置时的屏幕夹取（屏内不动/越界夹边缘/屏幕小于按钮取 max(0,…)）+ 默认位分流（生存=42,70 / 创造INVENTORY=81,41 / 其余容器=底部中央）+ 小人框矩形常量对齐原版 (26,8)-(75,78)
 ├── client/input/
 │   ├── FarmlandPlantHintTest.java             # 活耕地种植悬停提示·门槛与交互同源（非活种子/非活耕地/非耕地物品/不可种植/空栈→null）+ 四态文案键与参数（充足消耗数/创造免费/不足差额/已种植）
 │   ├── LivingChestDepositHelperTest.java       # Shift+左键收纳判定（批次 3，2026-11-01）·正例（左键+Shift+页签激活+书可见+普通物品）/ 空槽 / 槽内是活箱子（它是容器不是内容物）/ 页签未激活 / 书面板不可见 / 未按 Shift / 非左键 / null 槽位不抛。⚠️ GLFW 鼠标键 0 基（MOUSE_BUTTON_1==0），判据用常量不用数字
@@ -312,8 +313,9 @@ src/test/java/com/qiqi/li/
 │   ├── FailureThrottleTest.java               # tick 异常限频报告（2026-10-30，R-01）·同 key 窗口内只记一次其余计数 / 不同 key 各记一次 / 超窗口再报并重置计数 / key 上限 LRU 淘汰 / 汇总窗口推进
 │   └── PerItemLedgerTest.java                 # 均分记账内核（2026-11-02，power/sponge 两域共享）·floor 均分记账=写入×count（同源）/ 不足整步不写 / 容量防御截断 / 已满不动 / 退化输入 / 损耗 ≤ count−1（设计稿 §3.1；灯泡行为不变由 RoundTripConservationIT 全量回归守）
 └── network/
+    ├── LivingTagPacketTest.java                # 活按钮codec/精确菜单/非创造忽略候选/授权前零覆盖/创造临时光标finally清理/功能否决与异常实际结果/活箱子实体掉物及堆叠守恒
     ├── ContainerMenuInfoPacketTest.java         # 菜单信息载荷·全形态/来源codec/状态独立/request关联/服务端限频/错菜单拒绝/实际回包/退出清理/几何有效性
-    ├── GuiInteractionDispatchTest.java        # 真实分发当前菜单/精确双槽与显示别名/同号异库存/真实桶倒汲守恒与创造无限桶/访问拒绝零副作用/创造候选授权后借入与finally恢复
+    ├── GuiInteractionDispatchTest.java        # 真实分发当前菜单/精确双槽与显示别名/同号异库存/真实桶倒汲守恒与创造无限桶/访问拒绝零副作用/创造候选授权后借入与finally恢复/关联请求拒绝必回包及异常回实际结果
     ├── GuiInteractionPacketTest.java          # 所有动作精确双槽号/越界与inactive拒绝/不按物理号回退；物品动作仅非空活物品
     └── LivingItemSyncPacketTest.java          # 运行时同步包编解码往返（档 2 安全网）·三组字段往返/空数据/多槽混合/两种键形态/容器种类 kind 往返(背包·末影箱·世界·掉落物)/子记录哨兵/未登记 id 报错
     └── LivingItemRuntimeSyncTest.java         # （门控判定已迁 ContainerViewersTest）+ **物品形态容器按菜单锚点发包（真机 tooltip 不显示容器信息的回归）**

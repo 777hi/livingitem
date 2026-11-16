@@ -104,6 +104,21 @@ public final class LivingButtonLayout {
     public static final int INVENTORY_PREVIEW_Y1 = 8;
     public static final int INVENTORY_PREVIEW_X2 = 75;
     public static final int INVENTORY_PREVIEW_Y2 = 78;
+    public static final int CREATIVE_PREVIEW_X1 = 73;
+    public static final int CREATIVE_PREVIEW_Y1 = 6;
+    public static final int CREATIVE_PREVIEW_X2 = 105;
+    public static final int CREATIVE_PREVIEW_Y2 = 49;
+
+    public static int[] defaultOffset(boolean playerInventory, boolean creativeInventory,
+                                      int imageWidth, int imageHeight) {
+        if (creativeInventory) {
+            return new int[]{
+                CREATIVE_PREVIEW_X1 + (CREATIVE_PREVIEW_X2 - CREATIVE_PREVIEW_X1 - LivingButton.WIDTH) / 2,
+                CREATIVE_PREVIEW_Y2 - LivingButton.HEIGHT
+            };
+        }
+        return defaultOffset(playerInventory, imageWidth, imageHeight);
+    }
 
     /**
      * 按钮默认位（相对 GUI 左上角），按界面类型分流：

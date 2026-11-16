@@ -1,91 +1,151 @@
 package com.qiqi.li.network;
 
-import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.network.chat.Component;
-import net.minecraft.network.codec.StreamCodec;
-import net.neoforged.neoforge.network.handling.IPayloadContext;
+import java.util.function.Consumer;
+
+import javax.annotation.Nullable;
+
 import com.qiqi.li.LivingItem;
 import com.qiqi.li.living.api.LivingItemActivation;
 import com.qiqi.li.living.api.LivingItemManager;
 
-/**
- * 活物品标签切换网络包。
- *
- * 用途：客户端点击"活物品"按钮时，向服务端发送此包，
- * 切换玩家手中物品的 IS_LIVING 标记。
- *
- * 工作流程：
- * 1. 客户端：玩家在容器界面点击 LivingButton
- * 2. 客户端：发送 LivingTagPacket 到服务端
- * 3. 服务端：收到包后，获取玩家当前手持的物品（menu.getCarried()）
- * 4. 服务端：切换该物品的 IS_LIVING 标记（true ↔ false）
- * 5. 服务端：修改直接作用于 carried ItemStack 引用，自动同步到客户端
- *
- * 为什么不在客户端直接修改：
- *   物品数据在服务端是权威的，客户端的修改会被服务端覆盖。
- *   必须通过网络包让服务端执行修改，再由原版同步机制同步回客户端。
- */
-public record LivingTagPacket() implements CustomPacketPayload {
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.item.ItemStack;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
+
+/** 活按钮请求；创造模式候选仅在精确有效的玩家背包菜单中临时借入空光标。 */
+public record LivingTagPacket(int menuId, @Nullable CompoundTag carriedTag, long requestId)
+        implements CustomPacketPayload {
 
     public static final ResourceLocation ID = ResourceLocation.fromNamespaceAndPath("living_item", "living_tag");
     public static final CustomPacketPayload.Type<LivingTagPacket> TYPE = new CustomPacketPayload.Type<>(ID);
 
-    /** 无状态包的 StreamCodec —— 只有一个实例，不需要读写任何数据 */
-    public static final StreamCodec<FriendlyByteBuf, LivingTagPacket> STREAM_CODEC = StreamCodec.unit(new LivingTagPacket());
+    public LivingTagPacket() {
+        this(-1, null, 0);
+    }
+
+    public LivingTagPacket(int menuId, @Nullable CompoundTag carriedTag) {
+        this(menuId, carriedTag, 0);
+    }
+
+    public static final StreamCodec<FriendlyByteBuf, LivingTagPacket> STREAM_CODEC = StreamCodec.of(
+        (buf, packet) -> {
+            buf.writeVarInt(packet.menuId());
+            buf.writeBoolean(packet.carriedTag() != null);
+            if (packet.carriedTag() != null) buf.writeNbt(packet.carriedTag());
+            buf.writeLong(packet.requestId());
+        },
+        buf -> new LivingTagPacket(buf.readVarInt(), buf.readBoolean() ? buf.readNbt() : null, buf.readLong())
+    );
 
     @Override
     public Type<LivingTagPacket> type() {
         return TYPE;
     }
 
-    /**
-     * 服务端处理收到的标签切换包。
-     *
-     * 获取玩家当前手持的物品（carried），切换其 IS_LIVING 标记。
-     * carried 是玩家用鼠标拿起但尚未放入槽位的物品，
-     * 修改它会直接反映在玩家菜单中，由原版同步机制自动同步到客户端。
-     *
-     * @param packet 收到的包（无数据）
-     * @param context 网络上下文，包含玩家信息
-     */
     public static void handle(LivingTagPacket packet, IPayloadContext context) {
         context.enqueueWork(() -> {
             if (context.player() instanceof ServerPlayer player) {
-                ItemStack carriedItem = player.containerMenu.getCarried();
-
-                if (!carriedItem.isEmpty()) {
-                    boolean currentLiving = LivingItemManager.isLivingItem(carriedItem);
-                    boolean newLiving = !currentLiving;
-
-                    // ── D1：活化前过判定门面（途径 = 玩家点击活按钮）──
-                    var verdict = LivingItemActivation.evaluate(
-                        carriedItem, newLiving, LivingItemActivation.Via.PLAYER);
-                    if (verdict != LivingItemActivation.Result.ALLOW) {
-                        player.sendSystemMessage(Component.translatable(
-                            "livingitem.activation." + switch (verdict) {
-                                case DENY_UNCLAIMED -> "deny_unclaimed";
-                                case DENY_RULE -> "deny_rule";
-                                case ALLOW -> "";
-                            }));
-                        return;
-                    }
-
-                    // ── 活化执行：切换标记 + 派发时机钩子（各功能自声明挂什么）──
-                    LivingItemActivation.apply(carriedItem, player.level(), player,
-                        LivingItemActivation.Via.PLAYER, newLiving);
-
-                    LivingItem.LOGGER.info("服务端：将物品 {} 的 living 标签从 {} 切换为 {}",
-                            carriedItem.getItem().getName(carriedItem).getString(),
-                            currentLiving,
-                            newLiving);
-                } else {
-                    LivingItem.LOGGER.info("服务端：玩家没有拿着任何物品");
-                }
+                handle(packet, player, context::reply);
             }
         });
+    }
+
+    /** 非创造模式只操作真实光标；关联拒绝不修改真实光标，借入后的回包不回滚执行副作用。 */
+    static void handle(LivingTagPacket packet, ServerPlayer player, Consumer<CarriedUpdatePacket> reply) {
+        AbstractContainerMenu menu = player.containerMenu;
+        CompoundTag responseTag = new CompoundTag();
+        boolean borrowed = false;
+        boolean ordinary = false;
+        try {
+            boolean creative = player.isCreative();
+            if (creative && packet.carriedTag() != null) responseTag = packet.carriedTag().copy();
+            if (menu == null || (packet.menuId() != menu.containerId
+                    && !(packet.menuId() == -1 && packet.carriedTag() == null
+                        && packet.requestId() == 0 && !creative)) || !menu.stillValid(player)) {
+                return;
+            }
+
+            boolean virtual = creative && packet.carriedTag() != null;
+            ItemStack carried;
+            if (virtual) {
+                if (menu != player.inventoryMenu || packet.menuId() != menu.containerId
+                        || packet.requestId() <= 0 || !menu.getCarried().isEmpty()) {
+                    return;
+                }
+                carried = ItemStack.parse(player.registryAccess(), packet.carriedTag()).orElse(ItemStack.EMPTY);
+            } else {
+                ordinary = true;
+                carried = menu.getCarried();
+            }
+            if (carried.isEmpty()) return;
+
+            boolean currentLiving = LivingItemManager.isLivingItem(carried);
+            boolean newLiving = !currentLiving;
+            var verdict = LivingItemActivation.evaluate(carried, newLiving, LivingItemActivation.Via.PLAYER);
+            if (verdict != LivingItemActivation.Result.ALLOW) {
+                player.sendSystemMessage(Component.translatable(
+                    "livingitem.activation." + switch (verdict) {
+                        case DENY_UNCLAIMED -> "deny_unclaimed";
+                        case DENY_RULE -> "deny_rule";
+                        case ALLOW -> "";
+                    }));
+                return;
+            }
+
+            if (virtual) {
+                borrowed = true;
+                menu.setCarried(carried);
+            }
+            if (!LivingItemActivation.apply(carried, player.level(), player,
+                    LivingItemActivation.Via.PLAYER, newLiving)) {
+                LivingItem.LOGGER.info("服务端：物品 {} 的 living 标签切换被功能否决",
+                    carried.getItem().getName(carried).getString());
+                return;
+            }
+            LivingItem.LOGGER.info("服务端：将物品 {} 的 living 标签从 {} 切换为 {}",
+                carried.getItem().getName(carried).getString(), currentLiving, newLiving);
+        } catch (Exception exception) {
+            LivingItem.LOGGER.error("服务端：活按钮请求处理异常，menuId={}，requestId={}",
+                packet.menuId(), packet.requestId(), exception);
+        } finally {
+            if (borrowed) {
+                ItemStack result = ItemStack.EMPTY;
+                try {
+                    result = menu.getCarried().copy();
+                } catch (Exception exception) {
+                    LivingItem.LOGGER.error("服务端：读取活按钮借入光标结果失败", exception);
+                } finally {
+                    try {
+                        menu.setCarried(ItemStack.EMPTY);
+                    } catch (Exception exception) {
+                        LivingItem.LOGGER.error("服务端：清理活按钮借入光标失败", exception);
+                    }
+                }
+                try {
+                    responseTag = (CompoundTag) result.saveOptional(player.registryAccess());
+                } catch (Exception exception) {
+                    // 无法编码的实际结果不能以旧候选替代，避免复制已经结算的内容。
+                    responseTag = new CompoundTag();
+                    LivingItem.LOGGER.error("服务端：编码活按钮借入光标结果失败", exception);
+                }
+            } else if (ordinary && packet.requestId() > 0) {
+                try {
+                    responseTag = (CompoundTag) menu.getCarried().copy().saveOptional(player.registryAccess());
+                } catch (Exception exception) {
+                    responseTag = new CompoundTag();
+                    LivingItem.LOGGER.error("服务端：编码活按钮真实光标结果失败", exception);
+                }
+            }
+            if (packet.requestId() > 0) {
+                reply.accept(new CarriedUpdatePacket(responseTag, packet.menuId(), packet.requestId()));
+            }
+        }
     }
 }

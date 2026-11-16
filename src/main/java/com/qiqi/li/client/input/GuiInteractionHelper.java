@@ -59,7 +59,7 @@ public final class GuiInteractionHelper {
                 action = com.qiqi.li.living.domain.portal.PortalInteractHandlers.IGNITE_ID;
             }
             if (action != null) {
-                PacketDistributor.sendToServer(new GuiInteractionPacket(
+                send(new GuiInteractionPacket(
                     menuSlot, containerSlot, action, resolveCarriedTag(menu), menuId));
                 return true;
             }
@@ -72,7 +72,7 @@ public final class GuiInteractionHelper {
                 ClientMenuSlotOwners.resolveStorageSlot(menu, hoveredSlot));
             if (bucketAction != null) {
                 CompoundTag carriedTag = resolveCarriedTag(menu);
-                PacketDistributor.sendToServer(new GuiInteractionPacket(
+                send(new GuiInteractionPacket(
                     menuSlot, containerSlot, bucketAction, carriedTag, menuId));
                 return true;
             }
@@ -84,7 +84,7 @@ public final class GuiInteractionHelper {
                 && LivingBucketFunction.isEmptyBucket(trigger)
                 && com.qiqi.li.living.domain.sponge.LivingSpongeInteractSupport.drawable(target)) {
             CompoundTag carriedTag = resolveCarriedTag(menu);
-            PacketDistributor.sendToServer(new GuiInteractionPacket(
+            send(new GuiInteractionPacket(
                 menuSlot, containerSlot, "living_sponge_draw", carriedTag, menuId));
             return true;
         }
@@ -94,9 +94,20 @@ public final class GuiInteractionHelper {
 
         CompoundTag carriedTag = resolveCarriedTag(menu);
 
-        PacketDistributor.sendToServer(new GuiInteractionPacket(
+        send(new GuiInteractionPacket(
             menuSlot, containerSlot, entry.actionId(), carriedTag, menuId));
         return true;
+    }
+
+    private static void send(GuiInteractionPacket packet) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.screen instanceof CreativeModeInventoryScreen screen && packet.carriedTag() != null) {
+            var request = CreativeActivationRequests.begin(screen);
+            if (request == null) return;
+            packet = new GuiInteractionPacket(packet.slotIndex(), packet.containerSlot(), packet.actionId(),
+                packet.carriedTag(), packet.menuId(), request.requestId());
+        }
+        PacketDistributor.sendToServer(packet);
     }
 
     private static boolean hasNearbyPortalFrame(AbstractContainerMenu menu, Slot target) {
@@ -175,9 +186,9 @@ public final class GuiInteractionHelper {
      * @return 仅在 CreativeModeInventoryScreen 下返回光标物品的NBT，否则返回 null
      */
     @Nullable
-    private static CompoundTag resolveCarriedTag(AbstractContainerMenu menu) {
+    public static CompoundTag resolveCarriedTag(AbstractContainerMenu menu) {
         Minecraft mc = Minecraft.getInstance();
-        if (!(mc.screen instanceof CreativeModeInventoryScreen)) return null;
+        if (mc.player == null || !(mc.screen instanceof CreativeModeInventoryScreen)) return null;
 
         ItemStack carried = menu.getCarried();
         if (carried.isEmpty()) return null;

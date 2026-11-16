@@ -15,7 +15,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.util.Mth;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -47,7 +46,6 @@ public class LivingButton extends SpriteIconButton.CenteredIcon {
     private static final ResourceLocation HOVERED_SPRITE = LivingItem.id("living_button_hovered");
 
     private final AbstractContainerMenu menu;
-    private final Slot slot;
     private final ContainerInfoSession containerInfo;
 
     // ==================== 拖动改位置（2026-10-10，第二步） ====================
@@ -72,10 +70,9 @@ public class LivingButton extends SpriteIconButton.CenteredIcon {
 
     public static final Logger LOGGER = LogUtils.getLogger();
 
-    public LivingButton(int x, int y, AbstractContainerMenu menu, Slot slot) {
+    public LivingButton(int x, int y, AbstractContainerMenu menu) {
         super(WIDTH, HEIGHT, ANNOTATION, SPRITE_WIDTH, SPRITE_HEIGHT, SPRITE, LivingButton::onPress, null);
         this.menu = menu;
-        this.slot = slot;
         this.containerInfo = new ContainerInfoSession(menu.containerId);
         // ⚠️ 应用保存的位置时**再夹一次**：拖动时的夹取只管当时那一次；
         // 之后缩小窗口 / 调大 GUI scale ⇒ 逻辑屏幕变小，而保存的偏移是相对 GUI 的
@@ -92,6 +89,7 @@ public class LivingButton extends SpriteIconButton.CenteredIcon {
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         // ⚠️ 必须自己判命中：本方法绕过了 AbstractWidget.mouseClicked 的 active/visible/clicked 检查，
         // 漏判会让「空手在界面任意位置按下」都启动拖动手势（2026-10-10 实测踩坑）。
+        if (!this.active || !this.visible) return false;
         if (button == 0 && this.isMouseOver(mouseX, mouseY) && menu.getCarried().isEmpty()) {
             // 光标空手且按在按钮上 → 进入「按住拖动」手势（空手点击本来也没有其它语义）
             dragPressed = true;
@@ -227,7 +225,16 @@ public class LivingButton extends SpriteIconButton.CenteredIcon {
             ItemStack carriedItem = livingButton.menu.getCarried();
 
             if (!carriedItem.isEmpty()) {
-                LivingTagPacket packet = new LivingTagPacket();
+                Minecraft mc = Minecraft.getInstance();
+                if (mc.player == null) return;
+                LivingTagPacket packet;
+                if (mc.screen instanceof net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen screen) {
+                    packet = com.qiqi.li.client.input.CreativeActivationRequests.begin(screen);
+                    if (packet == null) return;
+                    livingButton.active = false;
+                } else {
+                    packet = new LivingTagPacket(livingButton.menu.containerId, null, 0);
+                }
                 PacketDistributor.sendToServer(packet);
                 LOGGER.info("发送 living tag 数据包，物品: {}", carriedItem.getItem().getName(carriedItem).getString());
             } else {

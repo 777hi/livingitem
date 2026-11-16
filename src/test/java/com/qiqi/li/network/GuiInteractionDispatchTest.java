@@ -1,5 +1,6 @@
 package com.qiqi.li.network;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -551,6 +552,58 @@ class GuiInteractionDispatchTest {
         assertEquals(2, candidate.get().getCount());
         assertEquals(2, inventoryMenu.carriedWrites);
         assertEquals(1, inventoryMenu.broadcasts);
+    }
+
+    @Test
+    void correlatedPacketCodec_roundTripsRequestIdentityAndCandidate() {
+        RegistryAccess registry = RegistryAccess.fromRegistryOfRegistries(BuiltInRegistries.REGISTRY);
+        CompoundTag tag = (CompoundTag) new ItemStack(Items.BONE_MEAL, 3).saveOptional(registry);
+        var packet = new GuiInteractionPacket(36, 0, ACTION, tag, 17, 124);
+        net.minecraft.network.FriendlyByteBuf buf = new net.minecraft.network.FriendlyByteBuf(
+            io.netty.buffer.Unpooled.buffer());
+        GuiInteractionPacket.STREAM_CODEC.encode(buf, packet);
+        assertEquals(packet, GuiInteractionPacket.STREAM_CODEC.decode(buf));
+        assertEquals(0, buf.readableBytes());
+        buf.release();
+    }
+
+    @Test
+    void correlatedCreativeDenial_alwaysRepliesWithoutBorrowing() throws Exception {
+        RecordingInventoryMenu inventoryMenu = useInventoryMenu();
+        when(player.isCreative()).thenReturn(true);
+        CompoundTag tag = new CompoundTag();
+        tag.putString("candidate", "untouched");
+        try (MockedStatic<PacketDistributor> packets = mockStatic(PacketDistributor.class)) {
+            GuiInteractionPacket.handle(new GuiInteractionPacket(-1, 0, ACTION, tag, 0, 123), player);
+            packets.verify(() -> PacketDistributor.sendToPlayer(player, new CarriedUpdatePacket(tag, 0, 123)));
+            packets.verifyNoMoreInteractions();
+        }
+        assertSame(original, inventoryMenu.getCarried());
+        assertEquals(0, inventoryMenu.carriedWrites);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void correlatedCreativeResult_returnsActualOnSuccessOrFailure(boolean failure) throws Exception {
+        RecordingInventoryMenu inventoryMenu = useInventoryMenu();
+        when(player.isCreative()).thenReturn(true);
+        RegistryAccess registry = RegistryAccess.fromRegistryOfRegistries(BuiltInRegistries.REGISTRY);
+        when(player.registryAccess()).thenReturn(registry);
+        CompoundTag tag = (CompoundTag) new ItemStack(Items.BONE_MEAL, 3).saveOptional(registry);
+        CompoundTag expected = (CompoundTag) new ItemStack(Items.BONE_MEAL, 2).saveOptional(registry);
+        InteractionRegistry.registerHandler(ACTION, (p, slot) -> {
+            inventoryMenu.getCarried().shrink(1);
+            if (failure) throw new IllegalStateException("test correlated failure after mutation");
+        });
+        registerAccess(MenuActionAccess.Decision.ALLOW);
+        try (MockedStatic<PacketDistributor> packets = mockStatic(PacketDistributor.class)) {
+            assertDoesNotThrow(() -> GuiInteractionPacket.handle(
+                new GuiInteractionPacket(36, 0, ACTION, tag, 0, 124), player));
+            packets.verify(() -> PacketDistributor.sendToPlayer(player, new CarriedUpdatePacket(expected, 0, 124)));
+            packets.verifyNoMoreInteractions();
+        }
+        assertSame(original, inventoryMenu.getCarried());
+        assertEquals(2, inventoryMenu.carriedWrites);
     }
 
     @Test

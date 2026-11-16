@@ -55,7 +55,7 @@ GuiInteractionHelper.tryInteract(hoveredSlot, button, menu)
     │     同时验证双方都是活物品
     ├─ ClientMenuSlots — 显示槽按引用映射到真实服务端菜单槽与物理槽
     ├─ resolveCarriedTag() — 创造模式背包下序列化光标物品NBT
-    └─ 发送 GuiInteractionPacket(slotIndex, containerSlot, actionId, carriedTag, menuId)
+    └─ 发送 GuiInteractionPacket(slotIndex, containerSlot, actionId, carriedTag, menuId, requestId)
         ↓
 GuiInteractionPacket.handle() (服务端)
     ├─ 当前菜单ID、有效性、精确双索引与活动槽校验；不跨库存回退
@@ -64,7 +64,7 @@ GuiInteractionPacket.handle() (服务端)
     └─ 执行结束恢复原服务端光标，CarriedUpdatePacket 同步虚拟光标结果
         ↓
 CarriedUpdatePacket.handle() (客户端)
-    └─ 直接更新 menu.setCarried()，绕过原版对 CreativeModeInventoryScreen 的排除
+    └─ 无关联普通结果直接更新 carried；创造虚拟光标结果由共享请求会话校验后更新
 ```
 
 ---
@@ -90,7 +90,7 @@ new InteractionEntry(Items.FLINT_AND_STEEL, Items.TNT, 1, "ignite_carried")
 
 解决方案分两层：
 - **客户端→服务端**：`GuiInteractionPacket` 携带 `carriedTag`（光标物品NBT），仅在 `CreativeModeInventoryScreen` 下发送；服务端仅在当前真实 `inventoryMenu` 中校验候选，通过授权后临时恢复光标，执行结束恢复原服务端光标
-- **服务端→客户端**：`CarriedUpdatePacket` 自定义包，绕过原版排除逻辑，直接更新客户端 `menu.setCarried()`
+- **服务端→客户端**：`CarriedUpdatePacket` 绕过原版排除逻辑。活按钮结果按菜单/请求编号交付发起会话并复验预期光标；已有槽位交互保持无关联调用，创造活化等待期间不接受无关联回包。
 
 注意：创造模式打开容器（箱子等）时使用普通容器界面，光标由服务端管理，不需要 `carriedTag`。`resolveCarriedTag()` 仅在 `CreativeModeInventoryScreen` 下返回非空。
 
@@ -242,15 +242,11 @@ CropClassifier::isSeedPlantableOnFarmland)`）；**只有真·任意光标自交
   靠 `InventoryScreenMixin.callContainerTick` 补的 `super.containerTick()` 已通）✓；
   书展开 + 窄窗口 <379 = **原版书独占模式**（`super.render` 与 `super.mouseClicked`
   都不跑）⇒ 按钮（连同整个 GUI）不可见不可点 —— **与原版槽位行为一致，非缺陷**。
-- **创造界面维持排除（原因补考证）**：37bde65（2026-07-14）起排除但无记录。真实原因 =
-  **活化链路不通** —— `LivingTagPacket` 服务端读 `containerMenu.getCarried()`，而创造的
-  carried 是客户端虚拟物品（服务端从不打开创造界面，拾取只走
-  `ServerboundSetCreativeModeSlotPacket` 写槽位）⇒ 服务端视角恒空，点按钮必然静默无效。
-  修复方向：**carriedTag 往返**（复用 `GuiInteractionPacket` 先例，服务端权威 + 结果回包）
-  或**客户端活化**（判定/钩子跑客户端，创造语境可接受但口径脏）—— 待定稿单独开工；
-  另有标签页维度问题（`selectedTab` 是 static，`selectTab` 切页不重跑 init、不改
-  leftPos ⇒ 现有 leftPos 变化监听不触发，需按 `isInventoryOpen()` 同步按钮显隐）。
-  创造的小人框矩形也不同：(73,6)-(105,49)（32×43，scale 20，仅 INVENTORY 页）。
+- **创造活按钮只支持 INVENTORY 页**：默认小人框底居中 `(81,41)`，矩形 `(73,6)-(105,49)`；公开 `isInventoryOpen()` 决定显隐，init/切页即时同步，缩放保留请求会话。其他标签页不显示、不响应。
+- **玩法完全同生存**：仍走 `LivingItemActivation.evaluate/apply`；规则拒绝和功能钩子否决保持原状态。取消活化活箱子仍掉落内容并清空存储，堆叠按份结算，不另写创造活化逻辑。
+- **服务端权威往返**：`LivingTagPacket` 带真实菜单ID、创造光标NBT与请求编号。仅创造身份+当前真实 `inventoryMenu`+精确菜单ID+空真实光标允许借入；授权前不覆盖光标，借入后 `finally` 清空并回传实际结果，异常不得恢复已结算副作用的旧候选。普通容器只操作真实 carried，不借入客户端数据。
+- **异步守恒边界**：创造虚拟光标上的槽位交互与活化共用单请求会话；等待期间阻止槽位/方向操作、切页、重复活化与正常关闭。回包须匹配发起界面实例、玩家、菜单、请求及预期光标；缩放不重置，关页重开不接旧结果。强制退出不阻挡，未决旧光标只在仍等于预期栈时丢弃，不以超时恢复旧栈。
+- **验证**：`LivingTagPacketTest` 守服务端借入/清理与实际箱子掉物，`CreativeActivationSessionTest` 守请求关联；客户端显隐、拖动、缩放、快速连点与等待期间关闭仍须实机验收（待验项见 `docs/TODO.md` Q5）。
 
 ### 6.2.2 活按钮：当前容器基本信息（2026-10-26）
 

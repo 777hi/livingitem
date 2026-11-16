@@ -37,12 +37,12 @@
    - 恢复条件：拿到真实存档的空容器占比后重新排期；或先做不依赖该数据的 Q4b。本条不设预算阈值。完成判据不变：空容器仍完成 last-seen、运行时作废和清理；活流体 / 红石自维持行为不变；同环境同口径复测，10k 空容器每拍中位较 9.31 ms 基线有可复算下降。
    - 不做：无实测支撑的活跃容器索引、重写分层、把传给功能实现的 List/Map 直接池化。
 
-5. ⏳ **Q5 创造模式活化** —— 活按钮明确排除创造背包，服务端读不到创造模式的虚拟 carried；现有 `resolveCarriedTag` 与 `CarriedUpdatePacket` 已能支撑双程同步。
-   - **已拍板（2026-11-15）**：① UI 只做**创造背包 INVENTORY 页**，按钮放**玩家小人框底部**（与生存背包同款位置），不做「所有标签页」版本；② **玩法语义完全同生存，不为创造模式搞区别对待** —— 取消活化活箱子照常 `dropAllItems` 掉物（`LivingChestFunction.java:334-355` 掉后 `clearStorage`，守恒不复制）。差异只留在协议 / 安全边界：仅创造模式带 `carriedTag`、服务端 `isCreative()` + menuId 双闸，这是服务端读不到虚拟 carried 的技术必需，不是玩法分支。
-   - 协议范本现成（避免重查）：`GuiInteractionPacket`（`:44-50` 已有 `carriedTag` + `menuId`，`:65-87` 编解码，`:94-151` 服务端恢复 / 校验 / 清空 / 回传）；`CarriedUpdatePacket.handle`（`:57-73`）已会写回 `screen.getMenu()`；`GuiInteractionHelper.resolveCarriedTag`（`:202-211`）只在创造界面返回非空。
-   - 下一步：① `LivingTagPacket` 从无状态 record 改成 `record(int menuId, @Nullable CompoundTag carriedTag)`，保留无参构造委托 `(-1, null)` 兼容旧调用点；② `handle` 用 try/finally 做「临时恢复 → **现有** `evaluate/apply` → 无条件 `setCarried(EMPTY)` + 回传」，所有拒绝 / 异常分支都不许残留临时物品（防复制）；③ `resolveCarriedTag` 提为 public，`LivingButton.onPress` 带 menuId + tag 发包；④ 移除 `AbstractContainerScreenMixin:235-245` 的创造排除，按钮常驻、按 `selectedTab` 切 visible（切页不重跑 init），位置走小人框底部。
-   - 完成判据：创造背包可直接活化 / 取消活化光标物品；非创造路径不变；补包往返 / menuId 不匹配 / 非创造忽略 tag / 临时 carried 必清空 / 活箱子掉物守恒测试，以及真机 GUI 烟测。实现时同步 `docs/system-design/gui-interaction-system.md` §6.2（现写「创造界面维持排除」）。
-   - 不做：不为创造模式另写活化逻辑、不新增协议种类、不做所有标签页版本。
+5. ⏳ **Q5 创造模式活化（代码已接线，待实机验收）**
+   - 范围与协议口径已沉淀到 [GUI交互 §6.2](system-design/gui-interaction-system.md#62-生存背包按钮启用与位置)，仅 INVENTORY 页小人框底部；服务端 `evaluate/apply` 与生存同源，取消活化活箱子照常掉物并清存储。
+   - 已接线：活按钮创造页显隐/定位、`LivingTagPacket` 光标上传、`CarriedUpdatePacket` 关联结果、创造虚拟光标的槽位交互与活化共享单请求等待保护；普通路径不借入客户端物品，创造借入仅在精确有效玩家菜单的空真实光标上，finally 清空并回传实际结果。
+   - 自动回归入口：`LivingTagPacketTest`、`CreativeActivationSessionTest`、`LivingButtonLayoutTest`；运行状态以本轮验证输出为准，不以测试存在代答。
+   - **剩余完成判据（真机 GUI 烟测）**：创造 INVENTORY 页活化/取消活化；其他标签页隐藏；小人框按钮优先于射线点击；空手拖动、缩放、重开；普通生存与创造打开普通箱子不回归；快速连点与等待中放槽/丢弃/关闭不重复结算；活箱子实际掉物并清空内容；强制退出不恢复未决旧光标。
+   - 不为创造模式另写活化逻辑、不新增协议种类、不做所有标签页版本；实机未验收前不标全部完成。
 
 6. ⏳ **Q6 流体组件值不可变化** —— `CONTAINER_FLUID_DATA_ITEM` 当前存可变的 `ContainerFluidData`，违反组件值语义；实际只在 contentRetaining 且无容器 UUID 的兜底迁移路径写入，开发期组件校验会抛，生产主要影响值语义与未来可堆叠容器。
    - 下一步：改成只保存派生源的不可变 snapshot record，维持现有 NBT list 形状；`moveOut` 写快照，`moveIn` 再还原成运行时对象。
