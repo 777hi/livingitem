@@ -9,7 +9,9 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Group;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
@@ -47,14 +49,21 @@ import com.qiqi.li.logging.ModLog;
 @Mixin(targets = "net.p3pp3rf1y.sophisticatedbackpacks.backpack.BackpackItem")
 public abstract class BackpackItemMixin {
 
-    @Inject(method = "tryPlace", at = @At("HEAD"), require = 0, remap = false)
+    @Unique
+    private static final String living_item$PLACE = "tryPlace("
+        + "Lnet/minecraft/world/entity/player/Player;Lnet/minecraft/core/Direction;"
+        + "Lnet/minecraft/world/item/context/BlockPlaceContext;)Lnet/minecraft/world/InteractionResult;";
+
+    @Group(name = "living_item$stagePlacement", min = 1)
+    @Inject(method = living_item$PLACE, at = @At("HEAD"), require = 0, expect = 0, remap = false)
     private void livingItem$stagePlacement(Player player, Direction direction, BlockPlaceContext ctx,
                                            CallbackInfoReturnable<InteractionResult> cir) {
         if (ctx.getLevel().isClientSide) return;
         ContainerHandoff.stageRestore(ctx.getItemInHand());
     }
 
-    @Inject(method = "tryPlace", at = @At("RETURN"), require = 0, remap = false)
+    @Group(name = "living_item$restoreToBlock", min = 1)
+    @Inject(method = living_item$PLACE, at = @At("RETURN"), require = 0, expect = 0, remap = false)
     private void livingItem$restoreToBlock(Player player, Direction direction, BlockPlaceContext ctx,
                                            CallbackInfoReturnable<InteractionResult> cir) {
         Level level = ctx.getLevel();

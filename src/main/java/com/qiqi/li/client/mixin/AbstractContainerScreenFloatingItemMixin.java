@@ -31,14 +31,14 @@ public abstract class AbstractContainerScreenFloatingItemMixin {
         this.living_item$renderingSnapback = false;
     }
 
+    // 回弹必须与真实光标区分；此挂点沿用 defaultRequire=1，不允许静默缺失。
     @Inject(
             method = "render",
             at = @At(
                     value = "INVOKE",
                     target = "Lnet/minecraft/client/gui/screens/inventory/AbstractContainerScreen;renderFloatingItem(Lnet/minecraft/client/gui/GuiGraphics;Lnet/minecraft/world/item/ItemStack;IILjava/lang/String;)V",
                     ordinal = 1
-            ),
-            require = 0
+            )
     )
     private void living_item$markSnapbackDraw(GuiGraphics graphics, int mouseX, int mouseY,
                                                float partialTick, CallbackInfo ci) {

@@ -59,7 +59,7 @@ src/test/java/com/qiqi/li/
 ├── client/render/tlm/
 │   ├── SoulSlabGuiModelWrapperTest.java       # 活魂符GUI/HUD模型握手·真实栈identity+槽/光标/HUD pop矩阵双匹配/复制栈不claim/TLM原override/null语义/GUI空模型claim/非GUI与过期token/多位置隔离
 │   ├── SoulSlabGuiPoseTest.java               # 活魂符GUI/HUD矩阵·容器槽guiLeft/guiTop+Z100/光标现成Z232/HUD保留当前pop变换/物品中心Z150/翻Y/不污染调用方pose
-│   ├── SoulSlabGuiSlotsTest.java              # 槽位准入与光标分类·普通槽稳定引用/StackCopySlot退化；hover只认显示Slot identity；真实carried identity命中并拒绝snapback
+│   ├── SoulSlabGuiSlotsTest.java              # 槽位准入与光标分类·普通槽稳定引用/StackCopySlot退化；hover只认显示Slot identity；真实carried identity命中并拒绝snapback；读取编译Mixin和client配置，光标/回弹双挂点必须命中且ordinal固定（不证明客户端实际应用）
 │   ├── SoulSlabHotbarSlotsTest.java           # HUD快捷栏归属·seed1-9映射玩家0-8/seed10映射副手40，均只认真实栈identity；null/空栈/副本/越界seed拒绝
 │   ├── SoulSlabFeedFeedbackTest.java          # 投喂反馈单调观察·首次只建基线/增长只触发一次/下降重置/非法负值归零
 │   ├── SoulSlabFeedPulseTest.java             # 投喂6tick缩放曲线·未激活为1/首尾归1/中点峰值1.12
@@ -89,6 +89,9 @@ src/test/java/com/qiqi/li/
 │   ├── ActivationTargetParsingTest.java       # 活化目标参数解析守卫·物品ID/标签/modid 回写契约 + 反向守卫「StringArgumentType 读不进 : # @」
 │   └── LivingItemContainerCommandTest.java     # inspect 实际入口·学习值替代独立推断 / 活对象列数与注册规则分列 / 末行向上取整 / 未开战利品明确不处理 / 大箱另一半同源规范化
 ├── living/compat/
+│   ├── sophisticated/
+│   │   ├── MixinInjectionSignatureCheckTest.java # ASM 精确 selector·同名改参数/返回/缺方法拒绝、静态性与方法体、多 handler 独立检查；编译声明五挂点独立原生组/软依赖配置，多个 RETURN 不掩盖缺 HEAD（不证明第三方业务）
+│   │   └── SophisticatedMixinPluginTest.java    # 缺席跳过不读目标、资源读取不加载类、资源缺失/损坏/身份不符拒绝、按各 Mixin 自声明签名准入、不允许一端匹配掩盖另一端缺失
 │   ├── tlm/
 │   │   ├── IdentityRedemptionQueueTest.java   # TLM好感兑换队列·对象identity而非equals/重复保留首条/drain先清再回调/停服清强引用
 │   │   └── PendingMaidFavorTest.java          # maid_info待兑现好感·严格TAG_Int/未知NBT保留/总上限384/长整型防溢出/一次性取出
@@ -134,7 +137,7 @@ src/test/java/com/qiqi/li/
 │   ├── ContainerRuntimeCacheLifecycleTest.java # 运行时缓存生命周期(方案A)·物品离开槽位/换物品⇒登记作废·同类持续⇒不作废·drain 取走即空·null 键忽略·整容器作废键==运行时存储键
 │   ├── ContainerTickHooksTest.java            # tick 钩子注册表（2026-10-29）·同类去重 / 两阶段按注册顺序 / ctx+tick 透传 / 默认空实现
 │   ├── ContainerPipelinePerfTest.java        # 管道性能量测（Q3，@Tag("perf") 默认不跑；`-Pperf` 才计入）·空/普通/复杂容器 × 1k/5k/10k 的 processContext 每拍中位与 P90 + 每容器每拍 µs + 线性外推/JIT 预热/组间清缓存与冷启动+稳定轮不计/复杂场景只放不读 Level 的活红石粉/沿用 PerfMetrics 五阶段 `[Phases]` 明细/只防病态回归/落盘 build/_perf_pipeline.txt·**不改 src/main 生产逻辑**
-│   └── ContainerTickIsolationTest.java        # tick 异常隔离（2026-10-30，R-01）·RuntimeException 不向外抛且可重复调用 / 取 key 本身抛异常仍隔离 / Error 不被吞
+│   └── ContainerTickIsolationTest.java        # tick 异常隔离（R-01）·RuntimeException 不向外抛且可重复调用 / 取 key 本身抛异常仍隔离 / Error 不被吞；真实管道正常、开始钩子失败、写回失败、刷新失败均解绑 / 双异常保留 / 同异常对象不自抑制 / Error 优先传播 / 失败后下一容器照常处理
 ├── living/domain/maid/
 │   ├── LivingSoulSlabClockTest.java           # 概率活跃度I·初始7/成功失败±1/1-49钳位/非法值
 │   ├── LivingSoulSlabFunctionTest.java        # 每秒1/I判定·随机四向不重掷/坐下零随机零写且被动位移保坐姿/空槽移动/普通物品整栈换位（装不下失败）/居家餐吃一份换位进入（N=1全吃/N>1剩堆换位）/吃失败换回/活食物与满好感挡路不重掷/技术中性/换槽保I/超堆叠不拆

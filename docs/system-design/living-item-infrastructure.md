@@ -358,6 +358,11 @@ ServerTickEvent.Pre
 准入层（`EntityContainers.isContainerEntity` 双闸）优雅跳过，不再产生异常；若有人绕过准入
 直接构造 `EntityContainerContext`，查不到能力仍抛，由隔离层按实体类型限频留痕（I-C7 不静默）。
 
+**容器内收尾**：开始钩子失败也尝试刷新脏槽，刷新失败仍须解绑 `TickContext`；
+业务与刷新同时失败时保留业务异常、附加刷新异常（`suppressed`）；若业务是 `RuntimeException`
+而刷新是 `Error`，则优先传播 `Error`、附加业务异常，不能让隔离层吞掉 `Error`。收尾不回滚已执行的业务操作。
+验证入口：`ContainerTickIsolationTest`。
+
 **日志口径**（`FailureThrottle`）：首次 ERROR + 完整栈；同 key 60s 内只计数；每 5 分钟汇总
 「仍失败 key 数 + 抑制次数」；最多跟踪 256 个 key（LRU 淘汰）。排查期用
 `-Dliving_item.debug.isolation=false` 关闭隔离，让异常直接暴露。

@@ -141,6 +141,8 @@ Gecko与Bedrock复用TLM原生`beg`/头部与可选骨骼，YSM响应由具体�
 才在`ItemDisplayContext.GUI`变换中claim并返回`EmptyModel.BAKED`，Foreground消费claim后画女仆。真实carried另在
 `renderFloatingItem`内部`renderItem`调用处建立短token并就地消费，精确保留随后原版数量/耐久/冷却/decorator；
 触屏dragging、分堆/quick-craft副本与snapback显式拒绝。失败只补模型，避免装饰重复。
+光标与snapback分类挂点均要求命中，不能将回弹标记设为可缺失；声明由`SoulSlabGuiSlotsTest`守卫，
+不替代客户端实际应用或回弹行为验收。
 
 缓存把HUD槽、菜单物理槽与当前menu cursor统一为三种绘制表面：HUD快捷栏0～8及副手40以玩家`Inventory`+真实槽号为身份，
 菜单中同一玩家槽解包后使用相同键；容器界面打开时菜单槽覆盖HUD显示权，非容器screen（含聊天）由HUD接管。

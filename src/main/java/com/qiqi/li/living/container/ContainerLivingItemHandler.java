@@ -660,13 +660,13 @@ public class ContainerLivingItemHandler {
 
         // 准备 TickContext（功能 tick 与环境交互的上下文）
         TickContext tick = new TickContext(context);
-        context.setTickContext(tick);
-
-        long scanEndNanos = System.nanoTime();
-        PerfMetrics.recordPhase("scan", scanEndNanos - startNanos);
-
+        Throwable failure = null;
         long stressEndNanos;
         try {
+            context.setTickContext(tick);
+            long scanEndNanos = System.nanoTime();
+            PerfMetrics.recordPhase("scan", scanEndNanos - startNanos);
+
             // 阶段 2：功能 tick（按扫描分组顺序，非优先级顺序）
             tickFunctionSlots(grouped, tick);
             runFunctionTicks(grouped, context, tick, level);
@@ -692,11 +692,23 @@ public class ContainerLivingItemHandler {
 
             stressEndNanos = System.nanoTime();
             PerfMetrics.recordPhase("stress", stressEndNanos - containerDataEndNanos);
+        } catch (RuntimeException | Error e) {
+            failure = e;
+            throw e;
         } finally {
-            // 无论功能 tick / 容器级数据 / 写回是否抛异常，都同步脏槽到客户端并清掉 stale
-            // TickContext：否则异常时客户端物品显示错位，且下一 tick 残留旧上下文（P1-6）。
-            context.flushDirtySlots();
-            context.setTickContext(null);
+            // 开始钩子失败也刷新脏槽；刷新失败仍须解绑。Error 不得被异常合并降为可隔离故障。
+            try {
+                context.flushDirtySlots();
+            } catch (RuntimeException | Error e) {
+                if (failure == null) throw e;
+                if (e instanceof Error && !(failure instanceof Error)) {
+                    e.addSuppressed(failure);
+                    throw e;
+                }
+                if (e != failure) failure.addSuppressed(e);
+            } finally {
+                context.setTickContext(null);
+            }
         }
 
         // 阶段 6：脏槽刷新（from finally）后的 perf 收尾

@@ -8,7 +8,9 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Group;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
@@ -37,9 +39,8 @@ import com.qiqi.li.logging.ModLog;
  * ⇒ 注入一处即可全覆盖。</p>
  *
  * <h3>⚠️ 失效方向</h3>
- * <p>{@code require = 0} + 方法名字符串 ⇒ 精妙改版改名时<b>不会崩服</b>，只是退回
- * 「数据随方块消失」（= 修复前的现状，不会更糟）。失效可见性由
- * {@code SophisticatedMixinPlugin#postApply} 的 ERROR 日志兜住（I-C6「降级必须可观测」）。</p>
+ * <p>目标签名由插件在应用前核验；每个 handler 独立校验至少一次命中。
+ * 组校验不提供字节码回滚，也不代表数据交接已经过实机验收。</p>
  *
  * <p>⚠️ 目标类用 {@code targets} 字符串而非类字面量：本模组对精妙<b>没有编译期依赖</b>
  * （只有 dev 环境的运行期 jar）⇒ 不能引用它的类型。</p>
@@ -47,13 +48,20 @@ import com.qiqi.li.logging.ModLog;
 @Mixin(targets = "net.p3pp3rf1y.sophisticatedbackpacks.backpack.BackpackBlock")
 public abstract class BackpackBlockMixin {
 
+    @Unique
+    private static final String living_item$PICKUP = "putInPlayersHandAndRemove("
+        + "Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/world/level/Level;"
+        + "Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/entity/player/Player;"
+        + "Lnet/minecraft/world/InteractionHand;)V";
+
     /**
      * 捕获时机：方块还在。
      *
      * <p>只记宿主引用，<b>不读也不清</b>数据 —— 万一目标方法中途失败（没把物品给玩家），
      * 数据仍留在方块上，玩家还能正常打开 GUI 取用。</p>
      */
-    @Inject(method = "putInPlayersHandAndRemove", at = @At("HEAD"), require = 0, remap = false)
+    @Group(name = "living_item$captureContainerHost", min = 1)
+    @Inject(method = living_item$PICKUP, at = @At("HEAD"), require = 0, expect = 0, remap = false)
     private static void livingItem$captureContainerHost(BlockState state, Level level, BlockPos pos,
                                                         Player player, InteractionHand hand, CallbackInfo ci) {
         if (level.isClientSide) return;
@@ -68,7 +76,8 @@ public abstract class BackpackBlockMixin {
      * <p>此时方块已移除（{@code getBlockEntity} 返回 null），但 {@code HEAD} 捕获的宿主对象
      * 仍被 {@link ContainerHandoff} 强引用 ⇒ 附件照读不误。</p>
      */
-    @Inject(method = "putInPlayersHandAndRemove", at = @At("RETURN"), require = 0, remap = false)
+    @Group(name = "living_item$handoffToHand", min = 1)
+    @Inject(method = living_item$PICKUP, at = @At("RETURN"), require = 0, expect = 0, remap = false)
     private static void livingItem$handoffToHand(BlockState state, Level level, BlockPos pos,
                                                  Player player, InteractionHand hand, CallbackInfo ci) {
         if (level.isClientSide) return;
