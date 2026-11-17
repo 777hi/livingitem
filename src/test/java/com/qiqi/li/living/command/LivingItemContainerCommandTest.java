@@ -111,6 +111,45 @@ class LivingItemContainerCommandTest {
     }
 
     @Test
+    void inspect_warnsWhenRuleOverridesDifferentLearnedWidth() throws Exception {
+        target(new CrafterBlockEntity(POS, Blocks.CRAFTER.defaultBlockState()), 9);
+        LearnedLayouts.learn(ID, 9, 3);
+        ContainerCompatibilityConfig.register(ID,
+            ContainerCompatibilityConfig.ContainerRule.builder().containerSize(9).columns(9).build());
+
+        LivingItemContainerCommand.inspectContainer(command);
+
+        assertTrue(output().contains("学习列数 §f3"), output());
+        assertTrue(output().contains("规则列数 §f9"), output());
+        assertTrue(output().contains("规则层优先于学习层"), output());
+        assertTrue(output().contains("实际值以上方生效列数为准"), output());
+    }
+
+    @Test
+    void inspect_doesNotWarnWhenRuleAndLearnedWidthAgree() throws Exception {
+        target(new CrafterBlockEntity(POS, Blocks.CRAFTER.defaultBlockState()), 9);
+        LearnedLayouts.learn(ID, 9, 3);
+        ContainerCompatibilityConfig.register(ID,
+            ContainerCompatibilityConfig.ContainerRule.builder().containerSize(9).columns(3).build());
+
+        LivingItemContainerCommand.inspectContainer(command);
+
+        assertFalse(output().contains("冲突"), output());
+        assertFalse(output().contains("规则层优先于学习层"), output());
+    }
+
+    @Test
+    void inspect_unregisteredDoesNotSuggestHeuristicRegistration() throws Exception {
+        target(new CrafterBlockEntity(POS, Blocks.CRAFTER.defaultBlockState()), 10);
+
+        LivingItemContainerCommand.inspectContainer(command);
+
+        assertTrue(output().contains("规则状态: §c未注册"), output());
+        assertFalse(output().contains("container register"), output());
+        assertFalse(output().contains("校准可用"), output());
+    }
+
+    @Test
     void inspect_roundsUpPartialLastRow() throws Exception {
         target(new CrafterBlockEntity(POS, Blocks.CRAFTER.defaultBlockState()), 10);
         LearnedLayouts.learn(ID, 10, 3);

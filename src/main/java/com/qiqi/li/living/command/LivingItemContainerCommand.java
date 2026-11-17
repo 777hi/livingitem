@@ -6,6 +6,7 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
+import com.qiqi.li.living.container.LearnedLayouts;
 import com.qiqi.li.living.transfer.ContainerCompatibilityConfig;
 import com.qiqi.li.living.transfer.ContainerRuleConfig;
 import net.minecraft.commands.CommandSourceStack;
@@ -232,6 +233,13 @@ public class LivingItemContainerCommand {
                 String.format("  §7跨实体: §f%s§r", rule.crossBlockEntitySupport() ? "是" : "否")), false);
             source.sendSuccess(() -> Component.literal(
                 String.format("  §7描述: §f%s§r", rule.description())), false);
+
+            Integer learned = LearnedLayouts.peek(containerId, actualSize);
+            if (learned != null && learned != rule.columns()) {
+                source.sendSuccess(() -> Component.literal(String.format(
+                    "  §e提示: 学习列数 §f%d§e 与规则列数 §f%d§e 冲突；规则层优先于学习层，实际值以上方生效列数为准§r",
+                    learned, rule.columns())), false);
+            }
         } else {
             source.sendSuccess(() -> Component.literal(
                 "  §7规则状态: §c未注册§r"), false);
@@ -239,9 +247,6 @@ public class LivingItemContainerCommand {
                 source.sendSuccess(() -> Component.literal(
                     "  §7备注: §c已被玩家从内置规则中移除§r"), false);
             }
-
-            source.sendSuccess(() -> Component.literal(
-                String.format("  §8校准可用 /livingitem container register %d§r", columns)), false);
         }
         return 1;
     }

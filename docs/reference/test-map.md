@@ -88,7 +88,7 @@ src/test/java/com/qiqi/li/
 │   └── TickOrderTest.java                     # 功能列表顺序守卫·默认优先级全为0（零行为变化的证据）/稳定排序/优先级生效/只读且非降序（不守容器内功能执行序，见 api-contract §1.3）
 ├── living/command/
 │   ├── ActivationTargetParsingTest.java       # 活化目标参数解析守卫·物品ID/标签/modid 回写契约 + 反向守卫「StringArgumentType 读不进 : # @」
-│   └── LivingItemContainerCommandTest.java     # inspect 实际入口·学习值替代独立推断 / 活对象列数与注册规则分列 / 末行向上取整 / 未开战利品明确不处理 / 大箱另一半同源规范化
+│   └── LivingItemContainerCommandTest.java     # inspect 实际入口·学习值替代独立推断 / 活对象列数与注册规则分列 / **规则与学习值冲突时显示双方+RULE>LEARNED，一致时静默** / **未注册不再建议把启发式值 register** / 末行向上取整 / 未开战利品明确不处理 / 大箱另一半同源规范化
 ├── living/compat/
 │   ├── sophisticated/
 │   │   ├── MixinInjectionSignatureCheckTest.java # ASM 精确 selector·同名改参数/返回/缺方法拒绝、静态性与方法体、多 handler 独立检查；编译声明五挂点独立原生组/软依赖配置，多个 RETURN 不掩盖缺 HEAD（不证明第三方业务）
@@ -117,7 +117,7 @@ src/test/java/com/qiqi/li/
 │   ├── EntityContainersTest.java              # 实体宿主白名单/UUID身份/数据宿主/槽位与鞍偏移/遥测物理键/菜单实体反查/原版车船类型+容量固定布局/非原版或扩容不借固定值/羊驼实例列数/摘箱空存储固定1列（真实驴菜单入口另由 ContainerMenuInfosTest 守卫，移除旧accessor恒真占位）·**三通道过槽位映射**（2026-10-27 审查 P2-1，I-C4/I-C10）：getSlotLimit/isItemValid/simulateInsertItem 曾直接当物理槽 ⇒ 鞍了鞍的驴第一箱格永远写不进（判别测试：鞍位禁插+首槽限流的自定义 handler）·**1.7.0 崩服回归**（2026-11-05）：实体容器准入改「形状白名单 + `ItemHandler.ENTITY` 能力面」双闸，第三方 `ContainerEntity` 无能力 ⇒ 准入跳过 / 其菜单槽 ⇒ `resolveMenuEntity` 为 null（打开 Lootr 矿车 GUI 不炸）/ 有能力面仍照常纳入 / `ContainerContexts.resolve` 不落到位置分支误判成同坐标 BE；构造即抛保留为最后防线
 │   ├── ContainerBoundaryContractTest.java     # 容器边界契约 I-C3/I-C4/I-C7/**I-C11** 守卫：SlotIgnoringHandler(insertItem 丢 slot) + ExtractBlockedHandler(extract 被拦) ⇒ 写回落对槽/物品守恒/模拟真实同源（S2 后转绿 **+ I-C11：四种容器形态的列数都 ≥ 1（掉落物形态 = 1，它原先白嫖接口默认 9）**
 
-│   ├── GameplayConfigTest.java                 # 宿主锚点配置·spec可构建/未加载时所有借位开关默认false/host_anchor.portal已注册且默认false；不代表活地狱门玩法已接入，加载/重载事件刷新仍待独立守卫
+│   ├── GameplayConfigTest.java                 # 宿主锚点配置·spec可构建/portal注册且默认false/真实事件总线 attach 接线：Loading 初载+Reloading 热重载刷新全部静态缓存/无关 SPEC 不污染/每例恢复默认全关（FML LoadedConfig 内存夹具，不写盘）
 │   ├── TlmClientConfigTest.java                # TLM客户端配置·spec/专属文件名/未加载默认1.25/0.25-4.0边界钳位/NaN与无穷回退默认/缓存热刷新不重建消费者
 │   ├── ContainerAnchorTest.java                # 容器世界锚点（2026-10-23 收编 4 份重复解析）·方块⇒AtBlock/玩家⇒AtPlayer(靠 getOwnerPlayer)/**实体容器⇒AtEntity（必须覆写，否则退化成没锚点）**/**掉落物⇒AtEntity（有实体，不是没锚点）**/物品形态⇒null/**getHostAnchor 与 getAnchor 刻意分开（物品形态有宿主值、非物品形态恒 null）**/roughPosition 三分支/退化不抛
 │   ├── ContainerViewersTest.java               # 「谁在看这个容器」唯一判定入口（2026-10-23 收编）·背包只发主人不门控(隐私红线)/末影箱开着 GUI 才发(第③次泄漏修复)/物品形态按菜单锚点认观众(开着别的容器不算)/**实体容器按宿主 UUID + 菜单存储槽认观众：同格两实体不串台(女仆坐箱船)、空/null 位置可用、宿主不在本世界不发、键形态异常不发(2026-11-13 D-container-26)**/位置为空⇒无观众/退化输入不抛（末影箱门控两条用例从流体轨与运行时轨合并迁入）

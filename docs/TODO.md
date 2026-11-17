@@ -64,7 +64,7 @@
 7. **坐下互动** —— ~~已拍板未实施~~ ✅ 已实装（2026-11-12：空光标右键toggle；坐下跳过行动、I不变；被动位移保持坐姿；owned组件；预览复用TLM坐姿；tooltip休息行，D-maid-07）。实机核对右键拦截、Gecko/Bedrock坐姿、YSM响应及活塞推走保持坐姿，见 [buffer/活魂符坐下互动设计.md](buffer/活魂符坐下互动设计.md)。
 8. **光标预览与语音互动** —— ~~真实carried退回魂符图标、个人语音频率未恢复、待机固定10～30秒~~ ✅ 已实装（2026-11-12：槽↔真实carried延续同一预览，触屏/分堆/quick-craft/snapback保原图；个人`SoundFreq`、Mob式环境待机、拿起/坐起回应、投喂`MAID_ITEM_GET`，D-maid-09/10）。实机组合见[技术文档 §4](tech/living-maid-tech.md#4-验证状态与已知边界)。
 9. **HUD快捷栏连续预览** —— ~~HUD九格/副手退回魂符、关容器必重建~~ ✅ 已实装（2026-11-13：原版HUD真实槽短token握手；GUI槽↔carried↔HUD同一实例，跨表面settle；全部可见HUD女仆完整沿用D-maid-10，不限选中槽、不共享节流，D-maid-11）。待实机核对十枚、pop/数量/耐久/decorator、冷却、聊天/F1/旁观、第三方HUD与真实性能，见[技术文档 §4](tech/living-maid-tech.md#4-验证状态与已知边界)。
-10. **女仆 GUI 里活按钮缺失（2026-11-14 记，未修）** —— `AbstractContainerScreenMixin` 在 `AbstractContainerScreen.init` 的 TAIL 注入并添加 `LivingButton`，而 TLM `AbstractMaidContainerGui.init()` 在 `super.init()` **之后**调 `this.clearWidgets()` ⇒ 刚加的按钮被清掉；`containerTick` 的位置变化检查因 `previousLeftPos` 已被设成当前值不会补加。修法方向：TLM 存在时在 `AbstractMaidContainerGui` init 之后重新挂载（或改挂 `MaidContainerGuiEvent.Init`）。与流体渲染无关（那次的根因是 Z，见 `D-container-27`），本次不扩范围。
+10. 🚫 **女仆 GUI 里活按钮缺失（不做，2026-11-17 用户否决）** —— 已知原因是 TLM `AbstractMaidContainerGui.init()` 在 `super.init()` **之后**调用 `clearWidgets()`，清掉 `AbstractContainerScreenMixin` 刚添加的 `LivingButton`；保持该界面不显示活按钮，不新增 TLM 专用挂载时机或事件接线。与流体渲染无关（那次根因是 Z，见 `D-container-27`）。
 
 11. **预览平滑后续杠杆（2026-11-14）** —— 用户反馈箱内数十枚魂符不稳滑，本轮分配优化已做（渲染缓冲静态复用、快照按栈引用缓存、好感观察按同步边沿、匹配首同引用跳过深比较，见 changelog 2026-11-14 与 [技术文档 §4](tech/living-maid-tech.md#4-验证状态与已知边界)）；优化后实测若仍卡顿，下一杠杆：逐 maid 的 GL 状态查询（renderOne 每帧 5 次 GL 读）与 `graphics.flush()` 合并、不可见或滚动出视野预览的绘制裁剪。均不改玩法判定。
 
@@ -108,7 +108,7 @@
 1. ⏳ **规则 JSON 挂原版 reload 钩子 / 迁 `data/living_item/`**：4 个规则 JSON 仍在 `assets/living_item/`，`data/living_item/` 不存在；`AddReloadListenerEvent` 全库 0 命中，现靠 `commonSetup` 装载 + 4 个命令 reload。触发门见路线图 §4.5；「非标准 JSON 不被原版解析」须实机验证。
 2. ⏳ **落盘结构留 `version` 字段**：4 个配置 JSON 已有；Codec / SavedData（`ContainerFluidData` / `FilterData` / `LearnedLayouts` / `ContainerDataSavedData`）无 version。1.0 前必须在位（路线图 §4.4），alpha 不做旧存档兼容。
 3. ⏳ **`SlotInteractions` 加确定性排序 + 未命中兜底**：当前仍是注册顺序 List、未命中静默返回 false；`LivingItemManager.sortFunctionsByPriority` + `TickOrderTest` 是现成参照。
-4. ⏳ **`GameplayConfig` 补一条守卫测试**：bake 已实现，`GameplayConfigTest` 只测 SPEC + 默认值，无热重载 / bake 守卫。
+4. ✅ **`GameplayConfig` 宿主锚点开关守卫**：~~只测 SPEC + 默认值，缺热重载 / bake 守卫~~ ✅ 已补（2026-11-17）：`GameplayConfigTest` 用真实 `BusBuilder` + FML `LoadedConfig` 内存夹具覆盖 attach 的 Loading/Reloading 两条监听、全部静态缓存刷新、无关 SPEC 不污染、每例恢复全 false；负向验证（删 Reloading 监听 ⇒ 热重载用例红；删 SPEC guard ⇒ 无关配置用例红）。
 5. ⏳ **Q12：分层违规报告是否接进 `doc_check.py`**：CI 现独立跑 `check_layers.py`（`build.yml:56`），`doc_check` 的检查项里没有分层。
 
 ## 活信标 · 游玩实测（2026-10-18 收尾时挂起）
@@ -487,15 +487,10 @@
    同键重建和反复删除不泄漏均通过。口径见 [生命周期契约 §2](reference/container-data-lifecycle.md)；
    Create 无铜灯持续抽取实机验收已通过（见「活海绵」第1项），其他守恒/保存通知问题未顺带修复。
 
-3.6 🔮 **inspect 可观测性两小项（2026-11-14 记，暂缓）** ——
-   ① **学习值与规则矛盾展示**：规则层压过学习层（RULE > LEARNED），模组改版后过期的
-   内置规则会永远赢过玩家开 GUI 学到的正确值，唯一暴露信号是学习侧开 GUI 时的 WARN 日志。
-   `LearnedLayouts.peek(id, size)`（现成只读接口，键形与学习器写入同源）在
-   `inspectContainer` 里对比规则列数即可把矛盾提到随手可查。
-   ② **删「校准可用 /livingitem container register %d」建议行**（inspect 未注册分支末尾）：
-   建议数字来自启发式，可能算错 ⇒ 玩家照登错误值后永久遮蔽学习值，误导大于帮助。
-   两项都落 `LivingItemContainerCommand#inspectContainer`；配套用例挂
-   `LivingItemContainerCommandTest`（现成 sendSuccess 捕获基建，五个既有用例可参照）。
+3.6 ✅ **inspect 可观测性两小项**（2026-11-14 记；2026-11-17 完成）——
+   ① **学习值与规则矛盾展示**：`inspectContainer` 用 `LearnedLayouts.peek(id,size)` 对比精确规则列数；不同时显示双方数值、`RULE > LEARNED` 以及「实际值以上方生效列数为准」（专门联动可能比规则层更优先，故不谎称规则值就是生效值）；相同/无学习值时静默。
+   ② **删除误导性校准建议**：未注册分支不再输出 `/livingitem container register <启发式列数>`——启发式可能算错，照登后会永久遮蔽正确学习值；保留未注册状态与玩家移除备注。
+   守卫：`LivingItemContainerCommandTest` 覆盖冲突提示/一致时静默/未注册不建议；两项均做负向验证（删冲突分支、恢复旧建议 ⇒ 对应用例分别红）。
 
 4. ♻️ **「客户端列数探测」前提已错，已被设计稿取代**（2026-10-21 更正）——
    见 [buffer/container-menu-introspection-topic.md](buffer/container-menu-introspection-topic.md) §1.1/1.2：
