@@ -278,6 +278,10 @@ dependencies {
         runtimeOnly files(jar)
     }
 
+    // ==================== Jade 兼容（可选；查询扩展不提供公共能力） ====================
+    compileOnly("maven.modrinth:jade:15.10.6+neoforge") { transitive = false }
+    testImplementation("maven.modrinth:jade:15.10.6+neoforge") { transitive = false }
+
     // ==================== 单元测试依赖 (Unit Test Dependencies) ====================
 
     // JUnit 5 - 测试框架核心（junit-jupiter 聚合包含 api / params / engine）

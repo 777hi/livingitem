@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -160,25 +159,32 @@ class ContainerEnergyCapabilityTest {
         verify(level, times(2)).invalidateCapabilities(pos);
     }
 
-    @Test
-    @DisplayName("客户端只读探针：Jade 取数闸门要过，但读数与充放全归服务端")
-    void provider_offersReadOnlyProbeOnClient() {
-        slots[0] = livingBulb(4);
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @DisplayName("客户端不暴露电池能力：空容器及有灯容器都不能用假能力触发取数")
+    void provider_doesNotAdvertiseOnClient(boolean hasBulb) {
+        if (hasBulb) slots[0] = livingBulb(4);
         ContainerLivingItemHandler.processContext(ctx, level);
-        IEnergyStorage server = ContainerEnergyStorage.resolveProvider(be, null);
-        assertNotNull(server, "服务端已报名（前置）");
+        assertEquals(hasBulb, ContainerEnergyStorage.resolveProvider(be, null) != null);
 
         when(level.isClientSide()).thenReturn(true);
-        IEnergyStorage probe = ContainerEnergyStorage.resolveProvider(be, null);
-        assertNotNull(probe, "Jade 客户端靠「能力非 null」决定是否发请求包，闸门必须过");
-        assertNotSame(server, probe, "客户端不得复用服务端实例");
-        assertSame(ContainerEnergyStorage.CLIENT_PROBE, probe);
-        assertEquals(0, probe.getEnergyStored());
-        assertEquals(0, probe.getMaxEnergyStored(), "零容量 ⇒ 客户端不会把任意方块认成储能");
-        assertFalse(probe.canExtract());
-        assertFalse(probe.canReceive());
-        assertEquals(0, probe.receiveEnergy(1000, false));
-        assertEquals(0, probe.extractEnergy(1000, false));
+        assertNull(ContainerEnergyStorage.resolveProvider(be, null));
+        for (Direction side : Direction.values()) {
+            assertNull(ContainerEnergyStorage.resolveProvider(be, side));
+        }
+    }
+
+    @Test
+    @DisplayName("客户端非容器没有能源能力，有原生能力时也不得返回替代实例")
+    void clientProvider_doesNotReplaceRealStorage() {
+        when(level.isClientSide()).thenReturn(true);
+        doReturn(null).when(level).getCapability(eq(Capabilities.ItemHandler.BLOCK), any(), any());
+        assertNull(ContainerEnergyStorage.resolveProvider(be, null), "非容器不是储能");
+
+        IEnergyStorage original = mock(IEnergyStorage.class);
+        doReturn(original).when(level).getCapability(eq(Capabilities.EnergyStorage.BLOCK), any(), any());
+        assertNull(ContainerEnergyStorage.resolveProvider(be, null), "本模组 provider 不替代原生能源能力");
+        assertSame(original, level.getCapability(Capabilities.EnergyStorage.BLOCK, pos, null));
     }
 
     @Test

@@ -2,7 +2,6 @@ package com.qiqi.li.living.domain.sponge;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -118,24 +117,39 @@ class SpongeContainerCapabilityTest {
         assertNotNull(SpongeContainerFluidHandler.resolveProvider(beOf(wet), null));
     }
 
-    @Test
-    @DisplayName("①b 客户端只读探针：Jade 取数闸门要过，但零罐且不可充放")
-    void clientProbe_isReadOnlyAndZeroTanks() {
+    @ParameterizedTest
+    @ValueSource(longs = {-1L, 0L, 1_000_000L})
+    @DisplayName("①b 客户端不暴露海绵能力：空容器、干海绵及湿海绵都不发假能力")
+    void clientProvider_doesNotAdvertiseStorage(long mmB) {
         Scene scene = Scene.of(9);
-        scene.spongeAt(4, 1_000_000L);
-        IFluidHandler server = SpongeContainerFluidHandler.resolveProvider(beOf(scene), null);
-        assertNotNull(server, "服务端已报名（前置）");
-        assertTrue(server.getTanks() > 0);
+        if (mmB >= 0) scene.spongeAt(4, mmB);
+        BlockEntity be = beOf(scene);
+        assertEquals(mmB >= 0, SpongeContainerFluidHandler.resolveProvider(be, null) != null);
 
         org.mockito.Mockito.when(scene.ctx().getLevel().isClientSide()).thenReturn(true);
-        IFluidHandler probe = SpongeContainerFluidHandler.resolveProvider(beOf(scene), null);
-        assertNotNull(probe, "Jade 客户端靠「能力非 null」决定是否发请求包，闸门必须过");
-        assertNotSame(server, probe, "客户端不得复用服务端实例");
-        assertEquals(0, probe.getTanks(), "零罐 ⇒ 客户端不会把任意方块认成储液");
-        assertTrue(probe.getFluidInTank(0).isEmpty());
-        assertEquals(0, probe.getTankCapacity(0));
-        assertEquals(0, probe.fill(new FluidStack(Fluids.WATER, 1000), FluidAction.EXECUTE));
-        assertTrue(probe.drain(1000, FluidAction.EXECUTE).isEmpty());
+        assertNull(SpongeContainerFluidHandler.resolveProvider(be, null));
+        for (net.minecraft.core.Direction side : net.minecraft.core.Direction.values()) {
+            assertNull(SpongeContainerFluidHandler.resolveProvider(be, side));
+        }
+    }
+
+    @Test
+    @DisplayName("①c 客户端非容器不变成液罐，原生流体能力不被替代")
+    void clientProvider_doesNotReplaceRealStorage() {
+        Level level = org.mockito.Mockito.mock(Level.class);
+        org.mockito.Mockito.when(level.isClientSide()).thenReturn(true);
+        BlockEntity be = org.mockito.Mockito.mock(BlockEntity.class);
+        org.mockito.Mockito.when(be.getLevel()).thenReturn(level);
+        org.mockito.Mockito.when(be.getBlockPos()).thenReturn(BlockPos.ZERO);
+        assertNull(SpongeContainerFluidHandler.resolveProvider(be, null), "非容器不是储液");
+
+        IFluidHandler original = org.mockito.Mockito.mock(IFluidHandler.class);
+        org.mockito.Mockito.when(level.getCapability(
+            net.neoforged.neoforge.capabilities.Capabilities.FluidHandler.BLOCK, BlockPos.ZERO, null))
+            .thenReturn(original);
+        assertNull(SpongeContainerFluidHandler.resolveProvider(be, null), "本模组 provider 不替代原生流体能力");
+        org.junit.jupiter.api.Assertions.assertSame(original, level.getCapability(
+            net.neoforged.neoforge.capabilities.Capabilities.FluidHandler.BLOCK, BlockPos.ZERO, null));
     }
 
     @Test

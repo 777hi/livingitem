@@ -165,10 +165,19 @@ per-item DataComponent `LivingSpongeData`（**record：`fluid: FluidType` + `mmB
   标志随容器而生灭，寿命以 [统一回收契约](../reference/container-data-lifecycle.md) §2 为准；
   旧清理丢标志导致 Create 抽取停摆的源码推演与实机对照见 §12.1。
 - 注册：BLOCK 宽注册（全部 BE 类型），provider 内部按存在性发实例。
-- **客户端存在性探针**（2026-11-06）：客户端没有容器级数据，但 Jade 在客户端
-  `WailaTickHandler → shouldRequestData → CommonProxy.hasDefaultFluidStorage` 用「能力非 null」
-  决定是否发请求包 ⇒ 闸门不过时服务端 `appendServerData` 根本没机会下发真实罐内容。
-  客户端 provider 因此返回零罐只读 `NO_OP`；服务端仍是存在性与读数的唯一权威。
+- **客户端不提供 BLOCK 流体能力**：provider 返回 `null`；内部缺失 ITEM handler 的防御
+  `NO_OP` 保留，但不得对外充当存在性探针。Jade 取数与能力分离，见 §4.3；旧探针事故见 §12.4。
+
+### 4.3 Jade 取数与能力分离（流体 / 能源）
+
+`living/compat/jade/LivingItemJadePlugin` 经 `@WailaPlugin` 发现，用官方
+`registerFluidStorage/registerEnergyStorage` 在 `BlockEntity` 级注册两个独立 UID 的**纯请求扩展**：
+`shouldRequestData` 仅对有 BE 的 `BlockAccessor` 放行，`getGroups` 始终返回 `null`，
+**不截走 Jade 默认服务端取数与显示**。两域客户端 provider 均返回 `null`；请求放行**不代表有罐或电池**，
+真实存在性与读数仍由服务端能力裁定，不能用假能力为显示报名。
+
+**边界**：不新增包、缓存或扫描；服务端真实存在性、让位与 edge 通告原样保留。
+守卫：两域能力测试的客户端 `null` 断言 + `LivingItemJadePluginTest`；游戏验收状态见 §12.4。
 
 ---
 
@@ -239,7 +248,7 @@ per-item DataComponent `LivingSpongeData`（**record：`fluid: FluidType` + `mmB
 | 7 | 组件 equals / hashCode | record（FluidType 恒等比较）天然合规 |
 | 8 | **floor 排出三连炸**（2026-11-02 实测）：交付随请求逐次缩水 + SIMULATE ≠ EXECUTE + 卡死尘销毁 | **排出侧唯一口径 = ceil**：交付整单位分毫不差、尘隐身留账；守卫 ⑩（实测场景全生命周期）+ ⑪（确定性） |
 | 9 | **tooltip 容量口径漂移**（2026-11-06 实测）：分子按堆总量 ×count、分母写死每枚 64,000 mB ⇒ count=2 装满显示「128000 / 64000」 | **分子分母同取堆口径**：分母一律走 `totalCapacityMmB(count)`，与能力面 `getTankCapacity` / 铜灯电量行同构；守卫 `LivingSpongeTooltipTest`（含逐字比对能力面） |
-| 10 | **Jade 客户端取数闸门被关死**（2026-11-06 实测）：10-31 能力存在性收口把 `level.isClientSide() → null` 写进 provider；Jade 客户端 `shouldRequestData` 判「无能力」⇒ 不发请求包 ⇒ 服务端读数再准也不显示 | 客户端只发**只读零值存在性探针**（海绵零罐 / 铜灯 0 FE 且不可充放），服务端 provider 仍是存在性与读数的唯一权威；守卫两域 `resolveProvider` 客户端测试 |
+| 10 | **Jade 客户端取数闸门被关死**（2026-11-06 实测）：能力收口后，默认请求判「无能力」而不发包，服务端真实罐内容不显示；当时改发零罐探针 | **旧修法于 2026-11-17 更正**：零罐非 null 仍会被客户端当流体能力；改为 Jade 纯请求扩展，两域客户端能力均为 `null`（§4.3 / §12.4） |
 | 11 | **源网络僵尸源**（2026-11-07 实测）：海绵吸走岩浆源后 tooltip 立即变，但该格仍以 `isSource=true` 渲染一小会，遇活水流出黑曜石 | 根因在流体域双层不闭环：`removeSource` 只删账本，`flows` 靠下一拍被动收敛，邻源 + 岩浆节拍门会把它顶成僵尸源；修法 = `demoteOrphanSources` 同拍按目标层降级。守卫 `ContainerFluidDataTest` ㊴b/㊴c（旧代码 2 项红） |
 
 **充入侧对偶检查（同日）**：报账 ceil 封顶请求 ⇒ 无缩水；count ≤ 64 ⇒ per ≥ 15 ⇒ 无报 0 死区；
@@ -421,6 +430,25 @@ Create 管道可正常抽取；**2026-11-06 使用修复包、不放铜灯复测
 **能力与验收边界**：罐存在性及 handler 生命周期不改；不新增 handler 刷新或重复能力失效。
 仍按实际游玩观察，不安排专项游戏测试。抽屉旧新对照与 §12.1 的 Create 停抽验收分别成立，
 不等于所有后端已验收，也不代表违约后端已获原子性保证。
+
+### 12.4 Jade 零值探针误报能力（2026-11-17）
+
+**历史（2026-11-06）**：用户实测 Jade 不显示容器里的海绵存量 / 铜灯电量；源码确认默认
+`shouldRequestData` 用客户端能力非 `null` 决定请求。当时海绵零罐、铜灯零容量只读探针
+只补上了取数闸门，**「零罐 / 零容量就不会影响其它客户端」的推论不成立**。
+
+**实机反馈与源码确证分开**：2026-11-17 用户实机反馈 Create 阈值开关滑轮误判；
+用户反馈只确认误判，不构成阈值回写的实测证据。Create 6.0.10 源码中，`hasInventory`
+按能力非 `null` 判存在，`ThresholdSwitchBlockEntity.getTypeOfCurrentTarget` 在物品能力未命中时
+据此选 `FLUID`，不检查罐数；`ThresholdSwitchScreen.getValueStep/updateInputBoxes`
+会按 1000 步长取整 / 夹取阈值，`send` 可经配置包回写。**阈值可被改写是源码结论，不是用户验收**。
+能源零容量探针也在源码上确证同型：只读和零容量不改变能力非 `null`，不得因此宣称没有误报，
+也不将其写成铜灯的实机反馈。
+
+**修复与验收边界**：两域一起移除客户端能力探针，Jade 改走 §4.3 的纯请求扩展；
+服务端真实存在性、让位与 edge 不变。**2026-11-17 用户对本轮目标场景实测反馈正常**，确认
+Create 滑轮误识别与 Jade 两域显示修复生效；未逐项说明的第三方储液 / 储能设备及安装不对称组合
+不据此扩大为已验收。
 
 ---
 

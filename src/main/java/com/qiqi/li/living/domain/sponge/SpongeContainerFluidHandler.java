@@ -78,18 +78,11 @@ public class SpongeContainerFluidHandler implements IFluidHandler {
         return out;
     }
 
-    /** provider 入口：服务端按「非容器 / 无活海绵」判存在性；客户端只发只读探针。 */
+    /** provider 入口：仅服务端按「非容器 / 无活海绵」判存在性，客户端不暴露能力。 */
     @Nullable
     public static IFluidHandler resolveProvider(BlockEntity be, @Nullable Direction side) {
         Level level = be.getLevel();
-        if (level == null) return null;
-        if (level.isClientSide()) {
-            // Jade 在客户端用「能力非 null」当取数闸门（WailaTickHandler → shouldRequestData
-            // → CommonProxy.hasDefaultFluidStorage）：闸门不过就压根不发请求包，
-            // 服务端 appendServerData 也就没机会下发真实罐内容。客户端没有容器级数据，
-            // 发零罐只读探针；真实读数一律由服务端 provider 提供。
-            return NO_OP;
-        }
+        if (level == null || level.isClientSide()) return null;
         TickableContainerContext ctx =
             ContainerLivingItemHandler.resolveContextAt(level, be.getBlockPos(), null);
         if (ctx == null || !isExposed(ctx)) return null;
@@ -216,7 +209,7 @@ public class SpongeContainerFluidHandler implements IFluidHandler {
         return h != null ? h : NO_OP;
     }
 
-    /** 零罐只读实现：既是「栈过不了双重过滤」的防御分支，也是客户端存在性探针（Jade 闸门）。 */
+    /** 栈未通过活海绵准入时的零罐防御实现，不作为 BLOCK 能力暴露。 */
     private static final IFluidHandler NO_OP = new IFluidHandler() {
         @Override public int getTanks() { return 0; }
         @Override public FluidStack getFluidInTank(int tank) { return FluidStack.EMPTY; }

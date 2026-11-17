@@ -687,12 +687,14 @@ fail-safe 不崩不刷（详见 oversized-stack-audit.md §2.8），long 内部�
     **所有早退之前**通告 —— 纯电池容器（无发电机 ⇒ sensor/active 都会早退）也必须能报名。
   - **负边沿**（拿走最后一盏灯）：此时功能已不在 grouped 里、不再 tick ⇒ 由
     `ContainerPhaseWriteback#onWriteback` 兜底（只在「正在通告」时扫容器，稳态零成本）。
-- **客户端**：发**只读零容量探针**（`CLIENT_PROBE`：0/0 FE、`canReceive/canExtract = false`）。
-  Jade 在客户端 `WailaTickHandler → shouldRequestData → CommonProxy.hasDefaultEnergyStorage`
-  用「能力非 null」决定是否发请求包；闸门不过 ⇒ 服务端 `appendServerData` 没机会下发真实读数
-  （2026-11-06 实测「容器里的活铜灯在 Jade 不显示电量」的根因）。
-  探针不参与存在性判定与读写，服务端 provider 仍是唯一权威；连接外观由服务端同步的连接位决定。
-- **守卫**：`ContainerEnergyCapabilityTest`（存在性三态 / 边沿精确一次 / 客户端探针只读 / 让位四段）。
+- **客户端**：provider 返回 `null`，删除 `CLIENT_PROBE`；Jade 请求放行与真实储能能力分离，
+  服务端存在性、让位和边沿通告不变（共享约束见 [海绵 §4.3](living-sponge-tech.md#43-jade-取数与能力分离流体--能源)）。
+  **2026-11-06 Jade 不显示电量的实测仍成立**，但旧「零容量只读探针不会影响客户端」推论错误：
+  能源能力非 `null` 的同型误报已由源码确证，不将其写成修复前铜灯的独立实机反馈；2026-11-17
+  用户对本轮两域修复目标场景实测反馈正常，未逐项说明的第三方组合不外推为已验收
+  （历史与证据边界见 [海绵 §12.4](living-sponge-tech.md#124-jade-零值探针误报能力2026-11-17)）。
+- **守卫**：`ContainerEnergyCapabilityTest`（存在性三态 / 边沿精确一次 / 客户端返回 `null` / 让位四段）
+  + `LivingItemJadePluginTest`（请求与能力分离）。
 
 ### 4.2 容器对外充放：副本规划、提交确认与整 FE 报账（2026-11-06 定案）
 
