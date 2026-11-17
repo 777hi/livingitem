@@ -9,7 +9,7 @@
 ## 本轮评估执行队列（2026-11-15 登记）
 
 > **性质**：工作层执行队列，不是新规格，也不复制机制正文。状态用 ⏳ 待办 / 🟢 进行中 / ✅ 完成 / ⏸ 暂缓（不占队首）；**每次只从队首取一项**，一个批次做完、全量测试与门禁绿、文档同步后再取下一项；完成项保留删除线 + 日期。
-> **当前队首**：~~Q5~~ 实机验收（Q5 创造活化 / Q6 流体组件均已代码落地待真机；Q2 已完成，Q4 仍暂缓，见第 2、4 项）。涉及代码口径变化的批次，完成判据统一包含 `./gradlew test --rerun`、CI 同款门禁和对应 tech / system-design 文档同步。
+> **当前队首**：暂空，待下轮选择；Q4 仍暂缓且不占队首。Q5/Q6 已按 2026-11-17 用户整体反馈结案；涉及代码口径变化的后续批次，完成判据统一包含 `./gradlew test --rerun`、CI 同款门禁和对应 tech / system-design 文档同步。
 
 1. ✅ **Q1 大箱相位文档结案** —— ~~待办~~ ✅ 已结案（2026-11-15）：旧结论「未修」改为 A6 已修 + 指针；稳定层补规则，真机证据沿用 2026-10-28 A6 复验的「红电重新锁相、拆半前相位布局不作数」。
    - 留痕：`PhaseDataMigration.clearPhaseOnChestSplit` / `ContainerDrops.otherChestHalf` / `PhaseDataMigrationChestSplitTest` / `tech/living-power-tech.md` §0 规则 12；archive 与 buffer 的历史描述按规约保留，**未改生产代码**。
@@ -37,18 +37,17 @@
    - 恢复条件：拿到真实存档的空容器占比后重新排期；或先做不依赖该数据的 Q4b。本条不设预算阈值。完成判据不变：空容器仍完成 last-seen、运行时作废和清理；活流体 / 红石自维持行为不变；同环境同口径复测，10k 空容器每拍中位较 9.31 ms 基线有可复算下降。
    - 不做：无实测支撑的活跃容器索引、重写分层、把传给功能实现的 List/Map 直接池化。
 
-5. ⏳ **Q5 创造模式活化（代码已接线，待实机验收）**
+5. ✅ **Q5 创造模式活化** —— ~~代码已接线，待实机验收~~ ✅ 已结案（2026-11-17）：用户反馈本轮既定验收均正常，关闭剩余真机债；未逐项说明的极端与第三方组合不外推为单独证据。
    - 范围与协议口径已沉淀到 [GUI交互 §6.2](system-design/gui-interaction-system.md#62-生存背包按钮启用与位置)，仅 INVENTORY 页小人框底部；服务端 `evaluate/apply` 与生存同源，取消活化活箱子照常掉物并清存储。
    - 已接线：活按钮创造页显隐/定位、`LivingTagPacket` 光标上传、`CarriedUpdatePacket` 关联结果、创造虚拟光标的槽位交互与活化共享单请求等待保护；普通路径不借入客户端物品，创造借入仅在精确有效玩家菜单的空真实光标上，finally 清空并回传实际结果。
-   - 自动回归入口：`LivingTagPacketTest`、`CreativeActivationSessionTest`、`LivingButtonLayoutTest`；运行状态以本轮验证输出为准，不以测试存在代答。
-   - **剩余完成判据（真机 GUI 烟测）**：创造 INVENTORY 页活化/取消活化；其他标签页隐藏；小人框按钮优先于射线点击；空手拖动、缩放、重开；普通生存与创造打开普通箱子不回归；快速连点与等待中放槽/丢弃/关闭不重复结算；活箱子实际掉物并清空内容；强制退出不恢复未决旧光标。
-   - 不为创造模式另写活化逻辑、不新增协议种类、不做所有标签页版本；实机未验收前不标全部完成。
+   - 自动回归入口：`LivingTagPacketTest`、`CreativeActivationSessionTest`、`LivingButtonLayoutTest`；真机验收范围沿用原清单（INVENTORY 页、其它标签页隐藏、按钮优先、拖动/缩放/重开、生存与普通箱、快速连点与等待中操作、活箱子掉物、强制退出）。
+   - 不为创造模式另写活化逻辑、不新增协议种类、不做所有标签页版本。
 
-6. ⏳ **Q6 流体组件值不可变化（代码已接线，待实机验收）** —— 原 `CONTAINER_FLUID_DATA_ITEM` 存可变的 `ContainerFluidData`（无 equals/hashCode），违反组件值语义：开发期 `ItemStack.set` 抛校验异常、生产侧引用判等使带组件物品不可堆叠；写入路径是 contentRetaining 容器无 UUID 时 `moveOut` 的**常态路径**（非旧存档兜底，见 3.3 ②）。
+6. ✅ **Q6 流体组件值不可变化** —— ~~代码已接线，待实机验收~~ ✅ 已结案（2026-11-17）：用户反馈本轮既定验收均正常；未逐项说明的容器变体与操作组合不外推为单独证据。原 `CONTAINER_FLUID_DATA_ITEM` 存可变 `ContainerFluidData`（无 equals/hashCode），违反组件值语义，现已改为不可变值。
    - 已接线（2026-11-16）：组件值改为不可变 record `FluidSourcesSnapshot`（与 `PhaseSnapshot` 同构），条目定义抽成共享 `FluidSourceEntry`（字段名 `slot`/`fluid` 不变 ⇒ NBT 形状零迁移）；组件按口径成对声明 persistent + networkSynchronized；`moveOut` 写 `captureSources()` 快照、`moveIn` 走 `fromSnapshot` 每次建全新运行时对象（创造多次放置互不污染）；`ContainerFluidData.snapshot()` 零调用已删。
-   - 自动回归入口：`FluidSourcesSnapshotTest`（真 set 不抛校验异常的直接回归 / 值判等 / 新旧 CODEC NBT 形状一致 + 历史字面 NBT 解析 / 往返 / 独立性 / 未知 id 丢弃 / 端到端守恒）+ `ContainerDataMigrationTest` 改造；关键守卫已做负向验证（字段名变异 ⇒ 形状守卫红；共享实例变异 ⇒ 独立性守卫红）。
-   - **剩余完成判据（真机）**：contentRetaining 三容器（潜影盒 / 精妙背包 / 无尽箱子）破坏→放置流体守恒；GUI 拖拽不复制不丢失；创造模式同物品连续放置互不串水。
-   - 不做：不为旧存档引入迁移逻辑；不改 BE/Player 附件（它们本就是可变运行时对象，校验只针对组件值）；不顺手修 3.3 末尾的 `getFlows()` 注释与实现不符（已单独记债）。
+   - 自动回归入口：`FluidSourcesSnapshotTest`（真 set 不抛校验异常 / 值判等 / CODEC 形状 / 往返 / 独立性 / 未知 id / 端到端守恒）+ `ContainerDataMigrationTest`；关键守卫已做负向验证。
+   - 真机验收范围沿用原清单：contentRetaining 三容器破坏→放置、GUI 拖拽、创造连续放置；整体反馈正常，不拆成逐组合证据。
+   - 不做：不为旧存档引入迁移逻辑；不改 BE/Player 附件；不顺手修 3.3 末尾的 `getFlows()` 注释债。
 
 > **暂缓区（不进当前队列）**：GameTest / 专用服务端与客户端启动烟测、落盘 version 字段与可选依赖上界、玩家上手说明与进度设计。它们属于 1.0 或产品拍板项，等 Q1~Q6 清完再按真实触发条件排期。
 
@@ -452,7 +451,7 @@
    **只能真机验证** ⇒ 先记录。
 
 3.3 ✅ **`ContainerFluidData` 当数据组件值违反 NeoForge 约定**（2026-10-21 写单测时暴露；
-   2026-11-14 按代码复核，修正下面三处口径；**2026-11-16 Q6 已落地代码，实机待验**）——
+   2026-11-14 按代码复核，修正下面三处口径；**2026-11-16 Q6 代码落地，2026-11-17 用户反馈既定实机验收正常**）——
    组件 `CONTAINER_FLUID_DATA_ITEM` 的值是可变的 `ContainerFluidData`（无 equals/hashCode），
    `ItemStack.set` 在 `CommonHooks.validateComponent` 下抛 `IllegalArgumentException`
    （`net/neoforged/neoforge/common/CommonHooks.java:1460-1485`）。开关是
@@ -471,7 +470,8 @@
    修法方向（`architecture-evolution-roadmap.md` §1.2，已定）：不可变快照（与 `PhaseSnapshot`
    同构）或补齐值语义；`networkSynchronized` 成对声明或注明「仅服务端」；破坏/放置迁移 +
    GUI 拖拽实测。⇒ **已落地**（2026-11-16：`FluidSourcesSnapshot` record + 成对声明 +
-   `captureSources`/`fromSnapshot`，自动回归见 `FluidSourcesSnapshotTest`；真机清单见队列 Q6）。
+   `captureSources`/`fromSnapshot`，自动回归见 `FluidSourcesSnapshotTest`；既定真机清单已按队列 Q6 结案，
+   未逐项说明的组合不外推为单独证据）。
    相邻债（本次不顺手修）：`getFlows()` 返回原始 `flows` 引用，而其附近注释声称「已返回只读视图」
    ——注释与实现不符；改只读前需排查调用方是否依赖可变性，单独排期。
 
@@ -687,19 +687,18 @@
    只扫 `mc.player.getInventory()`，扫不到背包内容；只有身边的人看得见（S2C 广播）。
    补自己那条归 TODO 6.1-b。
 
-## 活水车 · Create 接触面收窄（2026-10-19 记）
+## ~~活水车 · Create 接触面收窄（2026-10-19 记）~~ ✅ 已完成（2026-11-17）
 
-> 背景：`StressStateMachine` 的 javadoc 写着「纯逻辑类，可独立测试」，但**实际无法单测** ——
-> 它直接吃 `KineticBlockEntity` 类型，而 Create 只有 `compileOnly`（不在 test classpath 上），
-> 所以 `src/test` 里对它零覆盖。这是「编译依赖」真正的代价，比"要不要用反射"更值得处理。
+> 原问题：`StressStateMachine` 名义上可独立测试，实际直接依赖 Create 类型与网络 API，关键生命周期顺序零守卫。
 
-1. ⏳ **抽出 `KineticOps` 接口**（`livingItem$` 前缀，与 `LivingItemStressOutput` 同风格）：
-   `getLevel` / `hasNetwork` / `detachFromNetwork`（把 `getOrCreateNetwork().remove(self)` 收成一个操作）/
-   `setSpeed` / `setNetwork(null)` / `setChanged` / `sendData` / `getBlockPos`。
-   Mixin 侧实现它（那里本来就有 Create 类型），`StressStateMachine` 只依赖接口。
-2. ⏳ 收益：状态机变成**纯 Java**，可用 `FakeKineticOps` 单测覆盖
-   INACTIVE↔ACTIVE / 自过期 / 区块卸载清理 四条迁移；Create 引用面收敛到 Mixin 一处。
-3. ⚠️ **不采用反射**：理由见 [living-water-wheel-tech.md §5.1.1](tech/living-water-wheel-tech.md)。
+1. ✅ **`KineticOps` 接缝**：端口覆盖服务端/安全判据、生成器刷新、移网与摘接、速度/网络身份、
+   attach、网络容量与负载更新、脏标记/同步及诊断信息；`KineticBlockEntityMixin` 实现 Create 适配，
+   `StressStateMachine` 不再引用 `com.simibubi.create.*`。
+2. ✅ **状态机守卫**：`StressStateMachineTest` 用记录型 `FakeKineticOps` 覆盖首次启用、稳态、反转/清零、
+   读盘宽限与恢复、普通/生成器过期、区块卸载、不安全/非服务端路径及异常隔离；首次启用顺序与刷新标记
+   均做负向变异验证。fake 只守我方命令，不宣称证明真实 Create 网络或 Mixin/NBT 时序。
+3. ✅ **边界保持**：RPM/SU、NBT、白名单与宿主语义不变；不采用反射，理由见
+   [living-water-wheel-tech.md §5.1.1](tech/living-water-wheel-tech.md)。
 
 
 
@@ -784,7 +783,7 @@
 | B4 | [红电](tech/living-power-tech.md) | 已删的稳态跳过 / 旧行号 / PhaseSnapshot 本地轴说明 |
 | B5 ✅ | [熔炉](tech/living-furnace-tech.md) · [酿造](tech/living-brewing-stand-tech.md) | ~~不存在的 SlotAccessor 产出示例、默认布局「首次落盘」~~ **2026-11-11 已对齐**：熔炉数量操作为 consume/produce；酿造缺组件默认读值与整 record 保存分开（§6.4） |
 | B6 ✅ | [耕地](tech/living-farmland-tech.md) | ~~cropSeed 是类型记录不是「不消耗」、湿润验证改倒水成源~~ **2026-11-11 已对齐**：类型记录与种植消耗、采后回退、全字段比较、容器流体判湿与 4→3→2→1、JSON/领域注册；人工文件树改源码查询（§1/§2/§3/§5/§10/§12） |
-| B7 | [水车](tech/living-water-wheel-tech.md) | `domain/water` 路径 / 写回签名 / 渲染态存放 / 桶源退役旧示例标历史 |
+| B7 ✅ | [水车](tech/living-water-wheel-tech.md) | **2026-11-17 已对齐**：`domain/water` 路径 / 当前槽集合计算与写回 / `KineticOps` 状态机接缝 / 两条渲染态 set-clear 生命周期与 `@WrapOperation` / 桶源退役后的自维持流体时序；旧桶源与 pendingReattach 只留在明确历史事故段 |
 | B8 | [Tooltip](system-design/tooltip-system.md) · [图标](system-design/icon-system.md) | 面板常显与公式条件分开；ThreadLocal 真实 set/clear 生命周期 |
 | B9 | [末影箱路由](tech/living-ender-chest-tech.md) | 复合频道键替代 int 草图；simulate peek 非真实移除；flush 调用点 |
 | B10 | [容器边界 I-C10](system-design/container-boundary.md) · [超大堆叠审计](system-design/oversized-stack-audit.md) | 跨边界清单补容量/有效性/模拟三查询；实体缓存键判据 |

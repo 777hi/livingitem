@@ -127,7 +127,7 @@
 | # | 项 | 触发 / 排序 | 完成判据 |
 |---|---|---|---|
 | 1.1 | `commitItemComponents` **定向迁移**（[TODO 活海绵 4](../TODO.md)） | **触发门**：出现虚报收付 / 复制 / 丢失的结算证据，或明确要支持的玩法场景；**不因写法相似自动排全库重构** | 每域负向回归（旧写法红）、[api-contract §1.8](../system-design/api-contract.md) 口径不变 |
-| 1.2 | ~~`ContainerFluidData` **组件值不可变化**（[TODO 3.3](../TODO.md)）~~ ✅ 代码已落地（2026-11-16：`FluidSourcesSnapshot` record + 成对声明；实机待验，自动回归见 `FluidSourcesSnapshotTest`） | alpha 阶段无存档兼容负担 ⇒ **成本最低窗口，宜早不宜迟** | 组件值改为不可变快照（与 `PhaseSnapshot` 同构）或补齐值语义；`networkSynchronized` 成对声明或注释写明「仅服务端」；破坏/放置迁移 + GUI 拖拽实测 |
+| 1.2 | ~~`ContainerFluidData` **组件值不可变化**（[TODO 3.3](../TODO.md)）~~ ✅ 已完成（2026-11-16 代码：`FluidSourcesSnapshot` record + 成对声明；2026-11-17 用户反馈既定实机验收整体正常，未逐项说明的组合不外推） | alpha 阶段无存档兼容负担 ⇒ **成本最低窗口，宜早不宜迟** | 组件值改为不可变快照；破坏/放置迁移、GUI 拖拽与创造连续放置按 Q6 结案 |
 | 1.3 | **真机验证债集中清算** | 1.1 / 1.2 之后，一次集中回归轮 | R3 漏斗×末影箱四场景 + 拆合堆叠频道切换；整改计划 M-1/2/3/5/6/7/9a/b/c 逐条勾掉或**注明无法复现** |
 | 1.4 | ~~大箱相位「两半各得一份」~~ ✅ A6 已闭环（[TODO 3.1](../TODO.md)；2026-10-27 修复、2026-10-28 实测） | **退出阶段 1，不再排期** | 现状以 `../tech/living-power-tech.md` §0 规则 12、`PhaseDataMigration.clearPhaseOnChestSplit` 与 `PhaseDataMigrationChestSplitTest` 为准；保留本行仅作退出留痕 |
 

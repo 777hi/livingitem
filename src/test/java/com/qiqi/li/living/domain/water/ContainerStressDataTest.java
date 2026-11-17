@@ -11,9 +11,8 @@ import org.junit.jupiter.api.Test;
 /**
  * {@link ContainerStressData#wheelTorque} 的行为（2026-10-31 抽出纯函数后补测）。
  *
- * <p>为什么需要：水车宿主是 {@code create:water_wheel}，测试环境没有 Create
- * ⇒ {@code isLivingWaterWheel} 恒 false ⇒ 原先的 {@code calculate} 完全不可测。
- * 抽成「输入 level 表 → 输出 cw/ccw」的纯函数后，力矩数学与方向来源都能单测。</p>
+ * <p>本测试刻意只守力矩数学与方向来源，不模拟 Create 动力网；真实动力传播仍由游戏内验证覆盖。
+ * 抽成「输入 level 表 → 输出 cw/ccw」的纯函数后，数学规则可独立回归。</p>
  */
 class ContainerStressDataTest {
 

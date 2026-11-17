@@ -3,8 +3,8 @@ package com.qiqi.li.living.compat.create;
 /**
  * 由 Mixin 注入到 Create 方块实体上的应力输出接口。
  *
- * <p>提供 RPM / 应力容量的读写与理论转速查询，以及是否允许注入的判据（白名单），
- * 供 {@link CreateIntegration} 在不依赖 Create 编译期依赖的前提下驱动 Create 动力网。</p>
+ * <p>提供 RPM / 应力容量的读写、理论转速查询与安全注入判据，供
+ * {@link StressOutputManager} 驱动 Create 动力网；具体 Create 操作由 {@link KineticOps} 隔离。</p>
  */
 public interface LivingItemStressOutput {
 

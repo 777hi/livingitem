@@ -18,8 +18,9 @@
 
 ## §0 玩法定义
 
-> **实现入口**：`living/domain/water/` —— 关键类：`LivingWaterWheelFunction`（功能入口）·
-> `ContainerStressData`（容器级应力累加器）· `WaterRegistration`（域注册，含 Create kinetic 注入）
+> **实现入口**：`living/domain/water/`（`LivingWaterWheelFunction` / `ContainerStressData` /
+> `ContainerStressWriteback`）· `living/compat/create/`（`StressOutputManager` /
+> `StressStateMachine` / `KineticOps`）· `living/mixin/create/`（Create 适配与卸载挂点）
 
 > **性质**：本节「规则」是**契约**（违反即 bug），不是实现细节 —— 它是本子系统
 > **功能需求的来源**与**行为对错的判据**。⚠️ **只写规则与语义**；数值与操作步骤归实现层。
@@ -48,8 +49,10 @@
 **能力清单**：✅ 力矩计算（4 方向）· ✅ CW / CCW · ✅ 叠加 / 抵消 · ✅ SU 容量随堆叠放大
 · ✅ 容器底部输出 · ✅ 玩家脚底输出 · ✅ 实体容器脚底输出（2026-11-12，不设门，D-container-25）· ✅ rpm 落盘（抗重载）· ✅ 物品栏 3D 渲染 · ✅ Tooltip
 
-**验证入口**：⚠️ 本子系统**暂无独立测试类** ⇒ 以 **§附录「验证清单」** 为准；
-规则 6（跨存档稳定）由 `KineticBlockEntityMixin`（rpm 落盘）+ 游戏内手测守卫。
+**验证入口**：`ContainerStressDataTest` 守力矩 / 方向 / 堆叠，`ContainerStressWritebackTest`
+守宿主锚点，`StressStateMachineTest` 以记录型 `FakeKineticOps` 守生命周期命令与关键顺序，
+`WaterWheelRenderStateTest` 守图标时钟。规则 6 的真实 Mixin 应用、NBT 时序与 Create 动力传播
+仍须游戏内验证；fake 端口不代答第三方行为。
 
 ---
 
@@ -89,11 +92,12 @@
 
 | 类名 | 文件位置 | 职责 |
 |------|---------|------|
-| `LivingWaterWheelFunction` | `domain/waterwheel/LivingWaterWheelFunction.java` | 活水车功能入口，管理应力同步和 Tooltip |
-| `WaterWheelData` | `domain/waterwheel/WaterWheelData.java` | 水车应力 record：cwStress/ccwStress/netStress |
-| `LivingWaterWheelData` | `domain/waterwheel/LivingWaterWheelData.java` | 活水车数据容器：包含 WaterWheelData |
-| `ContainerStressData` | `container/ContainerStressData.java` | 容器级应力累加器，遍历所有活水车计算力矩 |
-| ~~`CONTAINER_STRESS_DATA`~~ | ~~`api/LivingItemManager.java`~~ | **已删除（2026-10-28）**：无 serializer、无读取者的死附件；应力只走 tick 级 + Create 直传 |
+| `LivingWaterWheelFunction` | `living/domain/water/LivingWaterWheelFunction.java` | 活水车功能入口，计算容器级数据并同步 Tooltip 状态 |
+| `WaterWheelData` | `living/domain/water/WaterWheelData.java` | 水车应力 record：cwStress/ccwStress/netStress |
+| `LivingWaterWheelData` | `living/domain/water/LivingWaterWheelData.java` | 活水车组件值 |
+| `ContainerStressData` | `living/domain/water/ContainerStressData.java` | 读取本拍最终流体数据与显式水车槽集合，累计力矩 |
+| `ContainerStressWriteback` | `living/domain/water/ContainerStressWriteback.java` | 将 tick 级净应力路由到方块、玩家脚底或实体锚点 |
+| ~~`CONTAINER_STRESS_DATA`~~ | ~~`api/LivingItemManager.java`~~ | **已删除（2026-10-28）**：应力只走 tick 级 + Create 直传 |
 
 #### Create 兼容类（软依赖，无 Create 时不加载）
 
@@ -101,11 +105,12 @@
 |------|---------|------|
 | `CreateCompat` | `compat/create/CreateCompat.java` | 检测 Create 是否安装（`ModList.get().isLoaded`） |
 | `StressOutputManager` | `compat/create/StressOutputManager.java` | 应力输出统一入口：找到容器下方/玩家脚底 BE 并注入应力，含白名单过滤和方向兼容性检查 |
-| `StressStateMachine` | `compat/create/StressStateMachine.java` | 应力输出状态机：管理网络连接、自过期、区块卸载清理、客户端同步，从 Mixin 中提取的纯逻辑类 |
-| `LivingItemStressOutput` | `compat/create/LivingItemStressOutput.java` | 接口，定义 Mixin 注入的方法签名（`livingItem$applyStress`） |
+| `StressStateMachine` | `compat/create/StressStateMachine.java` | Create-free 生命周期策略：网络连接、自过期、区块卸载清理、同步时机 |
+| `KineticOps` | `compat/create/KineticOps.java` | 状态机所需的 Create 操作端口，不暴露 Create 类型 |
+| `LivingItemStressOutput` | `compat/create/LivingItemStressOutput.java` | `StressOutputManager` 使用的窄注入接口 |
 | `CreateMixinPlugin` | `compat/create/CreateMixinPlugin.java` | Mixin 条件加载插件，仅 Create 安装时应用 Mixin |
-| `KineticBlockEntityMixin` | `mixin/create/KineticBlockEntityMixin.java` | Mixin 到 KineticBlockEntity，委托 `StressStateMachine` 管理应力状态，实现 `LivingItemStressOutput` 接口 |
-| `SmartBlockEntityMixin` | `mixin/create/SmartBlockEntityMixin.java` | Mixin 到 SmartBlockEntity，拦截 `onChunkUnloaded` 转发到 `LivingItemStressOutput`，避免 Mixin 目标方法不存在导致整个类失效 |
+| `KineticBlockEntityMixin` | `mixin/create/KineticBlockEntityMixin.java` | 实现 `LivingItemStressOutput` 与 `KineticOps`，承载 Create 类型判据和 API 调用 |
+| `SmartBlockEntityMixin` | `mixin/create/SmartBlockEntityMixin.java` | 在父类卸载挂点转发 `livingItem$onChunkUnloaded` |
 
 #### 渲染类（客户端，软依赖 Create）
 
@@ -272,31 +277,10 @@ int weightedTorque = Math.round(torque * strength * stackSize);
 
 ### 4.1 容器级应力累加
 
-`ContainerStressData.calculate()` 遍历容器中所有活水车，累加应力：
-
-```java
-public void calculate(ContainerFluidData fluidData, ContainerContext ctx) {
-    netCWStress = 0;
-    netCCWStress = 0;
-
-    for (int i = 0; i < containerSize; i++) {
-        if (!isLivingWaterWheel(stack)) continue;
-
-        int cwTorque = 0, ccwTorque = 0;
-        for (int neighbor : getNeighbors(i, ...)) {
-            int torque = px * fdy - py * fdx;
-            int weighted = Math.round(torque * strength * stackSize);
-            if (weighted > 0) cwTorque += weighted;
-            else if (weighted < 0) ccwTorque += -weighted;
-        }
-
-        netCWStress += cwTorque;
-        netCCWStress += ccwTorque;
-    }
-
-    netStress = netCWStress - netCCWStress;
-}
-```
+`ContainerStressData.calculate(fluidData, ctx, waterWheelSlots)` 只遍历本拍显式收集的
+活水车槽集合；每个槽从 `ContainerFluidData#getFlows` 读取四邻力场，累计 CW/CCW，最后得到
+`netStress = netCWStress - netCCWStress`。槽集合由 `LivingWaterWheelFunction.tickContainerData`
+从当前功能条目构造，不能退回全容器扫描，也不能从流体条目反推水车。
 
 ### 4.2 应力叠加与抵消
 
@@ -425,344 +409,47 @@ if (ctx.getAssociatedBlockEntities().isEmpty() && ctx.getInventory() != null) {
 
 ### 5.2 软依赖实现架构
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    活物品模组（始终加载）                       │
-│                                                             │
-│  CreateCompat ──→ ModList.get().isLoaded("create")          │
-│       │                                                     │
-│       ▼                                                     │
-│  StressOutputManager.apply(level, containerPos, stressData) │
-│       │                                                     │
-│       ├── CreateCompat.isLoaded() == false → 直接返回        │
-│       │                                                     │
-│       └── CreateCompat.isLoaded() == true                   │
-│              │                                              │
-│              ├── 检查容器下方 BE                              │
-│              ├── instanceof LivingItemStressOutput          │
-│              ├── isSafe() 白名单检查                         │
-│              ├── 方向兼容性检查                              │
-│              └── stressOutput.livingItem$applyStress(rpm, cap) │
-│                     │                                       │
-│                     └── StressStateMachine.applyStress()    │
-│                            ├── setSpeed + setNetwork        │
-│                            ├── attachKinetics               │
-│                            ├── updateNetwork                │
-│                            └── self.sendData() 即时同步      │
-└─────────────────────────────────────────────────────────────┘
+```text
+ContainerStressWriteback
+  → StressOutputManager
+      ├─ Create 未安装 / 无可用目标：no-op
+      ├─ LivingItemStressOutput：安全判据、方向检查、统一 applyStress
+      └─ KineticBlockEntityMixin
+          ├─ LivingItemStressOutput：对上游暴露窄注入面
+          ├─ StressStateMachine：只决定生命周期分支与命令顺序
+          └─ KineticOps：适配 Create 类型、网络与同步 API
 
-┌─────────────────────────────────────────────────────────────┐
-│              Create Mixin（仅 Create 安装时加载）              │
-│                                                             │
-│  CreateMixinPlugin ──→ getResource() 检测 Create 类          │
-│       │                                                     │
-│       ├── Create 不存在 → 跳过 Mixin                         │
-│       │                                                     │
-│       └── Create 存在 → 应用 KineticBlockEntityMixin         │
-│              │                                              │
-│              └── KineticBlockEntity 实现 LivingItemStressOutput │
-│                    ├─ stressState: StressStateMachine       │
-│                    ├─ getGeneratedSpeed() 注入               │
-│                    ├─ tick() HEAD 注入（自过期 + 重连）       │
-│                    ├─ onChunkUnloaded() 注入（网络清理）       │
-│                    ├─ calculateAddedStressCapacity() 注入    │
-│                    └─ livingItem$applyStress(rpm, cap) 统一入口 │
-└─────────────────────────────────────────────────────────────┘
+SmartBlockEntityMixin.onChunkUnloaded
+  → LivingItemStressOutput.livingItem$onChunkUnloaded
+  → StressStateMachine.onChunkUnloaded(KineticOps)
 ```
 
-### 5.3 关键类详解
+**边界**：`StressStateMachine` 不得 import `com.simibubi.create.*`；Create 具体类型白名单、原生
+生成器刷新与网络账目三步更新都属于 `KineticBlockEntityMixin` 适配层。`KineticOps` 是项目内部端口，
+不进入公开 `living.api`，也不替代真实 Create/Mixin 游戏内验证。
 
-#### CreateCompat — Create 安装检测
+### 5.3 状态机与接口边界
 
-```java
-public final class CreateCompat {
-    private static Boolean loaded;
+`LivingItemStressOutput` 是 `StressOutputManager` 使用的窄接口；`KineticOps` 是状态机向适配层
+发出的操作端口。两者保持分离，避免上游管理器获得网络变更能力。
 
-    public static boolean isLoaded() {
-        if (loaded == null) {
-            loaded = ModList.get().isLoaded("create");
-        }
-        return loaded;
-    }
-}
+状态机必须保持以下顺序约束：
+
+```text
+0 → 非0      setSpeed → detach → self-network → attach → update-network → changed → send
+非0 → 非0    detach → setSpeed → attach → update-network → changed → send
+非0 → 0      [remove-network] → detach → setSpeed(0) → clear-network → changed → send
+稳态同速      update-network（不摘接、不发同步）
+区块卸载      [remove-network] → detach → 清本地状态（不改速度/网络ID、不发同步）
 ```
 
-运行时通过 NeoForge 的 `ModList` API 检测 Create 是否安装。结果缓存，只查询一次。
+首次启用必须在建网前写入新 RPM/容量，并且 `setSpeed` 必须早于 `detach`；清理时本地 RPM 必须在
+网络移除后才归零。读盘恢复静默写入状态并给容器重新注入一拍宽限。上述我方策略由
+`StressStateMachineTest` 的记录型 fake 守卫；真实 `KineticNetwork`、Mixin 应用和 NBT 重载仍须实机核对。
 
-#### StressOutputManager — 应力输出统一入口
-
-```java
-public class StressOutputManager {
-    public static final float BASE_RPM = 8.0f;            // 基础转速，与原版小水车一致
-    public static final float BASE_SU_CAPACITY = 32.0f;   // 基础 SU 容量，与原版小水车一致
-
-    public static void apply(Level level, BlockPos containerPos,
-                              ContainerStressData stressData) {
-        if (!CreateCompat.isLoaded()) return;               // 无 Create 直接返回
-        if (level == null || level.isClientSide) return;
-
-        BlockPos belowPos = containerPos.below();
-        BlockEntity be = level.getBlockEntity(belowPos);
-
-        if (!(be instanceof LivingItemStressOutput stressOutput)) return;
-
-        // 白名单过滤
-        if (!(be instanceof SimpleKineticBlockEntity)
-            && !(be instanceof BracketedKineticBlockEntity)) {
-            return;
-        }
-
-        float rpm = 0;
-        float suCapacity = 0;
-        if (stressData != null && !stressData.isEmpty()) {
-            int netStress = stressData.getNetStress();
-            rpm = -Math.signum(netStress) * BASE_RPM;       // 负号修正旋转方向
-            suCapacity = Math.abs(netStress) * BASE_SU_CAPACITY;
-        }
-
-        // 方向兼容性检查
-        if (rpm != 0 && !isDirectionCompatible(be, rpm)) {
-            stressOutput.livingItem$applyStress(0, 0);      // 清零残留应力
-            return;
-        }
-
-        stressOutput.livingItem$applyStress(rpm, suCapacity);
-    }
-}
-```
-
-**关键改进**（相比旧的 `ModCreate` + `CreateIntegration`）：
-- **合并为单次调用**：`livingItem$applyStress(rpm, cap)` 一次调用同时设置 RPM 和 SU 容量，消除了 `setGeneratedRPM` 必须在 `setStressCapacity` 之前调用的隐式依赖
-- **职责合并**：将 `ModCreate`（入口 + 常量）和 `CreateIntegration`（逻辑 + 白名单）合并为一个类，减少文件碎片化
-- **直接 import Create 类型**：不再需要 `instanceof` 接口检查白名单（`StressOutputManager` 在 `compat/create` 包中，Create 已确认加载）
-
-#### StressStateMachine — 应力输出状态机
-
-```java
-public class StressStateMachine {
-    private float rpm;
-    private float capacity;
-    private boolean refreshedThisTick;
-    private boolean pendingReattach;
-
-    // 状态：INACTIVE / ACTIVE（由 rpm 值隐式表达）
-
-    public void tick(KineticBlockEntity self) {
-        if (self.getLevel() == null || self.getLevel().isClientSide) return;
-
-        if (pendingReattach) {
-            pendingReattach = false;
-            self.attachKinetics();
-            self.setChanged();
-            self.sendData();                               // 即时同步
-        }
-
-        if (rpm == 0) {
-            refreshedThisTick = false;
-            return;
-        }
-
-        if (!refreshedThisTick) {                          // 自过期：应力源消失
-            self.detachKinetics();
-            self.setSpeed(0);
-            self.setNetwork(null);
-            pendingReattach = true;
-            self.setChanged();
-            self.sendData();                               // 即时同步
-            rpm = 0;
-            capacity = 0;
-        }
-
-        refreshedThisTick = false;
-    }
-
-    public void applyStress(KineticBlockEntity self, float newRpm, float newCap) {
-        if (!isSafe(self)) { ... return; }
-
-        refreshedThisTick = true;                          // 标记本 tick 有应力源
-
-        // 状态切换逻辑
-        if (prev == 0 && newRpm != 0) {
-            // 从静止到旋转：创建网络 + 连接
-            self.setSpeed(newRpm);
-            self.setNetwork(self.getBlockPos().asLong());
-            self.attachKinetics();
-            updateNetwork(self, newCap);
-        } else if (prev != 0 && newRpm == 0) {
-            // 从旋转到静止：断开网络 + 重连邻居
-            self.detachKinetics();
-            self.setSpeed(0);
-            self.setNetwork(null);
-            pendingReattach = true;
-        } else if (prev != 0 && newRpm != 0) {
-            // 速度变化：断开 + 重连
-            self.detachKinetics();
-            self.setSpeed(newRpm);
-            self.attachKinetics();
-            updateNetwork(self, newCap);
-        }
-
-        self.setChanged();
-        self.sendData();                                   // 即时同步客户端
-    }
-}
-```
-
-**关键改进**（相比旧的内联 Mixin 逻辑）：
-- **即时 `sendData()`**：不再使用 `deferredSync` 延迟到 `tick()` TAIL，避免 TAIL 时状态已被 HEAD 清理导致客户端收到空状态
-- **纯逻辑类**：从 Mixin 中提取，可独立测试，不依赖 Mixin 框架
-- **统一入口**：`applyStress(rpm, cap)` 同时处理 RPM 和 capacity，消除顺序依赖
-- **显式状态机**：虽然状态是隐式的（由 rpm 值表达），但状态转换逻辑集中在 `applyStress` 中
-
-#### LivingItemStressOutput — 接口注入模式
-
-```java
-public interface LivingItemStressOutput {
-    void livingItem$applyStress(float rpm, float capacity);
-    void livingItem$setGeneratedRPM(float rpm);
-    float livingItem$getGeneratedRPM();
-    void livingItem$setStressCapacity(float capacity);
-    float livingItem$getStressCapacity();
-}
-```
-
-**改进**：新增 `livingItem$applyStress` 统一入口，同时保留旧方法用于向后兼容。
-
-#### CreateMixinPlugin — 条件 Mixin 加载
-
-```java
-public class CreateMixinPlugin implements IMixinConfigPlugin {
-    private static boolean isCreateLoaded() {
-        ClassLoader cl = CreateMixinPlugin.class.getClassLoader();
-        var url = cl.getResource("com/simibubi/create/content/kinetics/base/KineticBlockEntity.class");
-        return url != null;
-    }
-
-    @Override
-    public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
-        return isCreateLoaded();
-    }
-}
-```
-
-**重要**：使用 `getResource()` 而非 `Class.forName()` 检测 Create 是否安装。`Class.forName()` 会触发类加载链，导致 `BlockEntity` 在 Mixin 准备阶段被提前加载，与其他模组（如 Fabric API）的 Mixin 冲突。
-
-#### 白名单策略
-
-活水车的应力输出**仅允许简单传动组件**接收，复杂组件一律跳过。这是为了防止注入应力后触发 Create 内部复杂逻辑导致崩溃。
-
-**白名单**：
-
-| 类名 | 对应方块 | 安全原因 |
-|------|---------|---------|
-| `SimpleKineticBlockEntity` | 传动杆、齿轮等简单传动 | 无 `source` 依赖，无复杂状态 |
-| `BracketedKineticBlockEntity` | 支架齿轮 | 继承自 SimpleKineticBE，同样安全 |
-
-**黑名单（典型崩溃案例）**：
-
-| 类名 | 对应方块 | 崩溃原因 |
-|------|---------|---------|
-| `DirectionalShaftHalvesBlockEntity` | 竖直十字齿轮箱 | 依赖 `source` 字段，NPE |
-| `SplitShaftBlockEntity` | 十字齿轮箱 | 多方向旋转逻辑复杂 |
-| `GearshiftBlockEntity` | 变速箱 | 状态切换逻辑复杂 |
-
-**实现方式**：双重白名单检查——`StressOutputManager` 和 `StressStateMachine` 各自维护白名单检查。两处检查确保：
-1. `StressOutputManager` 不会向非白名单 BE 发送应力
-2. 即使绕过第一层检查，`StressStateMachine.applyStress()` 也会拒绝非白名单 BE
-
-#### KineticBlockEntityMixin — 精简后的 Mixin
-
-```java
-@Mixin(KineticBlockEntity.class)
-public abstract class KineticBlockEntityMixin implements LivingItemStressOutput {
-
-    private final StressStateMachine stressState = new StressStateMachine();
-
-    @Inject(method = "getGeneratedSpeed", at = @At("HEAD"), cancellable = true, remap = false)
-    private void livingItem$getGeneratedSpeed(CallbackInfoReturnable<Float> cir) {
-        float rpm = stressState.getRPM();
-        if (rpm != 0) {
-            cir.setReturnValue(rpm);
-        }
-    }
-
-    @Inject(method = "onChunkUnloaded", at = @At("HEAD"), remap = false)
-    private void livingItem$onChunkUnloaded(CallbackInfo ci) {
-        stressState.onChunkUnloaded((KineticBlockEntity) (Object) this);
-    }
-
-    @Inject(method = "tick", at = @At("HEAD"), remap = false)
-    private void livingItem$checkExpiry(CallbackInfo ci) {
-        stressState.tick((KineticBlockEntity) (Object) this);
-    }
-
-    @Inject(method = "calculateAddedStressCapacity", at = @At("HEAD"), cancellable = true, remap = false)
-    private void livingItem$calculateAddedStressCapacity(CallbackInfoReturnable<Float> cir) {
-        if (stressState.isActive()) {
-            cir.setReturnValue(stressState.getCapacity());
-        }
-    }
-
-    @Override
-    public void livingItem$applyStress(float rpm, float capacity) {
-        stressState.applyStress((KineticBlockEntity) (Object) this, rpm, capacity);
-    }
-
-    // 向后兼容方法
-    @Override
-    public void livingItem$setGeneratedRPM(float rpm) {
-        stressState.applyStress((KineticBlockEntity) (Object) this, rpm, stressState.getCapacity());
-    }
-
-    @Override
-    public float livingItem$getGeneratedRPM() {
-        return stressState.getRPM();
-    }
-
-    @Override
-    public void livingItem$setStressCapacity(float capacity) {
-        stressState.applyStress((KineticBlockEntity) (Object) this, stressState.getRPM(), capacity);
-    }
-
-    @Override
-    public float livingItem$getStressCapacity() {
-        return stressState.getCapacity();
-    }
-}
-```
-
-**Mixin 注入的方法**：
-
-| 方法 | 注入目标 | 作用 |
-|------|---------|------|
-| `livingItem$getGeneratedSpeed` | `getGeneratedSpeed()` | 纯 getter：让 Create 认为该 BE 是旋转源，返回固定 RPM（±8） |
-| `livingItem$onChunkUnloaded` | `onChunkUnloaded()` | 区块卸载时清理网络连接，防止残留实体导致应力翻倍和变速结构爆炸 |
-| `livingItem$checkExpiry` | `tick()` HEAD | 自过期机制：委托 `stressState.tick()`，每 tick 检查 `refreshedThisTick`，未刷新则清理 |
-| `livingItem$calculateAddedStressCapacity` | `calculateAddedStressCapacity()` | 纯 getter：让 Create 认为该 BE 提供应力容量 |
-| `livingItem$applyStress` | 新增方法 | 统一入口：外部调用设置 RPM + SU 容量，委托 `stressState.applyStress()` |
-
-**关键精简**（相比旧版本）：
-
-| 旧版本 | 新版本 | 改进 |
-|--------|--------|------|
-| `livingItem$generatedRPM` 等字段直接定义在 Mixin 中 | 委托 `StressStateMachine` 管理 | 纯逻辑类，可独立测试 |
-| `getGeneratedSpeed()` 含副作用（清零 RPM） | 纯 getter | 消除副作用 |
-| `deferredSync` TAIL 注入 | 移除，`applyStress()` 中直接 `sendData()` | 即时同步，避免客户端空状态 |
-| 白名单检查在 Mixin 中 | 白名单检查在 `StressStateMachine` 中 | 单点检查 |
-| 两处 `isSafeKineticBE()` | 一处 `StressStateMachine.isSafe()` | 消除重复 |
-
-**状态转换逻辑**（委托 `StressStateMachine`）：
-
-```
-prev=0, rpm≠0  → 从静止到旋转：setSpeed + setNetwork + attachKinetics + updateNetwork + sendData
-prev≠0, rpm=0  → 从旋转到静止：detachKinetics → setSpeed(0) → setNetwork(null) → pendingReattach + sendData
-prev≠0, rpm≠0  → 速度变化：detachKinetics + setSpeed + attachKinetics + updateNetwork + sendData
-chunkUnloaded  → 区块卸载：network.remove(self) + detachKinetics + 清零所有状态
-```
-
-> **关键原则**：在调用 `setNetwork(null)`（内部调 `network.remove()`）时，必须确保 `getGeneratedSpeed()` 返回非零值，让 `isSource()` 返回 true，否则 `sources.remove(be)` 会被跳过。为此，`setNetwork(null)` 之前需设 `refreshedThisTick = true`，且 `rpm` 清零操作必须在 `setNetwork(null)` 之后。
-
-> **注意**：`prev≠0, rpm=0` 时必须**先 detach 再 setSpeed(0)**。清理后必须调用 `pendingReattach = true`，下一 tick 执行 `attachKinetics()` 重连邻居网络。
+安全白名单仍只接受 `SimpleKineticBlockEntity` 家族（含 `BracketedKineticBlockEntity`）。
+`StressOutputManager` 先经 `LivingItemStressOutput` 查询，状态机再经 `KineticOps` 防御检查；判据的
+Create 类型实现只保留在 Mixin 适配层。
 
 ### 5.4 Mixin 配置文件
 
@@ -775,7 +462,8 @@ chunkUnloaded  → 区块卸载：network.remove(self) + detachKinetics + 清零
   "compatibilityLevel": "JAVA_21",
   "plugin": "com.qiqi.li.living.compat.create.CreateMixinPlugin",
   "mixins": [
-    "KineticBlockEntityMixin"
+    "KineticBlockEntityMixin",
+    "SmartBlockEntityMixin"
   ],
   "injectors": {
     "defaultRequire": 1
@@ -890,32 +578,16 @@ private static Item getWaterWheelItem() {
 
 ### 6.2 渲染架构
 
-活水车使用 Create 原版水车的 OBJ 模型，通过 Mixin 拦截 `ItemRenderer.render()` 方法实现自定义渲染：
+活水车有两条现行渲染接缝，状态不能混用：
 
-```
-ItemRenderer.render()
-  │
-  ├─ @Inject HEAD → captureItem()        设置 RENDERING_ITEM ThreadLocal
-  │
-  ├─ @Redirect → handleCameraTransforms()  ← 核心拦截点
-  │     │
-  │     ├── 非活水车 → 原始 handleCameraTransforms()
-  │     │
-  │     └── 活水车（GUI 上下文）
-  │           │
-  │           ├── 1. 修正漫反射光照方向
-  │           │     RenderSystem.setShaderLights(FRONT_LIGHT_0, FRONT_LIGHT_1)
-  │           │
-  │           ├── 2. 跳过等轴测变换（不调用 handleCameraTransforms）
-  │           │
-  │           ├── 3. 应用旋转变换
-  │           │     netStress == 0 → 仅 rotateX(π/2) + scale(0.7)
-  │           │     netStress != 0 → rotateZ(-angle) + rotateX(π/2) + scale(0.625)
-  │           │
-  │           └── return model（跳过等轴测变换）
-  │
-  └─ @Inject RETURN → clearItem()        恢复漫反射光照 + 清理 ThreadLocal
-```
+1. `ItemRendererWaterWheelMixin` 在 `ItemRenderer.render` 的 HEAD 把当前栈存进 **Mixin 实例字段**，
+   用可叠加的 `@WrapOperation` 包装 `ClientHooks.handleCameraTransforms`，为活水车调整 GUI 姿态与
+   漫反射光源；RETURN 恢复光照并清空字段。禁止退回排他的 `@Redirect`。
+2. 声明式图标链由 `GenericLivingItemOverrides.resolve` 把 RPM 写入
+   `WaterWheelRenderState` 的 ThreadLocal，`RotatingWaterWheelModel.applyTransform` 读取旋转角，
+   非适用路径必须 `clear()`。ThreadLocal 只传 RPM，不存 `ItemRenderer` 当前栈。
+
+两条路径都只在 GUI / GROUND / FIXED 显示上下文生效，普通 Create 水车与非活物品必须回落原模型。
 
 ### 6.3 旋转变换
 
@@ -994,26 +666,13 @@ Lighting.setupForFlatItems();
 
 > **注意**：`combinedLight`（光照贴图）无需修改。`GuiGraphics.renderItem()` 传入的值已经是 `15728880`（即 `LightTexture.FULL_BRIGHT`），GUI 中的物品本身就使用最大光照贴图。真正需要修正的只有漫反射光源方向。
 
-### 6.5 ThreadLocal 状态传递
+### 6.5 状态传递边界
 
-`ItemRenderer.render()` 的 `@Redirect` 拦截点无法直接获取 `ItemStack` 参数，使用 ThreadLocal 传递：
-
-```java
-private static final ThreadLocal<ItemStack> RENDERING_ITEM = new ThreadLocal<>();
-private static final ThreadLocal<Boolean> NEED_RESTORE_LIGHTING = ThreadLocal.withInitial(() -> false);
-
-// HEAD 注入：捕获 ItemStack
-RENDERING_ITEM.set(itemStack);
-
-// Redirect 中：读取 ItemStack
-ItemStack itemStack = RENDERING_ITEM.get();
-
-// RETURN 注入：恢复光照 + 清理
-if (NEED_RESTORE_LIGHTING.get()) {
-    Lighting.setupForFlatItems();
-}
-RENDERING_ITEM.remove();
-```
+- `ItemRendererWaterWheelMixin`：当前栈与光照恢复标志是每个 `ItemRenderer` Mixin 实例的字段，
+  HEAD 设置、RETURN 清空；这条路径不使用 ThreadLocal。
+- `WaterWheelRenderState`：只保存当前声明式模型的 RPM。`GenericLivingItemOverrides.resolve`
+  负责 set/clear，`RotatingWaterWheelModel.applyTransform` 只读；任何非旋转或非活物品回落路径
+  都必须清除，避免跨模型串态。
 
 ### 6.6 条件判断
 
@@ -1030,32 +689,8 @@ CreateCompat.isLoaded()        ← Create 已安装
 
 ### 6.7 Mixin 配置
 
-`living_item.client.mixins.json`：
-
-```json
-{
-  "required": true,
-  "package": "com.qiqi.li.client.mixin",
-  "compatibilityLevel": "JAVA_21",
-  "mixins": [
-    "AbstractContainerScreenMixin",
-    "CreativeModeInventoryScreenMixin",
-    "InventoryScreenMixin",
-    "RecipeBookComponentMixin",
-    "LivingItemSlotWrapperAccessor",
-    "SpriteIconButtonMixin",
-    "ItemRendererWaterWheelMixin"
-  ],
-  "injectors": {
-    "defaultRequire": 1
-  },
-  "overwrites": {
-    "requireAnnotations": true
-  }
-}
-```
-
-`ItemRendererWaterWheelMixin` 注册在客户端 Mixin 配置中，仅在客户端加载。
+`ItemRendererWaterWheelMixin` 以客户端 Mixin 配置中的类名为权威；配置 ↔ 源文件双向一致由
+`python tools/check_mixins.py` 检查。本文不复制完整客户端 Mixin 清单，避免其它注入增删时漂移。
 
 ---
 
@@ -1099,35 +734,21 @@ CreateCompat.isLoaded()        ← Create 已安装
   └── 仍无需 Create 依赖
 
 第三步：Create 集成（软依赖）  ✅
-  ├── CreateCompat（检测 Create 是否安装）
-  ├── ModCreate（集成入口，常量定义，安全防护）
-  ├── CreateIntegration（应力输出逻辑，通过接口操作下方/脚底 BE，含白名单过滤）
-  ├── LivingItemStressOutput（接口注入模式）
-  ├── CreateMixinPlugin（条件 Mixin 加载，getResource 检测）
-  ├── KineticBlockEntityMixin（注入 getGeneratedSpeed/calculateAddedStressCapacity/tick）
-  │   ├── 自过期机制：refreshedThisTick 布尔标记
-  │   ├── 白名单过滤：isSafeKineticBE() 双重检查
-  │   ├── 网络更新：setGeneratedRPM/setStressCapacity 立即更新网络
-  │   └── 客户端同步：sendData() 确保渲染状态正确
-  ├── living_item.mixins-create.json（Mixin 配置，required=false）
-  ├── neoforge.mods.toml 添加 Create 为 optional 依赖
-  ├── build.gradle 配置 compileOnly + runtimeOnly
-  ├── 宿主物品从 compass 改为 create:water_wheel
-  ├── 容器下方传动杆/齿轮成功旋转！
-  ├── 玩家脚底应力传递（背包中活水车驱动脚下齿轮）
-  └── 应力方向修正（-sign 修正旋转方向一致性）
+  ├── CreateCompat / CreateMixinPlugin（运行时与 Mixin 阶段条件加载）
+  ├── StressOutputManager + LivingItemStressOutput（目标、安全与方向门）
+  ├── StressStateMachine + KineticOps（Create-free 策略 + Mixin 适配端口）
+  ├── KineticBlockEntityMixin（状态注入与 Create API 适配）
+  ├── SmartBlockEntityMixin（父类卸载挂点转发）
+  ├── rpm/capacity 仅磁盘落盘，客户端包不写私有键
+  ├── living_item.mixins-create.json（required=false，两个 Mixin）
+  ├── build.gradle compileOnly + runtimeOnly，mods.toml optional
+  └── 容器、玩家与实体锚点按既有路由向脚下方块注入
 
 第四步：物品栏 3D 渲染  ✅
-  ├── ItemRendererWaterWheelMixin（Mixin 到 ItemRenderer.render）
-  ├── @Redirect handleCameraTransforms → 跳过等轴测变换 + 应用旋转
-  ├── @Inject HEAD/RETURN → ThreadLocal 状态传递 + 光照恢复
-  ├── 旋转变换：rotateZ(-angle) + rotateX(π/2) + scale
-  ├── 漫反射光照修正：RenderSystem.setShaderLights() 正前方光源
-  ├── 旋转方向修正：负号使正应力对应顺时针
-  ├── 条件判断：CreateCompat + isWaterWheel + isGuiContext + isLivingItem
-  ├── LivingIconRegistry 条件注册活水车图标
-  ├── living_item.client.mixins.json 注册 ItemRendererWaterWheelMixin
-  └── 物品栏活水车正面朝向 + 有应力时旋转！
+  ├── ItemRendererWaterWheelMixin：@WrapOperation + 实例字段传当前栈
+  ├── GenericLivingItemOverrides → WaterWheelRenderState → RotatingWaterWheelModel
+  ├── GUI 姿态、RPM 旋转与漫反射光源恢复
+  └── 非活物品 / 非适用显示上下文回落原模型
 ```
 
 ---
@@ -1521,55 +1142,13 @@ if (prev != 0 && rpm == 0) {
 - 网络状态异常（残留条目与活跃条目不一致）
 - 变速结构爆炸（Create 内部校验失败）
 
-### 9.20 活水桶移除后水流数据残留导致虚假应力
+### 9.20 历史：桶驱动时代的流体残留（桶源已退役）
 
 **现象**：活水桶被取走后，活水车依旧显示净应力（Tooltip 有值），且移动到不同槽位净应力还会变化，仿佛水流数据依旧存在。同时容器下方的齿轮可能不旋转，但旁边齿轮仍在转（且无应力）。
 
-**根因（当时）**：水流数据缓存在 `CONTAINER_DATA` 嵌套 `fluid` 字段中，清除的唯一入口是
-`ContainerFluidData.recalculate()`（**该方法已删除**，2026-10-06 统一时钟重构，
-现状见下方「现状」注），而它只在 `LivingWaterBucketFunction.tickContainerData()` 中被调用。
-当活水桶被取走：
-
-```
-processContext() 扫描容器
-  → grouped 中没有 LivingWaterBucketFunction（水桶已不在）
-  → hcdEntries 没有它
-  → tickContainerData() 不被调用
-  → recalculate() 不执行
-  → CONTAINER_DATA 中的旧水流数据（fluid 字段）一直残留
-  → LivingWaterWheelFunction.tickContainerData() 仍被调用
-  → 用残留水流数据计算应力 → 虚假应力
-```
-
-**为何 `recalculate()` 不在水车侧调用**：水流数据是共享资源，被多个水桶和水车共同使用，职责归属在水桶功能（`LivingWaterBucketFunction`）而非水车功能。水车只读水流数据，不负责其生命周期。
-
-**为何之前没发现**：水流数据有 120 秒超时清理，但 120 秒内虚假应力一直存在，且每 tick 都在计算。
-
-**修复**：在 `ContainerLivingItemHandler.processContext()` 中，`hcdEntries` 循环之前，检查 `grouped` 中是否有活水桶条目。如果没有，直接清除水流数据：
-
-```java
-// 在 hcdEntries 循环之前
-boolean hasWaterBucket = false;
-for (var entry : grouped.entrySet()) {
-    if ("living_water_bucket".equals(entry.getKey().getFunctionId())) {
-        hasWaterBucket = true;
-        break;
-    }
-}
-if (!hasWaterBucket && tick.fluidData != null && tick.fluidData != ContainerFluidData.EMPTY) {
-    tick.fluidData.getFlows().clear();
-}
-```
-
-**效果**：`LivingWaterWheelFunction.tickContainerData()` 计算时看到空水流 → 产出零应力 → `CreateIntegration.updateStressOutput()` 注入 `rpm=0` → 齿轮应力正确清零，Tooltip 显示无应力。
-
-**涉及文件**：`ContainerLivingItemHandler.java`
-
-> ⚠️ **现状（2026-10-08 起，本条结论已失效）**：流体驱动改为**自维持**的
-> `LivingFluidFunction.tickContainerData`（`shouldTickWithoutOwnItems` 恒真）——
-> 桶不在场，纯源容器照样 tick；「桶被取走 ⇒ 不再清理水流」这条链路**已不存在**，
-> 上面的 `hasWaterBucket` 兜底也随重构删除。
-> 保留本节作为「驱动权不能挂在物品上」的教训（见 `living-fluid-tech.md` §1）。
+**本节仅保留历史事故**：当时流体生命周期挂在活桶功能上，取走桶后旧流场仍被水车读取。
+现状已由自维持的 `LivingFluidFunction` 统一驱动：源是容器资产，与桶解耦；无桶时流体仍正常 tick，
+不再有 `hasWaterBucket` 清场分支。当前链路以附录 Tick 时序与 `living-fluid-tech.md` 为准。
 
 ### 9.21 `deferredSync` 延迟同步导致客户端空状态（齿轮不转 + 应力网络无应力）
 
@@ -1630,68 +1209,35 @@ self.sendData();     // 即时同步 → 状态正确
 
 ---
 
-## 附录：Tick 时序
+## 附录：当前 Tick 时序
 
+```text
+ServerTickEvent.Pre → LivingItem.onServerTick
+  → ContainerLivingItemHandler.processContext
+      ├─ 扫描槽位并按功能分组，创建 TickContext
+      ├─ [prio 0] LivingFluidFunction.tickContainerData
+      │    └─ 自维持流体 BFS / 推动；源与桶解耦
+      ├─ [prio 1] LivingWaterWheelFunction.tickContainerData
+      │    ├─ 从当前水车条目构造显式槽集合
+      │    ├─ ContainerStressData.calculate(fluidData, ctx, slots)
+      │    └─ postTickSync 写回水车组件
+      └─ ContainerStressWriteback.onWriteback
+           └─ StressOutputManager.apply → LivingItemStressOutput.applyStress
+                └─ StressStateMachine → KineticOps → Create Mixin 适配层
+
+KineticBlockEntity.tick HEAD
+  → StressStateMachine.tick(KineticOps)
+      ├─ rpm=0：清刷新标记并返回
+      ├─ 本拍已刷新 / 读盘宽限：保留状态并消费标记
+      └─ 未刷新：生成器走原生刷新；普通目标移网、摘接、归零并同步
+
+SmartBlockEntity.onChunkUnloaded HEAD
+  → LivingItemStressOutput.onChunkUnloaded
+  → StressStateMachine：移网、摘接、清本地状态
 ```
-ServerTickEvent.Pre → LivingItem.onServerTick()
-  │
-  ├─ processContainer(player.getInventory()) → 处理玩家背包
-  │
-  └─ processLevelContainers(level) → 处理所有世界中容器
-       │
-       └─ ContainerLivingItemHandler.processContext()
-            │
-            ├─ 1. 扫描容器，按功能 ID 分组活物品 → grouped
-            │
-            ├─ 2. 创建 TickContext（含 fluidData 缓存、stressData 容器）
-            │
-            ├─ 3. 调用各功能的 tick()（按扫描顺序）
-            │     ├─ LivingWaterBucketFunction.tick() → 注册/移除水源
-            │     ├─ LivingWaterWheelFunction.tick() → （空操作）
-            │     └─ 其他功能...
-            │
-            ├─ 3.5 若无活水桶条目，清除水流数据
-            │     → 防止活水桶移除后水流数据残留
-            │
-            ├─ 4. 按优先级调用 tickContainerData()（HasContainerData 接口）
-            │     ├─ [优先级 0] LivingWaterBucketFunction
-            │     │     ├─ ContainerFluidData.tick()
-            │     │     │     ├─ recalculate() → BFS 水流蔓延
-            │     │     │     └─ pushItems() → 沿水流推动物品
-            │     │     └─ postTickSync() → 同步水流到水桶物品
-            │     │
-            │     └─ [优先级 1] LivingWaterWheelFunction
-            │           ├─ ContainerStressData.calculate() → 计算每个水车的力矩
-            │           └─ postTickSync() → 同步应力到水车物品
-            │
-            ├─ 5. 应力不落盘（tick 级，直接交给 StressOutputManager）
-            │
-            ├─ 6. StressOutputManager.apply() → 容器底部/玩家脚底输出应力
-            │     ├─ CreateCompat.isLoaded() → 检测 Create
-            │     ├─ 找到下方 BE → instanceOf LivingItemStressOutput
-            │     ├─ 白名单过滤 → SimpleKineticBlockEntity / BracketedKineticBlockEntity
-            │     ├─ 方向兼容性检查
-            │     ├─ RPM = -sign(netStress) × 8
-            │     ├─ SU = |netStress| × 32
-            │     └─ stressOutput.livingItem$applyStress(rpm, suCapacity)
-            │           └─ StressStateMachine.applyStress()
-            │                 ├─ setSpeed / setNetwork / attachKinetics
-            │                 ├─ updateNetwork → updateCapacityFor + updateStressFor + updateStress
-            │                 └─ self.sendData() → 即时同步客户端
-            │
-            └─ 7. 清理 + 释放 TickContext
 
-方块实体 tick()
-  │
-  └─ KineticBlockEntityMixin.livingItem$checkExpiry() (HEAD)
-       └─ StressStateMachine.tick()
-            ├─ pendingReattach → attachKinetics + sendData
-            ├─ rpm=0 → 跳过
-            └─ !refreshedThisTick → 自过期清理 + sendData
-
-> **关键时序**：`ServerTickEvent.Pre` 确保容器处理在方块实体 tick 之前执行，
-> `applyStress()` 设置的状态在 `tick()` HEAD 中不会被误清理（因为 `refreshedThisTick` 已被设为 true）。
-```
+容器应力只存在于本拍 `TickContext`；跨重载持久化的是注入到 Create BE 的 RPM/容量，
+不是容器级应力附件。容器处理必须早于方块实体 tick，才能让当拍刷新阻止错误过期。
 
 ---
 
@@ -1705,7 +1251,7 @@ ServerTickEvent.Pre → LivingItem.onServerTick()
 - [x] 堆叠放大应力
 - [x] Tooltip 显示应力值
 - [x] 中英文翻译
-- [x] BlockEntity 存储应力数据
+- [x] 容器应力按 tick 重建；Create BE 单独落盘注入的 RPM/容量
 - [x] Create 集成：容器底部输出旋转
 - [x] Create 集成：RPM/SU 换算
 - [x] Create 集成：传动杆/齿轮接收旋转
@@ -1726,13 +1272,13 @@ ServerTickEvent.Pre → LivingItem.onServerTick()
 - [x] 物品栏 3D 渲染：非活物品水车不受影响
 - [x] 物品栏 3D 渲染：渲染后光照正确恢复
 - [x] 软依赖：无 Create 时活物品模组正常运行
-- [x] 活水桶移除后水流数据立即清除（无虚假应力）
-- [x] 水流数据残留修复：无活水桶时自动清除 CONTAINER_DATA 中的 fluid 字段
-- [x] 区块卸载后应力翻倍修复（onChunkUnloaded 注入）
+- [x] 流体源自维持：无活桶时照常推进 / 清理，不产生桶源残留
+- [x] 区块卸载后应力翻倍修复（`SmartBlockEntityMixin` 转发卸载）
 - [x] 区块卸载后变速结构爆炸修复（网络清理顺序修正）
 - [x] 自过期/取消应力时 `sources.remove()` 正确执行（isSource 返回 true）
-- [x] 重构：StressStateMachine 提取状态管理逻辑（可测试纯 Java 类）
-- [x] 重构：StressOutputManager 合并 ModCreate + CreateIntegration
+- [x] 重构：`StressStateMachine` 只依赖 `KineticOps`，Create API 收口到 Mixin 适配层
+- [x] 回归：状态机激活/稳态/清零/读盘宽限/过期/卸载与异常隔离由 `StressStateMachineTest` 守卫
+- [x] 重构：`StressOutputManager` 为统一注入入口
 - [x] 重构：livingItem$applyStress 统一入口替代 setGeneratedRPM/setStressCapacity 分步调用
 - [x] 重构：getGeneratedSpeed() 纯 getter（移除副作用）
 - [x] 修复：deferredSync 延迟同步导致客户端空状态（改为即时 sendData()）

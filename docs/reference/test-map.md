@@ -90,6 +90,8 @@ src/test/java/com/qiqi/li/
 │   ├── ActivationTargetParsingTest.java       # 活化目标参数解析守卫·物品ID/标签/modid 回写契约 + 反向守卫「StringArgumentType 读不进 : # @」
 │   └── LivingItemContainerCommandTest.java     # inspect 实际入口·学习值替代独立推断 / 活对象列数与注册规则分列 / **规则与学习值冲突时显示双方+RULE>LEARNED，一致时静默** / **未注册不再建议把启发式值 register** / 末行向上取整 / 未开战利品明确不处理 / 大箱另一半同源规范化
 ├── living/compat/
+│   ├── create/
+│   │   └── StressStateMachineTest.java          # Create-free KineticOps 接缝·激活/稳态/反转/清零关键顺序、读盘宽限与恢复、普通/生成器过期、卸载、不安全与非服务端路径、异常隔离；不代答真实 Create 网络/Mixin/NBT
 │   ├── jade/
 │   │   └── LivingItemJadePluginTest.java        # Jade纯请求扩展·BlockEntity级官方流体/能源注册与独立UID/仅有BE的BlockAccessor放行/getGroups恒null不截走默认取数；不以客户端假能力换显示，游戏验收另记
 │   ├── sophisticated/

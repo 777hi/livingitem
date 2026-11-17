@@ -29,8 +29,8 @@ import net.neoforged.neoforge.items.ItemStackHandler;
  * 实体容器用自己的位置 —— 不设门（与方块容器同判）；物品形态借宿主锚点 ——
  * {@code host_anchor.water_wheel} 门（D-container-16 原范围）。
  *
- * <p>只测锚点解析，不测 {@code StressOutputManager.apply} 链（Create 未加载时它在
- * {@code CreateCompat.isLoaded()} 即返回，注入面由 Create 侧 mixin 守卫）。</p>
+ * <p>只测锚点解析，不测 {@code StressOutputManager.apply} 的真实 Create 动力传播；我方状态机
+ * 命令由 {@code StressStateMachineTest} 守卫，Mixin 应用与 Create 网络行为仍走游戏内验证。</p>
  */
 class ContainerStressWritebackTest {
 
