@@ -9,17 +9,17 @@
 ## 本轮评估执行队列（2026-11-15 登记）
 
 > **性质**：工作层执行队列，不是新规格，也不复制机制正文。状态用 ⏳ 待办 / 🟢 进行中 / ✅ 完成 / ⏸ 暂缓（不占队首）；**每次只从队首取一项**，一个批次做完、全量测试与门禁绿、文档同步后再取下一项；完成项保留删除线 + 日期。
-> **当前队首**：Q5（Q3 已完成；Q2 内容签名、Q4 空容器早退均暂缓，见第 2、4 项）。涉及代码口径变化的批次，完成判据统一包含 `./gradlew test --rerun`、CI 同款门禁和对应 tech / system-design 文档同步。
+> **当前队首**：~~Q5~~ 实机验收（Q5 创造活化 / Q6 流体组件均已代码落地待真机；Q2 已完成，Q4 仍暂缓，见第 2、4 项）。涉及代码口径变化的批次，完成判据统一包含 `./gradlew test --rerun`、CI 同款门禁和对应 tech / system-design 文档同步。
 
 1. ✅ **Q1 大箱相位文档结案** —— ~~待办~~ ✅ 已结案（2026-11-15）：旧结论「未修」改为 A6 已修 + 指针；稳定层补规则，真机证据沿用 2026-10-28 A6 复验的「红电重新锁相、拆半前相位布局不作数」。
    - 留痕：`PhaseDataMigration.clearPhaseOnChestSplit` / `ContainerDrops.otherChestHalf` / `PhaseDataMigrationChestSplitTest` / `tech/living-power-tech.md` §0 规则 12；archive 与 buffer 的历史描述按规约保留，**未改生产代码**。
    - 实机：既有 A6 真机复验已覆盖双箱拆半后的红电重锁；本轮未另起客户端，「多相电力 + 分两次破坏两半」不再单列为未修 bug，后续出现实际反例再按新 bug 立项。
 
-2. ⏸ **Q2 内容签名漏组件变化** —— **暂缓（2026-11-15），不占队首**：核查后确认它牵涉组件语义口径、扫描重构与 Q3 基线，不是「换个哈希函数」的小修，本轮先跳过。
-   - 现状：`ContainerLivingItemHandler.computeContentSignature`（:474-486）逐槽只混入物品 ID + 数量；同 ID / 同数量 / 不同 DataComponent 的两件活物品经原版 GUI 交换时不 bump 修订计数，快照按旧过滤链或活箱子容量算一拍，写回后下一 tick 自愈。不复制、不坏档。
-   - 已查清（避免重查）：① `ItemStack.hashItemAndComponents(stack)` 是静态方法，字节码口径为「物品 ID + `getComponents().hashCode()`」，**含全部组件、不含数量**，直接替换会漏掉数量变化，必须保留逐槽 count；② **不能复用 `getIgnoredComponentTypes()` 过滤** —— 它服务于可堆叠性，`LivingHopperFunction`（:358-363）把 `LIVING_HOPPER_FILTER` 列入忽略，而过滤链正是 `ContainerSnapshot.filterOf` 的数据源，复用会把本项要修的洞挖回去；③ 全量哈希会把每 tick 变化的运行时组件算进去，可能让缓存频繁失效，与 Q3/Q4 性能目标对冲；④ Q6 的可变 `ContainerFluidData` 缺 `equals/hashCode`，会放大哈希不稳。
-   - 建议口径（做时再定案）：先「全量组件哈希 + 保留 count」最小正确修复，不引入新清单 / 新机制；Q3 顺带记录快照重建次数与缓存命中率；仅当数据支持，才在 Q4 由 `SnapshotProvider` 自声明依赖组件来收窄。**不手工白名单、不复用堆叠忽略清单。**
-   - 恢复条件：Q3 拿到基线数字后重新排期；出现玩家可见的「同类换组件」反例时提前插队。完成判据不变：同类换组件能刷新快照；全槽扫描由两遍降为一遍；不新增物品实例 ID，不改堆叠语义。
+2. ✅ **Q2 内容签名漏组件变化** —— ~~暂缓（2026-11-15）~~ ✅ 已完成（2026-11-17，按恢复条件「Q3 基线已拿到」重新排期；Q6 修掉可变组件值后障碍④消失）：签名逐槽改混「物品 id + **全部组件**（`ItemStack.hashItemAndComponents`）+ 数量」，并与槽位扫描**同遍**计算（两遍全槽降为一遍）；PerfMetrics 补快照重建/命中计数器（`[Snapshot]` 报告行）。
+   - 留痕：`ContainerLivingItemHandler.mixSlot` / `scanAndGroupLivingItems` 返回 `ScanResult` / `syncContentRevision(ctx, sig)` 重载；回归入口 `ContainerContentSignatureTest`（原版途径换不同内容量活箱子 ⇒ bump + 快照按新容量重建 / count 单独混入 / 等值替换不空转 / 空槽移动检出）；负向验证（签名退回旧公式 ⇒ 仅组件交换守卫红）。
+   - 口径沉淀：`living-item-infrastructure.md` §8.6 双路径口径已改写——签名含全部组件、只在内存比对不得持久化（组件类型索引 identityHashCode 跨会话不稳）、显式 bump 路径保留（当拍生效）。churn 盘点结论：每拍变化的组件（中继器/按钮/TNT 引信）今天就已每拍显式 bump，全量哈希不新增失效；新增成本仅稳态容器的组件哈希计算，由仪表盘观测。
+   - 不做（沿原判据）：不手工白名单、不复用堆叠忽略清单、不改堆叠语义、不新增物品实例 ID；`SnapshotProvider` 组件依赖收窄留 Q4（仅当计数器数据支持）。
+   - 实机：无客户端手势项；`-Pperf` 观测已留痕 `unit-testing.md` Q3 节。当前读数只能报告各窗口的耗时与重建/命中次数，**不能**在无受控 A/B 下归因性能差异，也不能仅凭命中计数判断重建来源；若 Q4 要按来源收窄，须先补 revision 来源分类计数。
 
 3. ✅ **Q3 管道性能基准** —— ~~待办~~ ✅ 已完成（2026-11-15）：新增 `ContainerPipelinePerfTest`（`@Tag("perf")`，默认排除），量完整 `processContext` 管道；**未改 `src/main` 的 tick 逻辑**。
    - 基线（本机 FML / JDK 21.0.11，10k 容器 × 54 槽，每拍中位）：空容器 **9.31 ms**、普通 **11.07 ms**、复杂 **39.63 ms**；每容器每拍 0.93 / 1.11 / 3.96 µs，1k / 5k / 10k 三档线性度好；P90 @10k 为 9.67 / 11.89 / 48.20 ms。

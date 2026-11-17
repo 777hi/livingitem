@@ -1692,15 +1692,22 @@ private final FilterData[] filterOf;  // filterOf[slot] = 此槽位继承的过�
 `ContainerLivingItemHandler.getCachedSnapshot()` 按容器**修订计数**复用：修订计数未变
 直接返回上次快照。修订计数由两条路径推进：
 
-1. **内容签名兜底**（`syncContentRevision`，每 tick 阶段 1 调用）：逐槽位混入
-   「物品 id + 数量」计算签名，与上一 tick 不同则 bump——任何物品增删/移动（含漏斗
-   自己的传输、玩家点击）都会打破缓存。
-2. **组件变更显式 bump**（`syncSlotToClients` / `setItem`）：自定义 DataComponent 不在
-   内容签名里（只可能是本模组改的），这些路径手动 bump。
+1. **内容签名兜底**（`syncContentRevision`，每 tick 阶段 1 调用，Q2 起与槽位扫描
+   **同遍**计算）：逐槽位混入「物品 id + **全部组件**（`ItemStack.hashItemAndComponents`）
+   + 数量」，与上一 tick 不同则 bump——任何物品增删/移动/**同 ID 同数量换组件**
+   （如原版 GUI 交换两个不同过滤链的活漏斗、不同内容量的活箱子）都会打破缓存。
+   ⚠️ 签名只在内存比对、**不得持久化**：组件类型索引是 identityHashCode，跨会话不稳定；
+   组件值为 record（如 `FluidSourcesSnapshot`）时按值稳定，等值替换不引起虚假失效。
+2. **组件变更显式 bump**（`syncSlotToClients` / `setItem`）：模组自身的组件写入路径，
+   在写入时同步 bump（使客户端脏槽位与快照失效同拍）。签名兜底已是第二道防线，
+   该路径保留是因为它**当拍**生效，不必等下一 tick 的签名比对。
 
-因此快照里的过滤链/连接图始终反映容器现状：布局或货物一变，下一 tick 快照重建、
-漏斗的黑白名单随之更新（漏斗被搬到新容器后旧规则过期，同样在首 tick 重建自愈——
-详见 [living-hopper-tech.md](../tech/living-hopper-tech.md) §2.4.2 存储位置沿革）。
+因此快照里的过滤链/连接图始终反映容器现状：布局或货物（含组件）一变，当拍或
+下一 tick 快照重建、漏斗的黑白名单随之更新（漏斗被搬到新容器后旧规则过期，同样在
+首 tick 重建自愈——详见 [living-hopper-tech.md](../tech/living-hopper-tech.md) §2.4.2 存储位置沿革）。
+
+**快照仪表盘**（Q2）：`PerfMetrics` 记录快照重建/命中次数（`[Snapshot]` 报告行），
+仅作同环境前后对比的读数，不设阈值、不进断言。
 
 ### 8.7 ContainerFluidData — 容器流体数据（通用流体框架）
 

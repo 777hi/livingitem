@@ -463,33 +463,45 @@ public class ContainerLivingItemHandler {
      * <p>必须在每 tick 的槽位扫描之后、{@code TickContext} 创建之前调用，
      * 这样本 tick 就能看到最新的物品与重算结果。开销 O(槽位数)。</p>
      *
-     * <p>只比对「物品 id + 数量」：自定义 DataComponent 的变更只可能由本模组发起，
-     * 而那些路径已经走了 {@code syncSlotToClients}（会 bump），无需在此重复覆盖。</p>
+     * <p>签名含「物品 id + 全部组件 + 数量」（Q2）：原版 GUI 的同 ID 同数量换组件
+     * （如交换两个不同过滤链的活漏斗）不经 {@code setItem}/{@code syncSlotToClients}，
+     * 只有签名兜底能检出。⚠️ 签名只在内存比对、<b>不得持久化</b> —— 组件类型索引是
+     * identityHashCode，跨会话不稳定。</p>
      */
     public static void syncContentRevision(ContainerContext ctx) {
+        syncContentRevision(ctx, computeContentSignature(ctx));
+    }
+
+    /** 带 预计算签名 的兜底入口（Q2：签名与槽位扫描合一后由 processContext 传入）。 */
+    static void syncContentRevision(ContainerContext ctx, int signature) {
         ContainerEntry e = entry(ctx);
         if (e == null) return;
-        int sig = computeContentSignature(ctx);
         int prev = e.contentSig;
-        e.contentSig = sig;
-        if (prev == Integer.MIN_VALUE || prev != sig) {
+        e.contentSig = signature;
+        if (prev == Integer.MIN_VALUE || prev != signature) {
             bumpContainerRevision(ctx);
         }
     }
 
-    /** 容器内容签名：逐槽位混入 物品 id 与数量（空槽参与混合，保证槽位移动也能检出） */
+    /** 容器内容签名：逐槽位混入 物品 id、全部组件与数量（空槽参与混合，保证槽位移动也能检出） */
     private static int computeContentSignature(ContainerContext ctx) {
         int h = 1;
         int size = ctx.getSize();
         for (int i = 0; i < size; i++) {
-            ItemStack s = ctx.getItem(i);
-            if (s == null || s.isEmpty()) {
-                h = h * 31;
-            } else {
-                h = h * 31 + Item.getId(s.getItem()) * 31 + s.getCount();
-            }
+            h = mixSlot(h, ctx.getItem(i));
         }
         return h;
+    }
+
+    /**
+     * 单槽混入：{@link ItemStack#hashItemAndComponents} 含物品 id 与全部组件但<b>不含数量</b>
+     * ⇒ 数量必须在此单独混入（漏 count = 数量变化漏检）。
+     */
+    private static int mixSlot(int h, ItemStack s) {
+        if (s == null || s.isEmpty()) {
+            return h * 31;
+        }
+        return h * 31 + ItemStack.hashItemAndComponents(s) * 31 + s.getCount();
     }
 
     /**
@@ -499,8 +511,15 @@ public class ContainerLivingItemHandler {
     public static ContainerSnapshot getCachedSnapshot(ContainerContext ctx, long revision,
                                                       TickContext tick) {
         ContainerEntry e = entry(ctx);
-        if (e == null) return ContainerSnapshot.capture(ctx, tick);
-        if (e.cachedSnapshot != null && e.cachedSnapshotRevision == revision) return e.cachedSnapshot;
+        if (e == null) {
+            com.qiqi.li.living.perf.PerfMetrics.recordSnapshotRebuild();
+            return ContainerSnapshot.capture(ctx, tick);
+        }
+        if (e.cachedSnapshot != null && e.cachedSnapshotRevision == revision) {
+            com.qiqi.li.living.perf.PerfMetrics.recordSnapshotHit();
+            return e.cachedSnapshot;
+        }
+        com.qiqi.li.living.perf.PerfMetrics.recordSnapshotRebuild();
         ContainerSnapshot snap = ContainerSnapshot.capture(ctx, tick);
         e.cachedSnapshotRevision = revision;
         e.cachedSnapshot = snap;
@@ -630,9 +649,10 @@ public class ContainerLivingItemHandler {
         String monitorKey = context.getContainerKey();
         com.qiqi.li.living.debug.ContainerMonitor.beforeProcess(monitorKey, context);
 
-        // 阶段 1：扫描容器全部槽位，将活物品按功能分组，同时校验内容签名
-        Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped = scanAndGroupLivingItems(context);
-        syncContentRevision(context);
+        // 阶段 1：扫描容器全部槽位，将活物品按功能分组，同遍混入内容签名（Q2：两遍全槽降为一遍）
+        ScanResult scan = scanAndGroupLivingItems(context);
+        syncContentRevision(context, scan.contentSig());
+        Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped = scan.grouped();
 
         // ★ 运行时缓存生命周期（方案 A，2026-10-11）：物品离开槽位 / 被替换 ⇒ 作废该槽位的运行时数据。
         // ⚠️ 必须在下方早退分支之前 —— 「容器里已无活物品」正是最需要清理的场景。
@@ -799,17 +819,23 @@ public class ContainerLivingItemHandler {
         return current;
     }
 
+    /** 单遍全槽扫描产物：功能分组 + 内容签名（Q2：签名并入扫描循环，两遍降为一遍）。 */
+    private record ScanResult(
+            Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped,
+            int contentSig) {}
+
     /**
-     * 扫描容器全部槽位，将活物品按功能分组收集。
+     * 扫描容器全部槽位，将活物品按功能分组收集，同遍计算内容签名。
      *
      * <p>两阶段设计的「扫描」阶段：先按功能分组，再对每种功能只调用一次 tick，
      * 从根本上避免 N 个活物品 = N 倍速度（如活熔炉每 tick 只处理一个）。</p>
      */
-    private static Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> scanAndGroupLivingItems(
-            ContainerContext context) {
+    private static ScanResult scanAndGroupLivingItems(ContainerContext context) {
         Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped = new LinkedHashMap<>();
+        int sig = 1;
         for (int i = 0; i < context.getSize(); i++) {
             ItemStack stack = context.getItem(i);
+            sig = mixSlot(sig, stack);
             if (LivingItemManager.isLivingItem(stack)) {
                 var functions = LivingItemManager.getApplicableFunctions(stack);
                 for (var function : functions) {
@@ -818,7 +844,7 @@ public class ContainerLivingItemHandler {
                 }
             }
         }
-        return grouped;
+        return new ScanResult(grouped, sig);
     }
 
     /**

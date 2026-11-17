@@ -44,6 +44,10 @@ public class PerfMetrics {
     private static final AtomicInteger cacheSelfCleanRemoves = new AtomicInteger(0);
     private static final AtomicInteger cacheCurrentSize = new AtomicInteger(0);
 
+    // ===== 快照缓存（Q2 仪表盘：重建 = capture，命中 = 跨 tick 复用） =====
+    private static final AtomicLong snapshotRebuilds = new AtomicLong(0);
+    private static final AtomicLong snapshotHits = new AtomicLong(0);
+
     // ===== 传输 =====
     private static final AtomicLong transferSuccess = new AtomicLong(0);
     private static final AtomicLong transferFail = new AtomicLong(0);
@@ -117,6 +121,15 @@ public class PerfMetrics {
 
     public static void updateCacheSize(int size) {
         cacheCurrentSize.set(size);
+    }
+
+    /** 快照重建（capture）/ 复用（命中）计数 —— 仅仪表盘读数，不设阈值、不进断言（Q3 口径）。 */
+    public static void recordSnapshotRebuild() {
+        snapshotRebuilds.incrementAndGet();
+    }
+
+    public static void recordSnapshotHit() {
+        snapshotHits.incrementAndGet();
     }
 
     // ══════════════════════════════════════════════
@@ -228,6 +241,11 @@ public class PerfMetrics {
         int size = cacheCurrentSize.get();
         int removes = cacheSelfCleanRemoves.get();
         ModLog.PERF.info("[Cache] currentSize={}, selfCleanRemoves={}", size, removes);
+        long rebuilds = snapshotRebuilds.get();
+        long hits = snapshotHits.get();
+        long total = rebuilds + hits;
+        ModLog.PERF.info("[Snapshot] rebuilds={}, hits={} (hitRate={}%)",
+            rebuilds, hits, total == 0 ? "-" : (hits * 100 / total));
     }
 
     private static void printTransferSection() {
@@ -307,6 +325,8 @@ public class PerfMetrics {
         functionCalls.clear();
 
         cacheSelfCleanRemoves.set(0);
+        snapshotRebuilds.set(0);
+        snapshotHits.set(0);
         transferSuccess.set(0);
         transferFail.set(0);
         superContentChanged.set(0);

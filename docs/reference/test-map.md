@@ -131,6 +131,7 @@ src/test/java/com/qiqi/li/
 │   ├── ContainerChunkCacheChunkLoadTest.java  # 区块加载守卫·事件不碰世界/延后重扫不丢/限量/不主动加载/只处理ticking区/可观测性/每tick维护清理不依赖可处理区块/重扫隔离（能力查询抛异常保守保留，其余 pending 继续）；单次 Load 未就绪重试 / 队列公平性 / 卸载撤销与再加载 / 能力查询期间卸载重入
 │   ├── ContainerUuidsDiscardTest.java         # 取消活化**彻底清理**（2026-10-28）·discard 必须清内存层容器数据（旧实现只删 SavedData ⇒ 物品形态无位置可反查 ⇒ 熔炉进度留到停服）/ UUID 被剥掉（重新活化拿新身份）
 │   ├── ItemFormLiveViewsTest.java             # 物品形态容器的按 UUID 寻址（2026-10-28，活末影箱路由取货）·登记后可按 UUID 取同一活视图 / 未登记或清空后 null（停服清空、背包没在 tick）/ null 输入安全 / **无人查询也要能收：evictExpired 主动淘汰过期条目（2026-11-01 R-06，惰性 find 回收的补集）**
+│   ├── ContainerContentSignatureTest.java    # Q2 内容签名·原版途径换不同内容量活箱子（rawSet 不 bump）⇒ 签名兜底 bump + 快照按新容量重建/**真实 processContext 单遍扫描接线亦能 bump**/数量变化检出（组件哈希不含 count）/等值替换不空转/空槽移动检出
 │   ├── ContainerCacheSweepTest.java           # **跨 tick 缓存的统一回收口**（R-06；2026-11-06退役旧类型心跳清理）·真实processContext连续3600次：海绵EDGE仅真实存在性翻转通知/活物品-only索引保留·查询创建五入口登记且查询不续期/空与修订-only回收/真实tick续期/子数据清空保索引·显式删除清时间记录且sweep不重复/同键重建/32轮创建删除无泄漏·消失阈值/返回窗口/双箱任一半/无ctx盖章/removeSlot空壳
 │   ├── ContainerKeysTest.java                 # 容器键解析唯一入口(2026-10-13)·5 种键形各自归位(背包/末影箱前缀相同必须按后缀分开)/缓存键剥维度前缀/未知形态返回 null 不抛异常/ownerOf 末影箱回归(旧实现抛异常被吞⇒从不发包)/isOwnedByPlayer(null 安全)/positionsOf(大箱两段·维度 id 含下划线取末三段)/维度前缀
 │   ├── ContainerRuntimeCacheSlotMappingTest.java  # 读写槽位键对称（2026-10-27 审查 P1，熔炉/酿造台/漏斗域）·update 过 toPhysicalSlot、get 不过 ⇒ 马/驴容器（storageOffset=1）读永远 miss ⇒ 熔炉每 tick 烧 1 燃料零产出、酿造台每 tick 空耗烈焰粉 / get(ctx, logical) 对称重载：带偏移上下文读回自己写的值 / 裸 get(key,3) miss·物理槽 4 命中 / 恒等映射两版等价
