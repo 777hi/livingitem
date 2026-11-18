@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
@@ -11,10 +13,10 @@ import java.nio.file.Path;
 import java.util.List;
 
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.tags.TagKey;
+import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.Items;
 
-import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -32,9 +34,10 @@ import org.junit.jupiter.api.io.TempDir;
  */
 class InteractionRuleConfigTest {
 
+    private static final int FIXTURE_BUNDLED_COUNT = 15;
     private static final String[] ACTIONS = {
         "ignite", "ignite_carried", "button_press", "lever_toggle",
-        "repeater_cycle", "comparator_toggle", "till_to_farmland", "plant_crop", "bonemeal" };
+        "repeater_cycle", "comparator_toggle", "till_to_farmland", "plant_crop", "bonemeal", "axe_strip" };
 
     @TempDir
     Path tempDir;
@@ -48,13 +51,15 @@ class InteractionRuleConfigTest {
         }
         InteractionPredicates.register("can_till", (t, g) -> true);
         InteractionPredicates.register("can_plant", (t, g) -> true);
+        InteractionPredicates.register("can_strip_with", (t, g) -> true);
         InteractionRuleConfig.init(tempDir);
     }
 
-    @AfterAll
-    static void tearDown() {
+    @AfterEach
+    void tearDown() {
         InteractionRegistry.clearForTest();
         InteractionPredicates.clearForTest();
+        InteractionRuleConfig.init(null);
     }
 
     private void writeUserFile(String json) throws Exception {
@@ -69,7 +74,7 @@ class InteractionRuleConfigTest {
         InteractionRuleConfig.load();
 
         int count = InteractionRuleConfig.ruleCount();
-        assertTrue(count >= 13, "内置规则应至少 13 条，实际 " + count);
+        assertEquals(FIXTURE_BUNDLED_COUNT, count, "本 fixture 注册的内置规则应全部有效");
         assertEquals(count, InteractionRuleConfig.bundledCount(),
             "无玩家文件时全部规则都应是内置的");
 
@@ -97,6 +102,35 @@ class InteractionRuleConfigTest {
         assertTrue(found, "应有 target=#minecraft:buttons 的 button_press 规则");
     }
 
+    @Test
+    @DisplayName("去皮内置规则：logs tag 与竹块物品，通配光标 + can_strip_with，仅右键按下")
+    void bundledAxeStripRulesUseTagAndBambooItem() {
+        InteractionRuleConfig.load();
+
+        List<InteractionEntry> strips = InteractionRegistry.getEntries().stream()
+            .filter(e -> "axe_strip".equals(e.actionId())).toList();
+        assertEquals(2, strips.size(), "应加载 logs 与 bamboo 两条去皮规则");
+        InteractionEntry logs = strips.stream()
+            .filter(e -> ItemTags.LOGS.equals(e.targetTag())).findFirst().orElse(null);
+        assertNotNull(logs, "原木去皮应声明 target=#minecraft:logs，不展开未加载的 tags");
+        assertNull(logs.targetItem());
+        InteractionEntry bamboo = strips.stream()
+            .filter(e -> e.targetItem() == Items.BAMBOO_BLOCK).findFirst().orElse(null);
+        assertNotNull(bamboo, "竹块去皮应声明具体物品 minecraft:bamboo_block");
+        assertNull(bamboo.targetTag());
+        for (InteractionEntry entry : strips) {
+            assertNull(entry.triggerItem(), "省略 trigger，不限于某个斧物品");
+            assertNull(entry.triggerTag(), "能力工具不依赖 trigger tag");
+            assertEquals(1, entry.button());
+            assertFalse(entry.onRelease());
+            assertSame(InteractionPredicates.get("can_strip_with"), entry.triggerFilter(),
+                "通配规则必须绑定 can_strip_with，不能吞掉普通光标操作");
+        }
+        List<String> descriptions = InteractionRuleConfig.describeRules();
+        assertTrue(descriptions.stream().anyMatch(s -> s.startsWith("[axe_strip_logs](bundled)")));
+        assertTrue(descriptions.stream().anyMatch(s -> s.startsWith("[axe_strip_bamboo](bundled)")));
+    }
+
     // ── 2. 玩家差异：覆盖 / 删除 / 追加 ──
 
     @Test
@@ -110,8 +144,8 @@ class InteractionRuleConfigTest {
         InteractionRuleConfig.load();
 
         // 覆盖后：总数不变（同 id 替换），bundled 计数仍含该 id
-        assertEquals(13, InteractionRuleConfig.ruleCount());
-        assertEquals(13, InteractionRuleConfig.bundledCount());
+        assertEquals(FIXTURE_BUNDLED_COUNT, InteractionRuleConfig.ruleCount());
+        assertEquals(FIXTURE_BUNDLED_COUNT, InteractionRuleConfig.bundledCount());
         // 生效侧：bonemeal 条目的 button 变成 left（0）
         boolean overridden = InteractionRegistry.getEntries().stream()
             .anyMatch(e -> "bonemeal".equals(e.actionId()) && e.button() == 0);
@@ -124,10 +158,31 @@ class InteractionRuleConfigTest {
         writeUserFile("{ \"version\": 1, \"removed\": [\"tnt_ignite\"] }");
         InteractionRuleConfig.load();
 
-        assertEquals(12, InteractionRuleConfig.ruleCount());
+        assertEquals(FIXTURE_BUNDLED_COUNT - 1, InteractionRuleConfig.ruleCount());
         boolean gone = InteractionRegistry.getEntries().stream()
             .noneMatch(e -> e.targetItem() == Items.TNT && "ignite".equals(e.actionId()));
         assertTrue(gone, "tnt_ignite 应被移除");
+    }
+
+    @Test
+    @DisplayName("玩家 removed 可删除两条去皮规则，重复 reload 不复活且不影响其它规则")
+    void userRemovedAxeStripRulesStayRemovedOnReload() throws Exception {
+        InteractionRuleConfig.load();
+        List<InteractionEntry> remaining = InteractionRegistry.getEntries().stream()
+            .filter(e -> !"axe_strip".equals(e.actionId())).toList();
+        assertEquals(FIXTURE_BUNDLED_COUNT - 2, remaining.size());
+        writeUserFile("""
+            { "version": 1, "removed": ["axe_strip_logs", "axe_strip_bamboo"] }
+            """);
+
+        for (int reload = 0; reload < 2; reload++) {
+            InteractionRuleConfig.load();
+            assertEquals(FIXTURE_BUNDLED_COUNT - 2, InteractionRuleConfig.ruleCount());
+            assertEquals(remaining, InteractionRegistry.getEntries(),
+                "移除去皮后仅保留其它规则，reload 不应使去皮复活");
+            assertTrue(InteractionRuleConfig.describeRules().stream()
+                .noneMatch(s -> s.startsWith("[axe_strip_logs]") || s.startsWith("[axe_strip_bamboo]")));
+        }
     }
 
     @Test
@@ -140,8 +195,8 @@ class InteractionRuleConfigTest {
             ] }""");
         InteractionRuleConfig.load();
 
-        assertEquals(14, InteractionRuleConfig.ruleCount());
-        assertEquals(13, InteractionRuleConfig.bundledCount());
+        assertEquals(FIXTURE_BUNDLED_COUNT + 1, InteractionRuleConfig.ruleCount());
+        assertEquals(FIXTURE_BUNDLED_COUNT, InteractionRuleConfig.bundledCount());
     }
 
     // ── 3. 坏值：WARN + 跳过，绝不崩 ──
@@ -160,8 +215,8 @@ class InteractionRuleConfigTest {
             ] }""");
         InteractionRuleConfig.load();
 
-        // 只有 good_one 被接受：13 内置 + 1
-        assertEquals(14, InteractionRuleConfig.ruleCount());
+        // 只有 good_one 被接受：fixture 内置规则 + 1
+        assertEquals(FIXTURE_BUNDLED_COUNT + 1, InteractionRuleConfig.ruleCount());
     }
 
     @Test
@@ -174,7 +229,7 @@ class InteractionRuleConfigTest {
             ] }""");
         InteractionRuleConfig.load();
 
-        assertEquals(14, InteractionRuleConfig.ruleCount(), "未知字段不应导致整条规则被丢弃");
+        assertEquals(FIXTURE_BUNDLED_COUNT + 1, InteractionRuleConfig.ruleCount(), "未知字段不应导致整条规则被丢弃");
     }
 
     @Test
@@ -183,7 +238,7 @@ class InteractionRuleConfigTest {
         writeUserFile("{ \"version\": 99, \"rules\": [ { \"id\": \"x\", \"target\": \"minecraft:tnt\", \"button\": \"right\", \"action\": \"ignite\" } ] }");
         InteractionRuleConfig.load();
 
-        assertEquals(13, InteractionRuleConfig.ruleCount());
+        assertEquals(FIXTURE_BUNDLED_COUNT, InteractionRuleConfig.ruleCount());
         assertFalse(InteractionRuleConfig.describeRules().stream().anyMatch(s -> s.contains("x]")));
     }
 

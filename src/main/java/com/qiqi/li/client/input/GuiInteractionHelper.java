@@ -2,6 +2,7 @@ package com.qiqi.li.client.input;
 
 import com.qiqi.li.client.util.ClientMenuSlotOwners;
 import com.qiqi.li.client.util.ClientMenuSlots;
+import com.qiqi.li.living.domain.tools.AxeStripHandler;
 import com.qiqi.li.living.domain.water.FluidFlowClientCache;
 import com.qiqi.li.living.domain.water.LivingBucketFunction;
 import com.qiqi.li.living.interaction.InteractionEntry;
@@ -11,6 +12,8 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.CraftingContainer;
+import net.minecraft.world.inventory.ResultContainer;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -22,7 +25,7 @@ import javax.annotation.Nullable;
  *
  * <p>按规则匹配动作，携带服务端菜单 ID、精确菜单槽号与该槽物理号；
  * 创造模式只接入 inventory wrapper 的真实目标，并附带虚拟光标物品数据。
- * 门面与容器级桶动作额外要求存储槽，普通物品动作不受此限制。</p>
+ * 门面、容器级桶动作与槽内去皮额外要求存储槽，其它物品动作不受此限制。</p>
  */
 public final class GuiInteractionHelper {
 
@@ -91,12 +94,19 @@ public final class GuiInteractionHelper {
 
         InteractionEntry entry = InteractionRegistry.findInteraction(trigger, target, button, onRelease);
         if (entry == null) return false;
+        if (AxeStripHandler.ACTION_ID.equals(entry.actionId()) && !supportsAxeStrip(menu, hoveredSlot)) return false;
 
         CompoundTag carriedTag = resolveCarriedTag(menu);
 
         send(new GuiInteractionPacket(
             menuSlot, containerSlot, entry.actionId(), carriedTag, menuId));
         return true;
+    }
+
+    static boolean supportsAxeStrip(AbstractContainerMenu menu, Slot slot) {
+        return menu != null && slot != null && slot.isActive()
+            && !(slot.container instanceof CraftingContainer) && !(slot.container instanceof ResultContainer)
+            && ClientMenuSlots.isStorageSlot(menu, slot);
     }
 
     private static void send(GuiInteractionPacket packet) {

@@ -130,6 +130,18 @@ public class FakeContainerContext implements ContainerContext {
     }
 
     @Override
+    public boolean supportsExactWrite(int logicalSlot) {
+        return isValidSlot(logicalSlot);
+    }
+
+    @Override
+    public boolean trySetItemExact(int logicalSlot, ItemStack stack) {
+        if (!supportsExactWrite(logicalSlot)) return false;
+        slots[logicalSlot] = stack.copy();
+        return true;
+    }
+
+    @Override
     public int getMaxStackSize() {
         return 64;
     }

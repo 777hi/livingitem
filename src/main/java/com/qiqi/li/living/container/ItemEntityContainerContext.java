@@ -105,6 +105,18 @@ public class ItemEntityContainerContext implements TickableContainerContext {
     }
 
     @Override
+    public boolean supportsExactWrite(int logicalSlot) {
+        return logicalSlot == SINGLE_SLOT && !entity.isRemoved();
+    }
+
+    @Override
+    public boolean trySetItemExact(int logicalSlot, ItemStack stack) {
+        if (!supportsExactWrite(logicalSlot)) return false;
+        entity.setItem(stack.copy());
+        return true;
+    }
+
+    @Override
     public int getMaxStackSize() {
         return 64;
     }
@@ -136,6 +148,7 @@ public class ItemEntityContainerContext implements TickableContainerContext {
             return;
         }
 
+        ContainerLivingItemHandler.bumpContainerRevision(this);
         entity.setItem(ItemStack.EMPTY);
         entity.setItem(stack);
 

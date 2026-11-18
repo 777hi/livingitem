@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Optional;
 
 import com.qiqi.li.client.gui.LivingButton;
+import com.qiqi.li.client.input.AxeStripHint;
 import com.qiqi.li.client.input.FarmlandPlantHint;
 import com.qiqi.li.client.input.LivingItemInputHandler;
 import net.minecraft.client.Minecraft;
@@ -41,6 +42,7 @@ public final class LivingContainerOverlay {
             LivingMapOverlay.render(guiGraphics, screen, mouseX, mouseY);
             renderDirectionHud(guiGraphics, screen, mouseX, mouseY);
             renderPlantHint(guiGraphics, screen, mouseX, mouseY);
+            renderAxeStripHint(guiGraphics, screen, mouseX, mouseY);
         });
         GuiOverlays.paintSlotLevel(guiGraphics, () -> {
             LivingFarmlandOverlay.render(guiGraphics, screen);
@@ -62,6 +64,13 @@ public final class LivingContainerOverlay {
                 break;
             }
         }
+        guiGraphics.renderTooltip(Minecraft.getInstance().font, lines, Optional.empty(), mouseX, mouseY);
+    }
+
+    private static void renderAxeStripHint(GuiGraphics guiGraphics, AbstractContainerScreen<?> screen,
+                                          int mouseX, int mouseY) {
+        List<Component> lines = AxeStripHint.getHintLines(screen.getMenu(), screen.getSlotUnderMouse());
+        if (lines == null || lines.isEmpty()) return;
         guiGraphics.renderTooltip(Minecraft.getInstance().font, lines, Optional.empty(), mouseX, mouseY);
     }
 

@@ -1,6 +1,8 @@
 package com.qiqi.li.living.domain.tools;
 
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.interaction.InteractionPredicates;
+import com.qiqi.li.living.interaction.InteractionRegistry;
 
 /**
  * 活工具 / 活武器域注册入口 —— 见 {@code RedstoneRegistration} 的类注释了解为何有这个类（A1）。
@@ -14,6 +16,8 @@ public final class ToolRegistration {
 
     public static void register() {
         LivingItemManager.registerFunction(new LivingToolFunction());
+        InteractionPredicates.register("can_strip_with", AxeStripHandler::canStripWith);
+        InteractionRegistry.registerHandler(AxeStripHandler.ACTION_ID, new AxeStripHandler());
 
         // 注：static 缓存清理已改由缓存类**自己**登记（2026-10-12）——
         // 见 LivingToolFakePlayerCache / LivingToolHostSync / LivingToolPlayerClientCache /

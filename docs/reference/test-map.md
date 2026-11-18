@@ -40,6 +40,7 @@ src/test/java/com/qiqi/li/
 │   ├── ContainerInfoTooltipTest.java           # 容器提示·普通几何与末行/启发式普通警示/未知与非运行分开/高级来源和类型 ID
 │   └── LivingButtonLayoutTest.java            # 活按钮位置布局·应用位置时的屏幕夹取（屏内不动/越界夹边缘/屏幕小于按钮取 max(0,…)）+ 默认位分流（生存=42,70 / 创造INVENTORY=81,41 / 其余容器=底部中央）+ 小人框矩形常量对齐原版 (26,8)-(75,78)
 ├── client/input/
+│   ├── AxeStripHintTest.java                  # 去皮提示·产物数量/整堆一次损耗/创造免费/多件拆分/规则移除与覆盖不误报/合成输入及结果槽无提示且不吞点击
 │   ├── FarmlandPlantHintTest.java             # 活耕地种植悬停提示·门槛与交互同源（非活种子/非活耕地/非耕地物品/不可种植/空栈→null）+ 四态文案键与参数（充足消耗数/创造免费/不足差额/已种植）
 │   ├── LivingChestDepositHelperTest.java       # Shift+左键收纳判定（批次 3，2026-11-01）·正例（左键+Shift+页签激活+书可见+普通物品）/ 空槽 / 槽内是活箱子（它是容器不是内容物）/ 页签未激活 / 书面板不可见 / 未按 Shift / 非左键 / null 槽位不抛。⚠️ GLFW 鼠标键 0 基（MOUSE_BUTTON_1==0），判据用常量不用数字
 │   └── LivingItemInputKeyMapTest.java         # 方向输入键码表·九宫格 8 键映射/未知键为 0/全角字母归一化与转大写链路（2026-10-29）
@@ -107,7 +108,7 @@ src/test/java/com/qiqi/li/
 ├── living/container/
 │   ├── ContainerComponentCommitTest.java       # 原数量组件提交·原引用/副本/旧值重验/非空同物同量/无writer拒绝/无抽插截断/快照隔离/拒写与部分恢复/双BE通知/真实revision脏槽/实体前置槽映射
 │   ├── ContainerMoveStackTest.java             # **I-C12 一步整栈移动 + 安全撤销**·整栈不拆/超大栈一次搬完（抽屉 512）/目标被占拒绝/整栈放不进拒绝（不搬一部分）/源空/地址非法 + **抽取权限第三维**（只出不进的槽 ⇒ SOURCE_NOT_EXTRACTABLE）/后端无 setStackInSlot ⇒ Unsupported 非 BackendViolation + **撤销两槽一起**（只恢复源会复制）/撤销前校验（第三方改动 ⇒ 不覆盖）/撤销后守恒 + canAcceptAll 纯预检
-│   ├── ContainerSlotOpsTest.java              # **槽位数量操作原语**（2026-11-05，I-C12 契约化）·move 六场景 × 双容器实现（整栈守恒/同类合并/部分交付差额留源/异类 TARGET_OCCUPIED/满 TARGET_INSUFFICIENT/undo 恢复合并前）/PHYSICAL=A3（不问准入与抽取权限、容量只问槽位上限、500→64 搬 64 留 436）/违约三态（源写回静默失败 ⇒ 撤销目标防复制、重定向还原、无精确写回退路径可用）/produce 差额留痕不回滚 + 超槽位上限/consume 抽取权限 + 写回违约按「没扣到」/transform 失败还原 + 无变化不写（负向验证三例见类注释）·**swap 原语**（2026-11-12）双非空整栈互换/movedSlots 两槽登记/双向抽取与准入/装不下不部分交换/静默写与重定向恢复双槽/组件保全/无撤销凭据
+│   ├── ContainerSlotOpsTest.java              # **槽位数量操作原语**（2026-11-05，I-C12 契约化）·move 六场景 × 双容器实现（整栈守恒/同类合并/部分交付差额留源/异类 TARGET_OCCUPIED/满 TARGET_INSUFFICIENT/undo 恢复合并前）/PHYSICAL=A3（不问准入与抽取权限、容量只问槽位上限、500→64 搬 64 留 436）/违约三态（源写回静默失败 ⇒ 撤销目标防复制、重定向还原、无精确写回退路径可用）/produce 差额留痕不回滚 + 超槽位上限/consume 抽取权限 + 写回违约按「没扣到」/transform 精确写回及恢复（只读/UOE不抽插、独立快照、防参数污染、异常/截断不结算、恢复失败通知实值、超堆叠不截断、掉落物同步）+ 无变化不写（负向验证三例见类注释）·**swap 原语**（2026-11-12）双非空整栈互换/movedSlots 两槽登记/双向抽取与准入/装不下不部分交换/静默写与重定向恢复双槽/组件保全/无撤销凭据
 │   ├── EnderChestContextTest.java              # 末影箱锚点口径（2026-10-27 定案「存放处」D-container-18）·getAnchor 必须显式为 null（默认实现经 getOwnerPlayer 退化成 AtPlayer ⇒ K2 当玩家宿主上报 ⇒ 两端不同源）/ 非物品形态 ⇒ hostAnchor 恒 null、hostSlot=-1
 │   ├── ContainerLayoutResolverTest.java        # 共同布局链·子类禁止替换流程/实例先于内建/规则学习家族启发式顺序/多宿主规则优先/首容器回落/家族子类/现取与结果复用/掉落物同链
 │   ├── ContainerMenuInfosTest.java             # 当前菜单宿主信息·空容器/背包/状态分离/来源同源/真实无MenuType驴菜单反查/无类型方块与未知菜单分开/末影箱固定布局及改容量不误套
@@ -164,6 +165,7 @@ src/test/java/com/qiqi/li/
 │   ├── LivingBackpackTickTest.java            # 活背包 tick 的三道闸（2026-10-24 终审补，此前 tick 零测试）·**宿主锚点传进内层 ctx**（AtBlock 同坐标 / 宿主无锚点⇒null）/深度闸（背包里的背包不再处理）/**逐条目隔离**（一个背包的来源抛异常不带走同批）（⚠️ 环检测在 MAX_DEPTH=1 下不可达，故意不测；探针功能只认 SHULKER_SHELL，避免与既有「无功能」断言串味）
 │   └── LivingBackpackTooltipTest.java         # 活背包 tooltip 的容器 ID 行（2026-10-26）·短码固定 8 位（**前导零不能丢，否则 substring 越界**）/未活化不输出空 ID 行/高级提示才给完整 UUID + 重新活化提示/**复制品短码必须相同**/剥掉后重新生成换新身份
 ├── living/domain/tools/
+│   ├── AxeStripHandlerTest.java               # 槽内去皮·官方转换/组件补丁/单件工具整堆一次损耗/创造与不可破坏/记忆保留/拒写恢复/权限/过期输入不结算
 │   ├── LivingToolHostBlockTest.java              # 活工具「别挖自己容器」黑名单与射线起点**同源**（2026-10-25，TODO 6.2）·背包在箱子里+开关开⇒黑名单含宿主那一格（旧实现位置列表恒空⇒射线第一个穿到的格子就是那只箱子：记过类型⇒停住没反应 / 没记⇒挖自己的箱子）/ 开关关⇒不借锚点⇒黑名单空 / 方块容器保留自己的两格（回归）/ 玩家背包与背包在玩家身上⇒无方块可跳过 / 方块容器不受开关影响（⚠️ Inventory.player 是 public final 字段，Mockito 桩不了⇒反射设值，同 Level.random）+ **实体宿主（2026-11-12，D-container-25）**·实体容器 origin=眼睛位置（开关关/开都非 null = 不设门）/ K2 上报：实体容器⇒ofEntity(uuid,-1)、物品形态借用路径不变（箱内 ofBlock / 实体宿主内 ofEntity 带 hostSlot）
 │   ├── LivingToolHostSyncDedupTest.java      # K2 去重键口径（2026-10-26）·**动画状态必须算变化**（只有 progress / 只有 action / 只有 digTicks 不同 ⇒ 判有变化，否则方块容器「有模型、不转圈」）/ 内容全同⇒无变化 / **耐久不进键**（多比一个就刷包）（两个方向都钉）
 │   ├── LivingToolHostSyncDimensionTest.java  # K2 跨维度铁律（2026-10-27 审查）·PLAYER 宿主上报在玩家循环（维度循环之前）⇒ **登记表不得在 flush 里抽干**：两维度背包宿主各收各的（旧实现首维度抽干全表 ⇒ 地狱/末地条目全丢）/ 方块宿主**显式按上报维度隔离**（不再依赖抽干顺序）/ beginTick 清残留（取走背包⇒发空包清客户端）/ 稳态零发包（flush 只读去重仍生效）（替身结构同 BeaconPlayerHostSyncTest）
@@ -296,6 +298,7 @@ src/test/java/com/qiqi/li/
 │   ├── SpongeContainerCapabilityTest.java     # 容器级能力·存在性/客户端返回null（Jade请求由compat/jade独立守卫）/槽序罐/填充/边沿·多堆剩余预算与混种/代表流体/模拟·BLOCK副本计算与原槽提交/原引用和副本后端/拒写不报账/只读不抽插/第二槽失败报先前提交量/超大堆叠与无关组件保留
 │   └── LivingSpongeTooltipTest.java           # tooltip 堆口径（2026-11-06 回归）·分子分母同乘 count（旧实现分母写死枚容量 ⇒「128000 / 64000 mB」）/ 与 getFluidInTank·getTankCapacity 逐字一致 / 半满余量 / 干态无内容行
 ├── living/interaction/
+│   ├── AxeStripInteractionTest.java            # 去皮规则·AXE_STRIP能力工具/原木菌柄竹块/非活与多件放行/已去皮及无能力放行/右键按下边界
 │   ├── MenuActionAccessTest.java               # 菜单/槽身份与范围/原版存储契约/真实NeoForge空槽/精确点击别名与非目标歧义/显式访问/拒绝未知异常不回落/过滤不等于权限
 │   ├── InteractionActionTest.java              # 物品与容器语义/只读范围/逻辑映射/准入拒绝不执行/规则匹配不能授权
 │   ├── InteractionRegistryTest.java           # 两趟优先级匹配·通配遮蔽+triggerFilter 回归守卫
@@ -323,7 +326,7 @@ src/test/java/com/qiqi/li/
     ├── LivingTagPacketTest.java                # 活按钮codec/精确菜单/非创造忽略候选/授权前零覆盖/创造临时光标finally清理/功能否决与异常实际结果/活箱子实体掉物及堆叠守恒
     ├── ContainerMenuInfoPacketTest.java         # 菜单信息载荷·全形态/来源codec/状态独立/request关联/服务端限频/错菜单拒绝/实际回包/退出清理/几何有效性
     ├── GuiInteractionDispatchTest.java        # 真实分发当前菜单/精确双槽与显示别名/同号异库存/真实桶倒汲守恒与创造无限桶/访问拒绝零副作用/创造候选授权后借入与finally恢复/关联请求拒绝必回包及异常回实际结果
-    ├── GuiInteractionPacketTest.java          # 所有动作精确双槽号/越界与inactive拒绝/不按物理号回退；物品动作仅非空活物品
+    ├── GuiInteractionPacketTest.java          # 精确双槽号/越界与inactive拒绝/不按物理号回退；去皮真实菜单与玩家能力解析链、同号同内容仅改点击格、访问拒绝、精确拒写不抽插、创造虚拟光标回传
     └── LivingItemSyncPacketTest.java          # 运行时同步包编解码往返（档 2 安全网）·三组字段往返/空数据/多槽混合/两种键形态/容器种类 kind 往返(背包·末影箱·世界·掉落物)/子记录哨兵/未登记 id 报错
     └── LivingItemRuntimeSyncTest.java         # （门控判定已迁 ContainerViewersTest）+ **物品形态容器按菜单锚点发包（真机 tooltip 不显示容器信息的回归）**
     └── ServerPacketHandlerInventorySafetyTest.java  # 满背包不丢物（2026-10-27 审查 P0）·配方书 Shift 取出活箱子物品曾直接丢栈 ⇒ 背包满时静默销毁 / 满 ⇒ 余量掉落（Player#drop 原版入口，落副本+清零）/ 空 ⇒ 全收不掉 / 部分空间 ⇒ 合并后余量掉落

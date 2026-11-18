@@ -304,6 +304,8 @@ CropClassifier::isSeedPlantableOnFarmland)`）；**只有真·任意光标自交
 
 ## 7. 槽位悬停提示（客户端反馈）
 
+槽内去皮沿现有交互注册与 `LivingContainerOverlay` 覆盖层接入，提示必须以当前生效规则与纯转换判据为准，不能在客户端提前损耗或播成功音；玩法与模组边界见 [活工具 §2.6](../tech/living-tool-tech.md#26-槽内手动去皮)。
+
 > 2026-10-12 落地，首个消费者 = 活耕地种植提示（`FarmlandPlantHint`）。
 > 本节写**可复用模式与契约**；玩法侧（消耗语义）见
 > [living-farmland-tech.md](../tech/living-farmland-tech.md) §3.2。

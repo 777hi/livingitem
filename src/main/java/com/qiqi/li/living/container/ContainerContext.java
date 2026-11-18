@@ -836,12 +836,12 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
         return false;
     }
 
-    /** 直接覆盖接缝，仅供组件提交及恢复使用；不截断、不抽插、不发布同步。 */
+    /** 精确覆盖接缝，供组件提交、整槽变换及恢复使用；不截断、不抽插、不发布同步。 */
     default boolean trySetItemExact(int slot, ItemStack stack) {
         return false;
     }
 
-    /** 已观察到组件写入或恢复后的通知，发布最终槽状态。 */
+    /** 已观察到精确写入或恢复后的通知，标脏并发布最终槽状态。 */
     default void onItemComponentsChanged(int slot, ItemStack stack) {
         syncSlotToClients(slot, stack);
     }
@@ -886,37 +886,36 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
         try {
             return trySetItemExact(slot, expected.copy());
         } catch (RuntimeException e) {
-            SLOT_OPS_LOGGER.warn("组件写入异常：槽位 {}，将核验实际内容", slot, e);
+            SLOT_OPS_LOGGER.warn("精确写入异常：槽位 {}，将核验实际内容", slot, e);
             return false;
         }
     }
 
-    /**
-     * 原地整槽替换 —— 「不可拆整槽变换」（`I-C13`：一槽一瓶，要么整槽成要么不动）。
-     * 供酿造瓶槽一类「把 A 换成 B、数量不增减」的变换使用。
-     *
-     * <p>{@code fn} 收到的是<b>副本</b>，不得改活引用（{@code setItem} 覆盖语义会抽干
-     * 槽内活引用；变换结果必须来自 fn 的返回值而不是原地修改）。</p>
-     *
-     * <p>写后回读不符 ⇒ 还原并返回 {@code false}，调用方按「本槽没换成」处理
-     * （酿造 = 整批中止不扣材料）。</p>
-     *
-     * @return true = 已替换（或 fn 判定无需变化）；false = 未替换（槽原样）
-     */
+    /** 整槽精确变换，正写与恢复不抽插、不截断；无变化也返回 true，false 不得结算。 */
     default boolean transform(int slot, UnaryOperator<ItemStack> fn) {
         if (!isValidSlot(slot)) return false;
-        ItemStack before = getItem(slot);
-        ItemStack expected = fn.apply(before.copy());
-        if (ItemStack.matches(expected, before)) return true;   // fn 判定无需变化
-        setItem(slot, expected);
-        ItemStack after = getItem(slot);
-        if (!ItemStack.matches(after, expected)) {
-            rollbackSlot(this, slot, before,
-                "transform 写入不符（期望 " + expected + "，实际 " + after + "）");
-            syncSlotToClients(slot, getItem(slot));
-            return false;
+        ItemStack before = getItem(slot).copy();
+        ItemStack expected = fn.apply(before.copy()).copy();
+        if (ItemStack.matches(expected, before)) return true;
+        if (!supportsExactWrite(slot)) return false;
+
+        boolean written = attemptComponentWrite(slot, expected);
+        ItemStack actual = getItem(slot).copy();
+        if (written && ItemStack.matches(actual, expected)) {
+            onItemComponentsChanged(slot, actual);
+            return true;
         }
-        syncSlotToClients(slot, after);
-        return true;
+        SLOT_OPS_LOGGER.warn("transform: 槽位 {} 未确认期望状态，停止结算（期望 {}，实际 {}）",
+            slot, expected, actual);
+        if (!ItemStack.matches(actual, before)) {
+            attemptComponentWrite(slot, before);
+            actual = getItem(slot).copy();
+            if (!ItemStack.matches(actual, before)) {
+                ROLLBACK_LOGGER.error("transform 恢复失败：槽位 {} 期望 {}，实际 {} —— 需人工核查",
+                    slot, before, actual);
+            }
+            onItemComponentsChanged(slot, actual);
+        }
+        return false;
     }
 }

@@ -24,7 +24,7 @@
 | `swap(from, to)` | 「两槽内容对调」—— 双方非空、整栈互换（活魂符换位） | `MoveResult` 四态；**无撤销凭据**（逆操作 = 再 swap） |
 | `produce(slot, prototype, n)` | 「生成 n 个放进槽」—— 熔炉产物 / 耕地掉落 / 残留物 | 实际放入量 |
 | `consume(slot, maxUnit)` | 「吃掉槽里至多 n 件」—— 熔炉输入 / 酿造材料燃料 | 实际扣减量 |
-| `transform(slot, fn)` | 「把槽里的东西变身」—— 酿造瓶槽一类 I-C13 不可拆整槽变换 | 成败布尔 |
+| `transform(slot, fn)` | 「把槽里的东西变身」—— 酿造瓶槽一类 I-C13 不可拆整槽变换；须有精确写回面，不走抽插回退 | 成败布尔（无变化也为 true） |
 
 违约时的自动行为（撤销 / 恢复 / WARN）是契约机制，本文不复制 —— 见
 [api-contract §1.7](../system-design/api-contract.md) 与 [container-boundary I-C12~14](../system-design/container-boundary.md)。

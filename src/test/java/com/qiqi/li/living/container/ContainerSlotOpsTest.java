@@ -4,7 +4,22 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,8 +28,16 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import com.qiqi.li.testutil.FakeContainerContext;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.server.level.ServerChunkCache;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.CustomData;
@@ -638,29 +661,42 @@ class ContainerSlotOpsTest {
 
     // ── transform ──────────────────────────────────────────────
 
-    @Test
-    @DisplayName("transform 整槽替换成功（岩浆桶 → 空桶，对齐原版残留物语义）")
-    void transformReplacesSlot() {
-        ContainerContext ctx = newCtx(true, 2, null);
+    @ParameterizedTest(name = "{0}：transform 整槽替换成功（岩浆桶 → 空桶）")
+    @ValueSource(booleans = {true, false})
+    void transformReplacesSlot(boolean handlerBacked) {
+        ContainerContext ctx = newCtx(handlerBacked, 2, null);
         ctx.setItem(0, new ItemStack(Items.LAVA_BUCKET));
+        long revision = ContainerLivingItemHandler.getContainerRevision(ctx);
 
         boolean ok = ctx.transform(0, ItemStack::getCraftingRemainingItem);
 
         assertTrue(ok);
         assertTrue(stackOf(ctx, 0).is(Items.BUCKET), "残留物落槽");
         assertEquals(1, stackOf(ctx, 0).getCount());
+        assertEquals(revision + 1, ContainerLivingItemHandler.getContainerRevision(ctx));
     }
 
-    @Test
-    @DisplayName("transform fn 判定无变化 ⇒ true 且不写（无变化不触发同步）")
-    void transformNoChangeSkipsWrite() {
-        FakeContainerContext ctx = new FakeContainerContext(2, 9);
+    @ParameterizedTest(name = "exactWrite={0}：transform 无变化仍 true，零写入、零通知")
+    @ValueSource(booleans = {true, false})
+    void transformNoChangeSkipsWrite(boolean exactWrite) {
+        FakeContainerContext ctx = new FakeContainerContext(2, 9) {
+            @Override public boolean supportsExactWrite(int slot) { return exactWrite; }
+            @Override public boolean trySetItemExact(int slot, ItemStack stack) {
+                throw new AssertionError("无变化不得调用精确 setter");
+            }
+            @Override public void setItem(int slot, ItemStack stack) {
+                throw new AssertionError("无变化不得调用数量 setter");
+            }
+        };
         ctx.set(0, new ItemStack(Items.REDSTONE, 5));
-        int syncCallsBefore = ctx.syncedSlots.size();
+        long revision = ContainerLivingItemHandler.getContainerRevision(ctx);
 
         assertTrue(ctx.transform(0, s -> s.copyWithCount(5)));
+        assertTrue(ctx.transform(1, s -> s), "空槽无变化同样成功");
 
-        assertEquals(syncCallsBefore, ctx.syncedSlots.size(), "内容没变就不写不同步");
+        assertTrue(ctx.syncedSlots.isEmpty(), "内容没变就不写不同步");
+        assertEquals(revision, ContainerLivingItemHandler.getContainerRevision(ctx));
+        assertEquals(5, ctx.getItem(0).getCount());
     }
 
     @Test
@@ -669,11 +705,406 @@ class ContainerSlotOpsTest {
         SilentWriteHandler h = new SilentWriteHandler(64, 64);
         h.slots[0] = new ItemStack(Items.LAVA_BUCKET);
         h.silentSlots.add(0);
-        SimpleContainerContext ctx = new SimpleContainerContext(h);
+        SimpleContainerContext ctx = new SimpleContainerContext(h) {
+            @Override public void setItem(int slot, ItemStack stack) {
+                throw new AssertionError("transform 不得走数量 setter");
+            }
+            @Override public void onItemComponentsChanged(int slot, ItemStack stack) {
+                throw new AssertionError("静默未写入，原槽没变，不应通知");
+            }
+        };
+        long revision = ContainerLivingItemHandler.getContainerRevision(ctx);
 
         assertFalse(ctx.transform(0, ItemStack::getCraftingRemainingItem));
         assertTrue(stackOf(ctx, 0).is(Items.LAVA_BUCKET), "还原成功 ⇒ 原样");
         assertEquals(1, stackOf(ctx, 0).getCount());
+        assertEquals(revision, ContainerLivingItemHandler.getContainerRevision(ctx));
+    }
+
+    @Test
+    @DisplayName("transform：setter 抽干旧活引用后重定向，仍恢复整堆原物品与组件")
+    void transformRestoresSnapshotWhenSetterDrainsOldReference() {
+        LimitedHandler h = new LimitedHandler(64) {
+            boolean first = true;
+            @Override public void setStackInSlot(int slot, ItemStack stack) {
+                if (first) {
+                    first = false;
+                    slots[slot].setCount(0);
+                    slots[slot] = new ItemStack(Items.GOLD_INGOT, 1);
+                } else {
+                    super.setStackInSlot(slot, stack);
+                }
+            }
+        };
+        ItemStack original = new ItemStack(Items.OAK_LOG, 8);
+        CompoundTag tag = new CompoundTag();
+        tag.putString("marker", "before");
+        original.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+        ItemStack snapshot = original.copy();
+        h.slots[0] = original;
+        SimpleContainerContext ctx = new SimpleContainerContext(h) {
+            @Override public void setItem(int slot, ItemStack stack) {
+                throw new AssertionError("正写与恢复均不得使用数量 setter");
+            }
+        };
+
+        assertFalse(ctx.transform(0, s -> new ItemStack(Items.STRIPPED_OAK_LOG, s.getCount())));
+        assertTrue(original.isEmpty(), "旧活引用确实被 setter 抽干");
+        assertTrue(ItemStack.matches(snapshot, ctx.getItem(0)), "恢复原物品、整堆数量与组件，而非空掉的旧引用");
+    }
+
+    @Test
+    @DisplayName("transform：setter 污染传入结果，不得把部分落地误判为整堆变换成功")
+    void transformDoesNotAcceptMutatedWriteArgument() {
+        var ctx = new FakeContainerContext(1, 1) {
+            int writes;
+            @Override public boolean trySetItemExact(int slot, ItemStack stack) {
+                if (++writes == 1) stack.setCount(2);
+                return super.trySetItemExact(slot, stack);
+            }
+            @Override public void setItem(int slot, ItemStack stack) {
+                throw new AssertionError("正写与恢复均不得使用数量 setter");
+            }
+        };
+        ItemStack before = new ItemStack(Items.OAK_LOG, 8);
+        ctx.set(0, before.copy());
+        ItemStack expected = new ItemStack(Items.STRIPPED_OAK_LOG, 8);
+
+        assertFalse(ctx.transform(0, s -> expected), "实收2不是预期8，不能确认整堆变换");
+        assertEquals(8, expected.getCount(), "fn 返回值不得被 setter 污染");
+        assertEquals(2, ctx.writes, "精确正写失败后仅尝试一次精确恢复");
+        assertTrue(ItemStack.matches(before, ctx.getItem(0)), "失败恢复原物品与整堆数量");
+        assertEquals(java.util.List.of(0), ctx.syncedSlots, "失败只同步恢复后的槽状态");
+    }
+
+    @Test
+    @DisplayName("transform：UOE setter + 会跨槽重定向的 insert，禁止真实抽插且两槽原样")
+    void transformUnsupportedSetterNeverFallsBackToRedirectingInsert() {
+        var h = new LimitedHandler(64, 64) {
+            int writes;
+            int realExtracts;
+            int realInserts;
+            @Override public void setStackInSlot(int slot, ItemStack stack) {
+                writes++;
+                throw new UnsupportedOperationException("只开放传输");
+            }
+            @Override public ItemStack extractItem(int slot, int count, boolean simulate) {
+                if (!simulate) realExtracts++;
+                return super.extractItem(slot, count, simulate);
+            }
+            @Override public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
+                if (!simulate) {
+                    realInserts++;
+                    slots[1] = stack.copy();
+                }
+                return ItemStack.EMPTY;
+            }
+        };
+        ItemStack source = new ItemStack(Items.OAK_LOG, 8);
+        ItemStack other = new ItemStack(Items.GOLD_INGOT, 3);
+        h.slots[0] = source.copy();
+        h.slots[1] = other.copy();
+        SimpleContainerContext ctx = new SimpleContainerContext(h) {
+            @Override public void onItemComponentsChanged(int slot, ItemStack stack) {
+                throw new AssertionError("未发生变动，不应通知");
+            }
+        };
+        long revision = ContainerLivingItemHandler.getContainerRevision(ctx);
+
+        assertTrue(ctx.supportsExactWrite(0), "声明 Modifiable 不等于 setter 一定可用");
+        assertFalse(ctx.transform(0, s -> new ItemStack(Items.STRIPPED_OAK_LOG, s.getCount())));
+
+        assertEquals(1, h.writes);
+        assertEquals(0, h.realExtracts, "不调用 extract(false)");
+        assertEquals(0, h.realInserts, "不调用可能跨槽写入的 insert(false)");
+        assertTrue(ItemStack.matches(source, h.slots[0]));
+        assertTrue(ItemStack.matches(other, h.slots[1]));
+        assertEquals(revision, ContainerLivingItemHandler.getContainerRevision(ctx));
+    }
+
+    @Test
+    @DisplayName("transform：无精确能力的只读后端在 setter 前拒绝，fn 也不能污染源")
+    void transformRejectsBackendWithoutExactWrite() {
+        PlainHandlerLike h = new PlainHandlerLike(2) {
+            @Override public ItemStack extractItem(int slot, int count, boolean simulate) {
+                throw new AssertionError("无精确能力不得抽取");
+            }
+            @Override public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
+                throw new AssertionError("无精确能力不得插入");
+            }
+        };
+        ItemStack before = new ItemStack(Items.OAK_LOG, 8);
+        h.slots[0] = before.copy();
+        h.slots[1] = new ItemStack(Items.GOLD_INGOT, 3);
+        ItemStack other = h.slots[1].copy();
+        SimpleContainerContext ctx = new SimpleContainerContext(h) {
+            @Override public boolean trySetItemExact(int slot, ItemStack stack) {
+                throw new AssertionError("必须先检查精确能力");
+            }
+            @Override public void onItemComponentsChanged(int slot, ItemStack stack) {
+                throw new AssertionError("无精确能力不得发布变更");
+            }
+        };
+
+        assertFalse(ctx.supportsExactWrite(0));
+        assertFalse(ctx.transform(0, s -> {
+            s.setCount(1);
+            return new ItemStack(Items.STRIPPED_OAK_LOG, 8);
+        }));
+        assertTrue(ctx.transform(0, ItemStack::copy), "无变化仍 true，即使只读");
+        assertTrue(ItemStack.matches(before, h.slots[0]));
+        assertTrue(ItemStack.matches(other, h.slots[1]));
+        assertFalse(ctx.transform(-1, s -> { throw new AssertionError("越界不得调用 fn"); }));
+        assertFalse(ctx.transform(2, s -> { throw new AssertionError("越界不得调用 fn"); }));
+    }
+
+    @ParameterizedTest(name = "writesBeforeFalse={0}：setter false 不能被匹配回读覆写为成功")
+    @ValueSource(booleans = {false, true})
+    void transformFalseSetterCannotSucceedEvenWithMatchingReadback(boolean writesBeforeFalse) {
+        var ctx = new FakeContainerContext(1, 1) {
+            int writes;
+            @Override public boolean trySetItemExact(int slot, ItemStack stack) {
+                writes++;
+                if (writesBeforeFalse) super.trySetItemExact(slot, stack);
+                return false;
+            }
+            @Override public void setItem(int slot, ItemStack stack) {
+                throw new AssertionError("拒写不得转数量 setter");
+            }
+        };
+        ItemStack before = new ItemStack(Items.OAK_LOG, 8);
+        ctx.set(0, before.copy());
+
+        assertFalse(ctx.transform(0, s -> new ItemStack(Items.STRIPPED_OAK_LOG, s.getCount())));
+
+        assertEquals(writesBeforeFalse ? 2 : 1, ctx.writes);
+        assertTrue(ItemStack.matches(before, ctx.getItem(0)));
+        assertEquals(writesBeforeFalse ? List.of(0) : List.of(), ctx.syncedSlots);
+    }
+
+    @ParameterizedTest(name = "partialWrite={0}：setter 异常隔离，回读后只精确恢复")
+    @ValueSource(booleans = {false, true})
+    void transformSetterExceptionReadsBackAndRestores(boolean partialWrite) {
+        var h = new LimitedHandler(64) {
+            int writes;
+            @Override public void setStackInSlot(int slot, ItemStack stack) {
+                if (++writes == 1) {
+                    if (partialWrite) slots[slot] = stack.copyWithCount(2);
+                    throw new IllegalStateException("setter 异常");
+                }
+                super.setStackInSlot(slot, stack);
+            }
+        };
+        List<ItemStack> synced = new ArrayList<>();
+        SimpleContainerContext ctx = new SimpleContainerContext(h) {
+            @Override public void setItem(int slot, ItemStack stack) {
+                throw new AssertionError("恢复不得走数量 setter");
+            }
+            @Override public void syncSlotToClients(int slot, ItemStack stack) {
+                synced.add(stack.copy());
+                super.syncSlotToClients(slot, stack);
+            }
+        };
+        ItemStack before = new ItemStack(Items.OAK_LOG, 8);
+        h.slots[0] = before.copy();
+        long revision = ContainerLivingItemHandler.getContainerRevision(ctx);
+
+        assertFalse(ctx.transform(0, s -> new ItemStack(Items.STRIPPED_OAK_LOG, s.getCount())));
+
+        assertEquals(partialWrite ? 2 : 1, h.writes);
+        assertTrue(ItemStack.matches(before, ctx.getItem(0)));
+        assertEquals(partialWrite ? 1 : 0, synced.size());
+        if (partialWrite) assertTrue(ItemStack.matches(before, synced.getFirst()));
+        assertEquals(revision + (partialWrite ? 1 : 0), ContainerLivingItemHandler.getContainerRevision(ctx));
+    }
+
+    @Test
+    @DisplayName("transform：恢复 setter 污染参数并抛异常，不能假报恢复，只通知最终实值")
+    void transformFailedRestoreSyncsActualStateAndKeepsSnapshotIndependent() {
+        List<ItemStack> synced = new ArrayList<>();
+        List<ItemStack> requested = new ArrayList<>();
+        var ctx = new FakeContainerContext(1, 1) {
+            @Override public boolean trySetItemExact(int slot, ItemStack stack) {
+                requested.add(stack.copy());
+                stack.setCount(2);
+                super.trySetItemExact(slot, stack);
+                if (requested.size() == 2) throw new IllegalStateException("恢复失败");
+                return true;
+            }
+            @Override public void setItem(int slot, ItemStack stack) {
+                throw new AssertionError("恢复异常也不得抽插回退");
+            }
+            @Override public void syncSlotToClients(int slot, ItemStack stack) {
+                synced.add(stack.copy());
+                super.syncSlotToClients(slot, stack);
+            }
+        };
+        ItemStack before = new ItemStack(Items.OAK_LOG, 8);
+        ItemStack expected = new ItemStack(Items.STRIPPED_OAK_LOG, 8);
+        ctx.set(0, before.copy());
+
+        assertFalse(ctx.transform(0, s -> expected));
+
+        assertEquals(2, requested.size(), "恢复只尝试一次");
+        assertTrue(ItemStack.matches(expected, requested.get(0)));
+        assertTrue(ItemStack.matches(before, requested.get(1)), "恢复请求保留原数量与原型");
+        assertEquals(8, before.getCount());
+        assertEquals(8, expected.getCount());
+        assertTrue(ItemStack.matches(before.copyWithCount(2), ctx.getItem(0)));
+        assertEquals(List.of(0), ctx.syncedSlots);
+        assertEquals(1, synced.size());
+        assertTrue(ItemStack.matches(ctx.getItem(0), synced.getFirst()));
+    }
+
+    @Test
+    @DisplayName("transform：期望快照独立于 fn 保留的返回引用")
+    void transformCopiesExpectedBeforeCallingSetter() {
+        ItemStack returned = new ItemStack(Items.STRIPPED_OAK_LOG, 8);
+        FakeContainerContext ctx = new FakeContainerContext(1, 1) {
+            boolean first = true;
+            @Override public boolean trySetItemExact(int slot, ItemStack stack) {
+                if (first) {
+                    first = false;
+                    returned.setCount(2);
+                    stack.setCount(2);
+                }
+                return super.trySetItemExact(slot, stack);
+            }
+        };
+        ItemStack before = new ItemStack(Items.OAK_LOG, 8);
+        ctx.set(0, before.copy());
+
+        assertFalse(ctx.transform(0, s -> returned), "不能跟随外部引用把期望8改成2");
+        assertEquals(2, returned.getCount(), "接缝确实修改了 fn 保留的外部引用");
+        assertTrue(ItemStack.matches(before, ctx.getItem(0)));
+        assertEquals(List.of(0), ctx.syncedSlots);
+    }
+
+    @ParameterizedTest(name = "clampFirstWrite={0}：整堆正写与恢复均不截断，通知链恰好一次")
+    @ValueSource(booleans = {false, true})
+    void transformDoesNotClampAndNotifiesDirtyRevisionAndSlotOnce(boolean clampFirstWrite) {
+        var h = new LimitedHandler(64) {
+            int writes;
+            @Override public void setStackInSlot(int slot, ItemStack stack) {
+                super.setStackInSlot(slot, ++writes == 1 && clampFirstWrite
+                    ? stack.copyWithCount(1) : stack);
+            }
+        };
+        ItemStack before = new ItemStack(Items.OAK_LOG, 2048);
+        CompoundTag tag = new CompoundTag();
+        tag.putString("marker", "before");
+        before.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+        h.slots[0] = before.copy();
+        ItemStack expected = new ItemStack(Items.STRIPPED_OAK_LOG, 2048);
+        CompoundTag resultTag = new CompoundTag();
+        resultTag.putString("marker", "after");
+        expected.set(DataComponents.CUSTOM_DATA, CustomData.of(resultTag));
+        BlockEntity first = mock(BlockEntity.class);
+        BlockEntity second = mock(BlockEntity.class);
+        List<ItemStack> synced = new ArrayList<>();
+        SimpleContainerContext ctx = new SimpleContainerContext(h,
+            List.of(BlockPos.ZERO, new BlockPos(1, 0, 0)), List.of(first, second)) {
+            @Override public void setItem(int slot, ItemStack stack) {
+                throw new AssertionError("整槽变换不得借道会截断的 setItem");
+            }
+            @Override public void syncSlotToClients(int slot, ItemStack stack) {
+                synced.add(stack.copy());
+                super.syncSlotToClients(slot, stack);
+            }
+        };
+        TickContext tick = new TickContext(ctx);
+        try (var hooks = mockStatic(ContainerTickHooks.class)) {
+            ctx.setTickContext(tick);
+            hooks.verify(() -> ContainerTickHooks.fireTickStart(ctx, tick));
+        }
+        long revision = ContainerLivingItemHandler.getContainerRevision(ctx);
+
+        assertEquals(!clampFirstWrite, ctx.transform(0, s -> expected));
+
+        ItemStack finalStack = clampFirstWrite ? before : expected;
+        assertTrue(ItemStack.matches(finalStack, ctx.getItem(0)), "数量、原型及全部组件完整落地");
+        assertEquals(2048, ctx.getItem(0).getCount(), "报告上限64不得裁剪已有整堆");
+        assertNotSame(expected, ctx.getItem(0));
+        assertEquals(clampFirstWrite ? 2 : 1, h.writes);
+        assertEquals(1, synced.size());
+        assertTrue(ItemStack.matches(finalStack, synced.getFirst()));
+        assertEquals(Set.of(0), tick.dirtySlots);
+        assertEquals(revision + 1, ContainerLivingItemHandler.getContainerRevision(ctx));
+        assertTrue(ctx.transform(0, ItemStack::copy));
+        assertEquals(1, synced.size(), "随后 no-op 不再通知");
+        assertEquals(revision + 1, ContainerLivingItemHandler.getContainerRevision(ctx));
+        verify(first, times(1)).setChanged();
+        verify(second, times(1)).setChanged();
+        ctx.setTickContext(null);
+    }
+
+    @Test
+    @DisplayName("transform：掉落物精确写回整堆，走实体标脏与同步，bump 恰好一次")
+    void transformItemEntityWritesAndSyncsNormally() {
+        ItemStack before = new ItemStack(Items.OAK_LOG, 128);
+        ItemStack expected = new ItemStack(Items.STRIPPED_OAK_LOG, 128);
+        AtomicReference<ItemStack> actual = new AtomicReference<>(before.copy());
+        ItemEntity entity = mock(ItemEntity.class);
+        when(entity.getUUID()).thenReturn(UUID.randomUUID());
+        when(entity.getId()).thenReturn(17);
+        when(entity.getItem()).thenAnswer(call -> actual.get());
+        List<ItemStack> writes = new ArrayList<>();
+        doAnswer(call -> {
+            ItemStack stack = call.getArgument(0);
+            actual.set(stack);
+            writes.add(stack.copy());
+            return null;
+        }).when(entity).setItem(any(ItemStack.class));
+        SynchedEntityData data = mock(SynchedEntityData.class);
+        when(entity.getEntityData()).thenReturn(data);
+        List<SynchedEntityData.DataValue<?>> packed = List.of(
+            new SynchedEntityData.DataValue<>(0, EntityDataSerializers.ITEM_STACK, expected.copy()));
+        when(data.packDirty()).thenReturn(packed);
+        ServerLevel level = mock(ServerLevel.class);
+        when(level.dimension()).thenReturn(net.minecraft.world.level.Level.OVERWORLD);
+        ServerChunkCache chunks = mock(ServerChunkCache.class);
+        when(level.getChunkSource()).thenReturn(chunks);
+        ItemEntityContainerContext ctx = new ItemEntityContainerContext(entity, level) {
+            @Override public void setItem(int slot, ItemStack stack) {
+                throw new AssertionError("掉落物 transform 必须走精确入口");
+            }
+        };
+        long revision = ContainerLivingItemHandler.getContainerRevision(ctx);
+
+        assertTrue(ctx.supportsExactWrite(0));
+        assertTrue(ctx.transform(0, s -> expected));
+        assertTrue(ItemStack.matches(expected, actual.get()));
+        assertNotSame(expected, actual.get());
+        assertEquals(3, writes.size(), "精确写一次；实体同步先置空再写最终栈");
+        assertTrue(ItemStack.matches(expected, writes.get(0)));
+        assertTrue(writes.get(1).isEmpty(), "实体同步需强制标脏");
+        assertTrue(ItemStack.matches(expected, writes.get(2)));
+        assertEquals(128, expected.getCount());
+        assertEquals(revision + 1, ContainerLivingItemHandler.getContainerRevision(ctx));
+        assertTrue(ctx.transform(0, ItemStack::copy));
+        assertEquals(3, writes.size(), "no-op 不重写实体数据");
+        assertEquals(revision + 1, ContainerLivingItemHandler.getContainerRevision(ctx));
+        verify(data, times(1)).packDirty();
+        verify(chunks, times(1)).broadcastAndSend(entity, new ClientboundSetEntityDataPacket(17, packed));
+    }
+
+    @Test
+    @DisplayName("掉落物精确接缝：越界或已移除实体拒写，不碰实体同步")
+    void itemEntityExactWriteRejectsInvalidSlotAndRemovedEntity() {
+        ItemEntity entity = mock(ItemEntity.class);
+        when(entity.getUUID()).thenReturn(UUID.randomUUID());
+        ItemEntityContainerContext ctx = new ItemEntityContainerContext(entity, mock(ServerLevel.class));
+        ItemStack expected = new ItemStack(Items.OAK_LOG, 8);
+
+        assertFalse(ctx.supportsExactWrite(-1));
+        assertFalse(ctx.supportsExactWrite(1));
+        assertFalse(ctx.trySetItemExact(-1, expected));
+        assertFalse(ctx.trySetItemExact(1, expected));
+        when(entity.isRemoved()).thenReturn(true);
+        assertFalse(ctx.supportsExactWrite(0));
+        assertFalse(ctx.trySetItemExact(0, expected));
+        verify(entity, never()).setItem(any(ItemStack.class));
+        verify(entity, never()).getEntityData();
     }
 
     // ── swap：双非空整栈互换（活魂符换位原语，2026-11-12） ──────────

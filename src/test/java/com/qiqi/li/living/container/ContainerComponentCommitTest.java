@@ -4,6 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.times;
@@ -392,19 +396,10 @@ class ContainerComponentCommitTest {
 
     @Test
     void defaultContextDoesNotInheritComponentWriteFromQuantityWriteCapability() {
-        FakeContainerContext ctx = new FakeContainerContext(1, 1) {
-            @Override public void setItem(int slot, ItemStack stack) {
-                throw new AssertionError("默认组件接缝不得借用 setItem");
-            }
-            @Override public int simulateInsertItem(int slot, ItemStack stack) {
-                throw new AssertionError("默认组件接缝不得探测插入");
-            }
-            @Override public int simulateExtractItem(int slot, int amount) {
-                throw new AssertionError("默认组件接缝不得探测抽取");
-            }
-        };
-        ctx.set(0, original(7));
-        ItemStack before = ctx.getItem(0).copy();
+        ContainerContext ctx = mock(ContainerContext.class, CALLS_REAL_METHODS);
+        ItemStack before = original(7);
+        when(ctx.getItem(0)).thenReturn(before.copy());
+        when(ctx.isValidSlot(0)).thenReturn(true);
 
         assertTrue(ctx.supportsExactWrite(0));
         assertFalse(ctx.supportsItemComponentWrite(0));
@@ -413,7 +408,10 @@ class ContainerComponentCommitTest {
         assertFalse(ctx.commitItemComponents(0, before, before.copy()));
 
         assertStack(before, ctx.getItem(0));
-        assertTrue(ctx.syncedSlots.isEmpty());
+        verify(ctx, never()).setItem(anyInt(), any());
+        verify(ctx, never()).simulateInsertItem(anyInt(), any());
+        verify(ctx, never()).simulateExtractItem(anyInt(), anyInt());
+        verify(ctx, never()).syncSlotToClients(anyInt(), any());
     }
 
     @Test

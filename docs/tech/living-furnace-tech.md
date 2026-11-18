@@ -253,7 +253,7 @@ crafting remainder，**燃料槽整体替换为残留物**（岩浆桶 → 空�
 
 `consumeFuel()` 走容器数量原语，返回 boolean（false = 没扣到，调用方不得点燃）：
 
-- 带残留物 → `ctx.transform(fuelSlot, ItemStack::getCraftingRemainingItem)`：同槽 1:1 替换
+- 带残留物 → `ctx.transform(fuelSlot, ItemStack::getCraftingRemainingItem)`：同槽 1:1 替换；无精确写回面或拒写不点燃，不通过抽插回退绕过限制（共同契约见 [API §1.7](../system-design/api-contract.md#17-槽位数量操作原语2026-11-05-生效)）
   带回读。**不走 `produce` 的准入**——燃料槽在原版语义下拒收空桶
 - 普通燃料 → `ctx.consume(fuelSlot, 1) > 0`：抽取权限 + 写后回读，扣不到返回 0
 
