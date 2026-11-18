@@ -62,7 +62,7 @@
 | 契约 | `docs/system-design/*` | 不变量 · 协议 · 口径（**违反即 bug**） | 不限（不进加载路径） |
 | 实现 | `docs/tech/*` | 每子系统：**§0 玩法定义** · 链路 · 数据流 · 踩坑 · 实测清单。**跨活物品的共享技术**放 `tech/common/`（一个活物品一篇是 `living-*.md`） | 不限 |
 | 指南 | `docs/guides/*` | 通用做法（如何写测试、如何做槽位设计…） | 不限 |
-| 参考 | `docs/reference/*` | 详单快照（如 `test-map.md` 测试树 · `commands.md` 指令导航 · 外部资料 `block-facing.md`） | **必须标注「快照、以 X 为准」；⚠️ 清单型内容不进本层（铁律 3）**。例外：行集合由 `doc_check` 校验的索引（`test-map` / `shared-state` / `event-threading` / `container-data-lifecycle`）—— 不是手维护清单，行由源码全集驱动 |
+| 参考 | `docs/reference/*` | 详单快照（如 `test-map.md` 测试树 · `commands.md` 指令导航 · 外部资料 `block-facing.md`） | **必须标注「快照、以 X 为准」；⚠️ 清单型内容不进本层（铁律 3）**。例外：行由源码全集驱动、由生成器写入的索引（`test-map` 由 `gen_test_map.py` · `shared-state`/`event-threading` 由 `gen_rosters.py` · `container-data-lifecycle` 由 `doc_check` 存在性校验）—— 不是手维护清单 |
 | **中间层** | `docs/buffer/*` | **不稳定 / 未定案**：设计稿 · 计划 · 路线图 · 探讨 · 待办。**入口 = [buffer/README.md](buffer/README.md) 状态索引**；**本层不承载进度**（状态行口径见该页） | 不限；终态按 [buffer/README.md](buffer/README.md)「维护判据」三分支分流，索引同步改状态 |
 | 归档 | `docs/archive/*` | **时间线 + 原始观测**：`changelog.md`、带日期的真机验收 / 审查台账 / 事故现场记录。**判据 = 读者问「哪天」才进本层**；问「为什么」的归稳定层，都不问的删（git 已保完整历史） | 不限；⚠️ **活跃层不得把本层文件当「现状 / 工具」路由**（§7 漂移定义） |
 | 工具侧 | AI 工具技能 / `MEMORY.md` | **适配层**：只放「怎么在这个工具里执行」+ 指向仓库的指针 | 见铁律 5 |
@@ -234,7 +234,8 @@ changelog 是**流水**（时间线），**不是约束**（规则）。
 > **最终被删除** —— 它们是**清单型**内容（可从代码枚举），人工必漂（`file-map` 主树实测缺 112+
 > 个文件、`tools/` 整域不在树里，而它 09-16 的自查「缺 39 个」后从未补齐）。
 > ⇒ **「降级而非删除」对清单型内容只是中转站，终点是退出文档**（判据见铁律 3）。
-> 测试树部分（叙事型：每个测试类守什么）拆为 [reference/test-map.md](reference/test-map.md) 保留。
+> 测试树部分拆为 [reference/test-map.md](reference/test-map.md) 保留
+> （2026-11-18 起名录由 `gen_test_map.py` 生成；「守什么」只搬运源码类 javadoc 首句，不再人工转述）。
 
 每一步都做**守恒校验**（搬走的内容能在新家原样找到）。
 
@@ -281,7 +282,7 @@ python tools/doc_check.py        # 退出码 0 = 通过
 |---|---|
 | 1. 路径真实性 | 文档里的相对链接 / `file://` 链接 / `docs/…`·`src/…` 提及是否真实存在（**归档层豁免**；含「未建 / 待建 / 已删除」的行豁免）。⚠️ 2026-10-31 起相对链接按**所在目录**解析（渲染器口径）——仓库根相对写法（目标存在但点击 404）降为**警告**，此前 ROOT 兜底曾掩盖 tech 层真断链；另校验两份全局索引（`decisions.md` 决策表正文列 / `glossary.md` 出处列）的 `.md` 指针**必须能从 `docs/` 出发解析**（裸名、多套一层 `docs/` 前缀都会报红；`同上` / `D-xxx` 的体例见 `glossary.md` 头部） |
 | 2. 测试全绿（快照） | `gen_test_summary.py` 只把**全量** XML 写入 `build/verification/full-test-summary.json`（局部 `--tests` 不覆盖）；`doc_check` 校验快照 failures/errors 恒 0 + 当前 XML 无失败；无快照时本地 SKIP / CI 严格模式红 |
-| 3. 测试树一致性 | [test-map.md](reference/test-map.md) 的测试树 vs `src/test` 实际文件 |
+| 3. 测试树一致性 | [test-map.md](reference/test-map.md) 的**生成区**由 `tools/gen_test_map.py` 从 `src/test` 扫描生成，逐字一致（2026-11-18 转生成制；不再手维护名录——旧法漏列过新增测试类且不管描述过期。改测试文件名 / 类 javadoc 后重跑生成器） |
 | 5. 入口体量 | AGENTS.md ≤ 20,000 字符（**警告级**，超了先查冗余、再降级搬 `docs/reference/`） |
 | 6. 决策取代关系 | `decisions.md` 的 supersedes 链**双向一致**（A 说取代 B ⇒ B 必须说被 A 取代） |
 | 7. Java 符号真实性 | 文档提到的 `Living*.java` / `*Mixin.java` **必须存在**（讲历史/计划的行豁免；archive 与 buffer 层豁免） |

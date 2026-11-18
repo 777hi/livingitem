@@ -280,7 +280,7 @@ jar 不在此限。引入例外只有一个前提：许可证允许再分发且�
 | `move` | `MoveResult move(from, to, amount[, MovePolicy])` | 槽→槽按数量搬运，**允许部分交付**（`Success.moved ≤ amount`）与同类合并；四态结果复用 `MoveResult`；`undo(token)` 可撤销。`STANDARD` 问容量+准入（`simulateInsertItem`）与抽取权限（`simulateExtractItem`）；`PHYSICAL` = A3 特例（流体推动）：容量只问 `getSlotLimit`，不问准入与抽取权限。**活物品隔离由调用方把关** |
 | `produce` | `int produce(slot, prototype, amount)` | 产物放置（虚拟源 → 槽）：预算 = `simulateInsertItem`（I-C14①），返回**实际放入量**；差额只 WARN 不回滚（无源槽 ⇒ 无复制面，已放入部分是真产物） |
 | `consume` | `int consume(slot, maxUnit)` | 输入消费（槽 → 虚空）：查抽取权限（I-C12 第三维），返回**实际扣减量**；写回不符恢复原状返回 0（调用方按 0 = 本拍不推进） |
-| `transform` | `boolean transform(slot, fn)` | 原地整槽替换（I-C13 不可拆）：fn 收**副本**；改变内容时必须支持精确写回，正写与恢复均不抽插、不截断；写入被拒或回读不符则尝试精确恢复并返回 false；无变化返回 true 且不写 |
+| `transform` | `boolean transform(slot, fn)` | 原地整槽替换（I-C13 不可拆）：fn 收**副本**；改变内容时必须支持精确写回，正写与恢复均不抽插、不截断；写入被拒或回读不符则尝试精确恢复并返回 false；无变化返回 true 且不写。⚠️ true 含两种 no-op（fn 原样返回 / 槽位已处期望态），仅代表槽位**当前**处于期望态；凭 true 结算「本次完成了加工」的调用方须自证输入匹配（fn 内核对快照），不得把 no-op 当工作量（D-container-29） |
 
 **变换顺序契约（熔炉型「输入→产物」功能）**：`consume` 先行、`produce` 后行，
 产物量 = 实际扣减量 × 每单位产出。反向（先写产物再扣输入）在产物写失败时会留下

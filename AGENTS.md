@@ -111,6 +111,9 @@ src/main/java/com/qiqi/li/
 ├── living/
 │   ├── api/                                 # 公开接口 + 管理器
 │   ├── container/                           # 容器抽象层（跨活物品共享基础设施）
+│   ├── runtime/                             # 运行时缓存与分段注册（ContainerRuntimeCache / RuntimeSegments）
+│   ├── config/                              # 配置（玩法开关与客户端偏好）
+│   ├── command/                             # 指令（激活 / 容器 / 交互 / 变换）
 │   ├── domain/                              # 领域模块（每个活物品内聚到此）
 │   │   ├── hopper/                           #   活漏斗领域
 │   │   ├── chest/                            #   活箱子领域
@@ -120,7 +123,13 @@ src/main/java/com/qiqi/li/
 │   │   ├── tnt/                              #   活TNT领域
 │   │   ├── farmland/                         #   活耕地领域
 │   │   ├── tools/                            #   活工具 / 活武器领域（记忆 + 回放 + 环渲染）
-│   │   └── map/                              #   活地图传送领域
+│   │   ├── map/                              #   活地图传送领域
+│   │   ├── backpack/                         #   活背包领域
+│   │   ├── beacon/                           #   活信标领域
+│   │   ├── brewing/                          #   活酿造台领域
+│   │   ├── maid/                             #   活魂符 / 女仆联动领域
+│   │   ├── portal/                           #   活地狱门领域
+│   │   └── sponge/                           #   活海绵领域
 │   ├── domain/redstone/                     #   活红石领域
 │   ├── domain/piston/                       #   活活塞领域（红石触发的位移执行件）
 │   ├── domain/power/                        #   红电发电领域（活涂蜡铜块）
@@ -132,10 +141,13 @@ src/main/java/com/qiqi/li/
 │   ├── transfer/                            # 传输基础设施
 │   ├── interaction/                         # GUI交互
 │   ├── model/                               # 配置/方向模型
+│   ├── util/                                # 通用工具（广播去重 / 失败限频 / 静态缓存登记）
 │   ├── mixin/                               # 服务端 Mixin
-│   │   └── create/                          #   Create Mixin（条件加载）
+│   │   ├── create/                          #   Create Mixin（条件加载）
+│   │   └── sophisticated/                   #   精妙背包联动 Mixin（条件加载）
 │   ├── debug/                               # 调试工具（默认关闭，命令启用）
 │   └── perf/                                # 性能监控
+├── logging/                                 # 日志入口（ModLog）
 ├── client/
 │   ├── LivingItemClient.java                # 客户端入口（@Mod，dist=CLIENT）
 │   ├── gui/LivingButton.java                # 活按钮
@@ -143,7 +155,8 @@ src/main/java/com/qiqi/li/
 │   ├── input/                               # 输入处理
 │   ├── render/                              # 渲染
 │   ├── util/                                # 客户端工具
-│   └── mixin/                               # 客户端 Mixin
+│   ├── mixin/                               # 客户端 Mixin
+│   └── mixinsupport/                        # 客户端 Mixin 支撑（如 SpriteIconButton）
 └── network/                                 # 网络包
 ```
 

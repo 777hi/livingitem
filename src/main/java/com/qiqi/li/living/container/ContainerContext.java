@@ -891,7 +891,9 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
         }
     }
 
-    /** 整槽精确变换，正写与恢复不抽插、不截断；无变化也返回 true，false 不得结算。 */
+    /** 整槽精确变换，正写与恢复不抽插、不截断；无变化也返回 true，false 不得结算。
+     * true 仅代表槽位当前处于期望态（含 fn 原样返回 / 槽位已被改成期望态两种 no-op）；
+     * 凭 true 结算「本次完成了加工」的调用方须在 fn 内自证输入匹配，不得把 no-op 当工作量（D-container-29）。 */
     default boolean transform(int slot, UnaryOperator<ItemStack> fn) {
         if (!isValidSlot(slot)) return false;
         ItemStack before = getItem(slot).copy();

@@ -7,7 +7,8 @@ Verifies the invariants declared in docs/README.md §7 ("改完必查"):
                          of decisions.md / glossary.md (resolved relative to docs/)
   2. Test green        - 最近一次**全量**测试快照 failures/errors 恒 0，且当前 XML 无失败
                          （快照由 tools/gen_test_summary.py 生成，局部 --tests 不覆盖它）
-  3. Test tree         - the test file list in test-map.md matches src/test reality
+  3. Test tree         - test-map.md 生成区由 tools/gen_test_map.py 从 src/test 扫描生成，
+                         逐字一致（2026-11-18 起；取代手维护名录）
   5. Entry size        - AGENTS.md stays under the entry budget (soft warning)
   6. Decisions         - decisions.md 的 supersedes 链双向一致
   7. Java symbols      - docs 提到的 Living*.java / *Mixin.java 必须存在
@@ -234,38 +235,28 @@ def check_test_green():
 
 
 def check_test_tree():
-    """测试文件树住在 docs/reference/test-map.md（2026-10-10 从 file-map.md 拆出：
-    主文件树是清单型内容已删，测试树是叙事型意图说明保留）。"""
+    """docs/reference/test-map.md 的测试树由 tools/gen_test_map.py 从 src/test 扫描生成
+    （2026-11-18 转生成制，取代手维护名录 —— 手写名录实测漏列过新增测试类，
+    且旧校验只比对文件名集合、不管每行的「守什么」是否过期）。
+    与第 12/13/14 项同构：生成区必须与源码扫描结果逐字一致。"""
+    try:
+        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        import gen_test_map as gtm
+    except ImportError as e:
+        failures.append("[测试树] 无法导入 tools/gen_test_map.py（%s）" % e)
+        print("3. 测试树一致性    : FAIL（生成器不可用）")
+        return
     fm = os.path.join(ROOT, "docs", "reference", "test-map.md")
-    if not os.path.exists(fm):
-        failures.append("[测试树] 找不到 docs/reference/test-map.md")
-        print("3. 测试树一致性    : FAIL（无 test-map.md）")
-        return
-    text = read(fm)
-    anchor = "src/test/java/com/qiqi/li/"
-    if anchor not in text:
-        failures.append("[测试树] test-map.md 里找不到测试文件树")
-        print("3. 测试树一致性    : FAIL（无测试树）")
-        return
-    i = text.index(anchor)
-    block = text[i:text.index("```", i)]
-    doc = set(re.findall(r"([A-Za-z0-9_]+(?:Test|IT))\.java", block))
-
-    real = set()
-    for f in glob.glob(os.path.join(ROOT, "src", "test", "**", "*.java"), recursive=True):
-        n = os.path.basename(f)[:-5]
-        if n.endswith("Test") or n.endswith("IT"):
-            real.add(n)
-
-    extra, missing = sorted(doc - real), sorted(real - doc)
-    if extra or missing:
-        if extra:
-            failures.append(f"[测试树] test-map.md 列了不存在的测试类: {extra}")
-        if missing:
-            failures.append(f"[测试树] test-map.md 漏列测试类: {missing}")
-        print(f"3. 测试树一致性    : FAIL（多 {len(extra)} / 缺 {len(missing)}）")
+    state, why = gtm.check_region(fm, gtm.build_block)
+    n = gtm.count()
+    if state == "ok":
+        print("3. 测试树一致性    : OK（%d 个 .java · 名录与描述均由源码生成）" % n)
+    elif state == "missing":
+        failures.append("[测试树] test-map.md %s —— 需补 begin/end 生成区标记" % why)
+        print("3. 测试树一致性    : FAIL（%s）" % why)
     else:
-        print(f"3. 测试树一致性    : OK（{len(real)} 个测试类）")
+        failures.append("[测试树] test-map.md 生成区与源码不一致 —— 跑 python tools/gen_test_map.py")
+        print("3. 测试树一致性    : FAIL（生成区过期，源码已变）")
 
 
 # ---------------------------------------------------------------- 5. entry size

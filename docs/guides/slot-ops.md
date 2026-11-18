@@ -24,7 +24,7 @@
 | `swap(from, to)` | 「两槽内容对调」—— 双方非空、整栈互换（活魂符换位） | `MoveResult` 四态；**无撤销凭据**（逆操作 = 再 swap） |
 | `produce(slot, prototype, n)` | 「生成 n 个放进槽」—— 熔炉产物 / 耕地掉落 / 残留物 | 实际放入量 |
 | `consume(slot, maxUnit)` | 「吃掉槽里至多 n 件」—— 熔炉输入 / 酿造材料燃料 | 实际扣减量 |
-| `transform(slot, fn)` | 「把槽里的东西变身」—— 酿造瓶槽一类 I-C13 不可拆整槽变换；须有精确写回面，不走抽插回退 | 成败布尔（无变化也为 true） |
+| `transform(slot, fn)` | 「把槽里的东西变身」—— 酿造瓶槽一类 I-C13 不可拆整槽变换；须有精确写回面，不走抽插回退 | 成败布尔（无变化也为 true；true ≠ 本次完成了加工，见 §6） |
 
 违约时的自动行为（撤销 / 恢复 / WARN）是契约机制，本文不复制 —— 见
 [api-contract §1.7](../system-design/api-contract.md) 与 [container-boundary I-C12~14](../system-design/container-boundary.md)。
@@ -103,6 +103,10 @@
   超堆叠容器一槽几百个，任何公式都猜错一侧（I-C14①）。容量永远问 `simulateInsertItem`。
 - ⛔ **拿 `moveStack` 当通用搬运** —— 那是活塞的整栈纯位移（不拆、不合并、目标必须空、
   要求精确写）；通用搬运用 `move`。
+- ⛔ **把 `transform` 的 true 当工作量结算** —— true 含两种 no-op（fn 原样返回 / 槽位已处期望态），
+  仅代表槽位**当前**处于期望态。凭 true 扣耐久 / 计产出时须在 fn 内自证输入匹配
+  （核对快照，如 `AxeStripHandler` 的 inputMatched），no-op 不得结算。
+  契约与审计见 [api-contract §1.7](../system-design/api-contract.md) · D-container-29。
 - ⛔ **在原语里加活物品特判** —— 隔离由调用方把关；原语保持对「活物品」概念无知。
 - ⚠️ 容器有前置非存储槽（马/驴鞍槽）时，逻辑槽≠物理槽 —— 对外交付的槽号过 `toPhysicalSlot`
   （见 [infrastructure.md](../system-design/living-item-infrastructure.md)）。
@@ -118,6 +122,8 @@
 
 ## 7. 守卫测试
 
-原语行为由 `ContainerSlotOpsTest` 钉住（六场景 × 双容器实现 + 违约三态 + 负向验证）。
-**新增容器上下文实现时去那里补参数化**（`newCtx` 的两个分支加一个）；
+原语行为由 `ContainerSlotOpsTest` 钉住（守恒组参数化四后端 —— Simple / Fake / Entity 鞍槽
+偏移层 / ItemEntity 单槽，双槽组不含单槽后端 + 违约三态 + 负向验证；2026-11-18 拆鞍槽偏移的
+负向变异只有 ENTITY 实例红）。
+**数量面独立的新后端去那里补参数化**（`newCtx` 加一个分支；仅继承 Simple 数量面的子类不用加）；
 新增域内搬运点时，先想「这是四种里的哪一种」，答不出来 = 设计没想清，回设计稿。

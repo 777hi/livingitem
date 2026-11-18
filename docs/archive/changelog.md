@@ -21,6 +21,12 @@
 
 - ⚡ **Q4a 静息容器跳过后缀** —— 稳定无活物品、无持续流体工作且闩锁已结算的容器在扫描 + 签名 + 生命周期追踪后提前返回，不再空跑 TickContext / 钩子 / 容器级数据 / 写回；`shouldTickWithoutOwnItems` 收口为两阶段语义（注册期候选声明 / 每拍持续工作查询），自维持候选中只有活流体是无物品持续工作，红石归零、门面熄灭等一次性清理由「物品离场后闩锁未结算」的收口拍保证。判据用扫描见到的 IS_LIVING（不能用功能分组，活黑曜石等无认领物品守卫 + 两项负向变异验证）；`[IdleSuffix]` 仪表盘报告每窗口完整拍与跳过数。→ [基础设施 §8.2](../system-design/living-item-infrastructure.md) · [TODO Q4a](../TODO.md#本轮评估执行队列2026-11-15-登记) · [unit-testing Q3 节](../guides/unit-testing.md)。
 
+- **transform no-op 语义契约澄清（D-container-29）** —— true 仅代表槽位当前处于期望态（含 fn 原样返回 / 已被改成期望态两种 no-op）；凭 true 结算「本次完成了加工」的调用方须在 fn 内自证输入匹配。审计全部 4 个调用方确认既有者均被上游闸门兜住、无活 bug；布尔签名不变，三态返回待第二个结算型调用方出现时重议。→ [槽位契约 §1.7](../system-design/api-contract.md#17-槽位数量操作原语2026-11-05-生效) · [slot-ops §6](../guides/slot-ops.md)。
+
+- **槽位原语一致性套件扩到四后端** —— `ContainerSlotOpsTest` 参数化从 Simple/Fake 扩到 EntityContainerContext（带箱驴鞍槽偏移层）与 ItemEntityContainerContext（掉落物单槽），守恒/拒写恢复不变量自动穿过偏移层，落实 slot-ops §7 既有规则；负向变异（拆鞍槽偏移）仅 ENTITY 实例红。→ [slot-ops §7](../guides/slot-ops.md)。
+
+- 📋 **测试树手维护转生成制** —— `test-map.md` 的名录由 `gen_test_map.py` 从 `src/test` 扫描生成（含辅助类），「守什么」只搬运源码类 javadoc 首句，机器不判断对错、不浓缩 @DisplayName；doc_check 第 3 项改为生成区逐字一致性（取代旧的文件名集合比对——它漏列过 2 个新增测试类且不管描述过期）。与 gen_rosters / gen_buffer_index 同构，名录不可能出自人手；代价是描述深度退化，深层契约回源码读。→ [test-map 头部](../reference/test-map.md) · [文档规约 §7.1](../README.md)。
+
 ## 2026-11-17
 
 - ✅ **Q5/Q6 既定实机验收结案** —— 用户反馈本轮几个验收均正常：创造模式活化与流体不可变组件值的剩余真机债按既定范围关闭；未逐项说明的第三方、极端与组合场景不外推为单独证据。→ [TODO Q5/Q6](../TODO.md#本轮评估执行队列2026-11-15-登记)。

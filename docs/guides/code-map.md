@@ -82,6 +82,13 @@ python tools/gen_code_map.py \
 🔴 **`LAYERS` 表是「期望」，不是「现状」。** 改它 = 改你对架构的期望。
 别处若要校验分层，应读**同一张表**（别复制第二份）。
 
+> ⚠️ **新增顶层模块必须登记这张表。** 判据在 `gen_code_map.py` 的 `layer_of`：**未登记的模块
+> 静默返回 L3**（不报错、不警告）。后果是整个包被判低一层 —— 原本合法的同层依赖会变成
+> 「下层依赖上层」。实例：`LivingItemClient` 若在未登记的 `client` 包里会被判 L3，而它 import
+> 的 `client/render`（7 个）与 `client/icon`（1 个）是 L5 ⇒ 移包不会减少任何违规；登记 `client`
+> 为 L5 后同层合法，这 8 条才消失。核对：`python tools/gen_code_map.py --query LivingItemClient`
+> 的「层」行应显示 L5。判据与债务口径见 `decisions.md` D-core-13 / D-container-28。
+
 > ⚠️ **只统计跨模块的违规**（同模块内部不算）。CLI 打印的合计条数 = 这张图的红边总数
 > —— 它同时是**「架构演进」的进度指标**：目标是把违规压到 **0**，
 > 并让模块图变成有向无环（最大强连通分量 = 1）。

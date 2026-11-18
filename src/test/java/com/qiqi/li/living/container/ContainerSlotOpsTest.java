@@ -20,10 +20,12 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import com.qiqi.li.testutil.FakeContainerContext;
@@ -34,13 +36,18 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.players.PlayerList;
+import net.minecraft.world.entity.animal.horse.AbstractChestedHorse;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.CustomData;
+import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.items.IItemHandlerModifiable;
 
 /**
@@ -57,15 +64,20 @@ import net.neoforged.neoforge.items.IItemHandlerModifiable;
  *   <li><b>transform 失败还原</b>：不可拆整槽变换要么成要么槽原样（I-C13）。</li>
  * </ol>
  *
- * <p>参数化双实现：{@code handlerBacked=true} = SimpleContainerContext（NeoForge handler
- * 后端，生产主路径）；{@code false} = FakeContainerContext（纯接口默认实现）。
+ * <p>参数化四后端（数量面独立才进参数化；仅继承 Simple 数量面的子类不进，差异另有专测）：
+ * {@code SIMPLE} = SimpleContainerContext（NeoForge handler 后端，生产主路径）；
+ * {@code FAKE} = FakeContainerContext（纯接口默认实现）；{@code ENTITY} = EntityContainerContext
+ * 带箱驴夹具（逻辑↔物理鞍槽偏移层，D-container-11）；{@code ITEM_ENTITY} = ItemEntityContainerContext
+ * 掉落物单槽。双槽 move / swap 只跑前三者，单槽 transform / produce / consume 四者全跑。
  * 准入拒绝 / 抽取拒绝 / 违约注入只在 handler 形状上可表达，单独成组。</p>
  *
  * <p>负向验证（unit-testing.md 纪律，2026-11-05 实测）：摘掉 move 的源侧回读 ⇒
  * {@code sourceWriteFailureRollsBackTarget} 红（复制面 32+32 被抓住）；produce 改按计划量
  * 返回 ⇒ {@code produceKeepsPartialLandingWhenHandlerLies} 红（10 ≠ 实收 6）；consume 摘掉
  * 写回核验 ⇒ {@code consumeTreatsWriteFailureAsNothingConsumed} 红（源被扣空）。三者均确认
- * 会红后恢复实现，其余 29 例不受影响。</p>
+ * 会红后恢复实现，其余 29 例不受影响。2026-11-18 四后端化后补一轮：拆掉
+ * {@link EntityContainerContext#setItem} 的鞍槽偏移 ⇒ {@code moveWholeStack_conserves}
+ * 仅 ENTITY 实例红，恢复后全绿 —— 偏移层漏改从人工审计变为门禁红。</p>
  */
 class ContainerSlotOpsTest {
 
@@ -192,20 +204,86 @@ class ContainerSlotOpsTest {
         }
     }
 
-    // ── 双实现 fixture ─────────────────────────────────────────
+    // ── 四后端 fixture ─────────────────────────────────────────
 
-    /**
-     * {@code handlerBacked} = SimpleContainerContext（limits 传给 LimitedHandler）；
-     * 否则 FakeContainerContext（limits = withSlotLimits，null = 默认 64）。
-     */
-    private static ContainerContext newCtx(boolean handlerBacked, int size, int[] limits) {
-        if (handlerBacked) {
-            int[] ls = limits != null ? limits : fill(size, 64);
-            return new SimpleContainerContext(new LimitedHandler(ls));
-        }
+    /** 数量面独立的后端。ENTITY 的逻辑槽 L ↔ 物理槽 L+1（鞍槽偏移，D-container-11）。 */
+    private enum Backend { SIMPLE, FAKE, ENTITY, ITEM_ENTITY }
+
+    /** 双槽组（move / swap）：掉落物单槽不适用。 */
+    static Stream<Backend> storageBackends() {
+        return Stream.of(Backend.SIMPLE, Backend.FAKE, Backend.ENTITY);
+    }
+
+    /** 单槽组（transform / produce / consume）：四后端全跑。 */
+    static Stream<Backend> allBackends() {
+        return Stream.of(Backend.values());
+    }
+
+    private static ContainerContext newCtx(Backend backend, int size, int[] limits) {
+        return switch (backend) {
+            case SIMPLE -> new SimpleContainerContext(new LimitedHandler(orDefaults(size, limits)));
+            case FAKE -> fakeCtx(size, limits);
+            case ENTITY -> entityCtx(size, limits);
+            case ITEM_ENTITY -> itemEntityCtx();
+        };
+    }
+
+    private static int[] orDefaults(int size, int[] limits) {
+        return limits != null ? limits : fill(size, 64);
+    }
+
+    private static FakeContainerContext fakeCtx(int size, int[] limits) {
         FakeContainerContext fake = new FakeContainerContext(size, 9);
         if (limits != null) fake.withSlotLimits(limits);
         return fake;
+    }
+
+    /** 带箱驴夹具：物理槽 0 = 鞍（预置马鞍，任何场景都不得触碰），逻辑槽 limits 顺延一位。 */
+    private static EntityContainerContext entityCtx(int size, int[] limits) {
+        int[] logical = orDefaults(size, limits);
+        int[] physical = new int[size + 1];
+        physical[0] = 64;
+        System.arraycopy(logical, 0, physical, 1, size);
+        LimitedHandler handler = new LimitedHandler(physical);
+        handler.slots[0] = new ItemStack(Items.SADDLE);
+        AbstractChestedHorse horse = mock(AbstractChestedHorse.class);
+        when(horse.hasChest()).thenReturn(true);
+        when(horse.getUUID()).thenReturn(UUID.randomUUID());
+        when(horse.blockPosition()).thenReturn(BlockPos.ZERO);
+        when(horse.getCapability(Capabilities.ItemHandler.ENTITY)).thenReturn(handler);
+        return new EntityContainerContext(horse, emptyServerLevel());
+    }
+
+    /** 掉落物夹具：单槽、精确写回、实体数据同步全 mock（照 transformItemEntityWritesAndSyncsNormally）。 */
+    private static ItemEntityContainerContext itemEntityCtx() {
+        ItemEntity entity = mock(ItemEntity.class);
+        when(entity.getUUID()).thenReturn(UUID.randomUUID());
+        when(entity.getId()).thenReturn(7);
+        AtomicReference<ItemStack> held = new AtomicReference<>(ItemStack.EMPTY);
+        when(entity.getItem()).thenAnswer(call -> held.get());
+        doAnswer(call -> {
+            held.set(call.getArgument(0, ItemStack.class));
+            return null;
+        }).when(entity).setItem(any(ItemStack.class));
+        SynchedEntityData data = mock(SynchedEntityData.class);
+        when(entity.getEntityData()).thenReturn(data);
+        when(data.packDirty()).thenReturn(List.of(
+            new SynchedEntityData.DataValue<>(0, EntityDataSerializers.ITEM_STACK, ItemStack.EMPTY)));
+        ServerLevel level = emptyServerLevel();
+        when(level.getChunkSource()).thenReturn(mock(ServerChunkCache.class));
+        return new ItemEntityContainerContext(entity, level);
+    }
+
+    /** 无观众的服务端世界：{@code syncWorldContainer} 空转（getPlayers 空），不 NPE。 */
+    private static ServerLevel emptyServerLevel() {
+        PlayerList players = mock(PlayerList.class);
+        when(players.getPlayers()).thenReturn(List.of());
+        MinecraftServer server = mock(MinecraftServer.class);
+        when(server.getPlayerList()).thenReturn(players);
+        ServerLevel level = mock(ServerLevel.class);
+        when(level.dimension()).thenReturn(Level.OVERWORLD);
+        when(level.getServer()).thenReturn(server);
+        return level;
     }
 
     private static int[] fill(int size, int value) {
@@ -227,9 +305,9 @@ class ContainerSlotOpsTest {
     // ── move：六场景 × 双实现 ──────────────────────────────────
 
     @ParameterizedTest(name = "{0}：整栈移动到空槽 —— 源清空、目标收货、总量守恒")
-    @ValueSource(booleans = {true, false})
-    void moveWholeStack_conserves(boolean handlerBacked) {
-        ContainerContext ctx = newCtx(handlerBacked, 2, null);
+    @MethodSource("storageBackends")
+    void moveWholeStack_conserves(Backend backend) {
+        ContainerContext ctx = newCtx(backend, 2, null);
         ctx.setItem(0, new ItemStack(Items.REDSTONE, 32));
 
         MoveResult result = ctx.move(0, 1, 32);
@@ -242,9 +320,9 @@ class ContainerSlotOpsTest {
     }
 
     @ParameterizedTest(name = "{0}：同类合并 —— 目标非空同类，合并收货")
-    @ValueSource(booleans = {true, false})
-    void moveMergesIntoSameType(boolean handlerBacked) {
-        ContainerContext ctx = newCtx(handlerBacked, 2, null);
+    @MethodSource("storageBackends")
+    void moveMergesIntoSameType(Backend backend) {
+        ContainerContext ctx = newCtx(backend, 2, null);
         ctx.setItem(0, new ItemStack(Items.REDSTONE, 32));
         ctx.setItem(1, new ItemStack(Items.REDSTONE, 10));
 
@@ -258,9 +336,9 @@ class ContainerSlotOpsTest {
     }
 
     @ParameterizedTest(name = "{0}：部分交付 —— 目标只剩 14 空间，搬 14 差 18 留源（I-C12 移动交付量）")
-    @ValueSource(booleans = {true, false})
-    void moveDeliversPartially(boolean handlerBacked) {
-        ContainerContext ctx = newCtx(handlerBacked, 2, fill(2, 64));
+    @MethodSource("storageBackends")
+    void moveDeliversPartially(Backend backend) {
+        ContainerContext ctx = newCtx(backend, 2, fill(2, 64));
         ctx.setItem(0, new ItemStack(Items.REDSTONE, 32));
         ctx.setItem(1, new ItemStack(Items.REDSTONE, 50));
 
@@ -274,9 +352,9 @@ class ContainerSlotOpsTest {
     }
 
     @ParameterizedTest(name = "{0}：异类目标 ⇒ TARGET_OCCUPIED，状态不变")
-    @ValueSource(booleans = {true, false})
-    void moveRejectsDifferentItemTarget(boolean handlerBacked) {
-        ContainerContext ctx = newCtx(handlerBacked, 2, null);
+    @MethodSource("storageBackends")
+    void moveRejectsDifferentItemTarget(Backend backend) {
+        ContainerContext ctx = newCtx(backend, 2, null);
         ctx.setItem(0, new ItemStack(Items.REDSTONE, 32));
         ctx.setItem(1, new ItemStack(Items.GOLD_INGOT, 3));
 
@@ -289,9 +367,9 @@ class ContainerSlotOpsTest {
     }
 
     @ParameterizedTest(name = "{0}：目标装不下任何一份 ⇒ TARGET_INSUFFICIENT，状态不变")
-    @ValueSource(booleans = {true, false})
-    void moveRejectsFullTarget(boolean handlerBacked) {
-        ContainerContext ctx = newCtx(handlerBacked, 2, fill(2, 64));
+    @MethodSource("storageBackends")
+    void moveRejectsFullTarget(Backend backend) {
+        ContainerContext ctx = newCtx(backend, 2, fill(2, 64));
         ctx.setItem(0, new ItemStack(Items.REDSTONE, 32));
         ctx.setItem(1, new ItemStack(Items.REDSTONE, 64));
 
@@ -305,9 +383,9 @@ class ContainerSlotOpsTest {
     }
 
     @ParameterizedTest(name = "{0}：undo 恢复合并前的两槽状态（防复制）")
-    @ValueSource(booleans = {true, false})
-    void undoRestoresBothSlotsAfterMerge(boolean handlerBacked) {
-        ContainerContext ctx = newCtx(handlerBacked, 2, null);
+    @MethodSource("storageBackends")
+    void undoRestoresBothSlotsAfterMerge(Backend backend) {
+        ContainerContext ctx = newCtx(backend, 2, null);
         ctx.setItem(0, new ItemStack(Items.REDSTONE, 32));
         ctx.setItem(1, new ItemStack(Items.REDSTONE, 10));
 
@@ -322,7 +400,7 @@ class ContainerSlotOpsTest {
     @Test
     @DisplayName("move：amount≤0 / 越界 / 同槽 ⇒ INVALID_ADDRESS")
     void moveRejectsInvalidAddress() {
-        ContainerContext ctx = newCtx(true, 2, null);
+        ContainerContext ctx = newCtx(Backend.SIMPLE, 2, null);
         ctx.setItem(0, new ItemStack(Items.REDSTONE, 1));
 
         assertEquals(MoveResult.Reason.INVALID_ADDRESS,
@@ -489,40 +567,40 @@ class ContainerSlotOpsTest {
 
     // ── produce ────────────────────────────────────────────────
 
-    @Test
-    @DisplayName("produce 空槽整份放入")
-    void produceIntoEmptySlot() {
-        ContainerContext ctx = newCtx(true, 2, null);
-        int actual = ctx.produce(1, new ItemStack(Items.IRON_INGOT), 10);
+    @ParameterizedTest(name = "{0}：produce 空槽整份放入")
+    @MethodSource("allBackends")
+    void produceIntoEmptySlot(Backend backend) {
+        ContainerContext ctx = newCtx(backend, 2, null);
+        int actual = ctx.produce(0, new ItemStack(Items.IRON_INGOT), 10);
         assertEquals(10, actual);
-        assertEquals(10, stackOf(ctx, 1).getCount());
+        assertEquals(10, stackOf(ctx, 0).getCount());
     }
 
-    @Test
-    @DisplayName("produce 合并只放到剩余空间为止，返回实际量（余量归调用方）")
-    void produceMergesUpToSpace() {
-        ContainerContext ctx = newCtx(true, 2, fill(2, 64));
-        ctx.setItem(1, new ItemStack(Items.IRON_INGOT, 60));
+    @ParameterizedTest(name = "{0}：produce 合并只放到剩余空间为止，返回实际量（余量归调用方）")
+    @MethodSource("allBackends")
+    void produceMergesUpToSpace(Backend backend) {
+        ContainerContext ctx = newCtx(backend, 2, fill(2, 64));
+        ctx.setItem(0, new ItemStack(Items.IRON_INGOT, 60));
 
-        int actual = ctx.produce(1, new ItemStack(Items.IRON_INGOT), 10);
+        int actual = ctx.produce(0, new ItemStack(Items.IRON_INGOT), 10);
 
         assertEquals(4, actual, "只放进 4 个");
-        assertEquals(64, stackOf(ctx, 1).getCount());
+        assertEquals(64, stackOf(ctx, 0).getCount());
     }
 
-    @Test
-    @DisplayName("produce 异类占据 ⇒ 0（内容感知默认：异类放不进）")
-    void produceRejectsDifferentItem() {
-        ContainerContext ctx = newCtx(true, 2, null);
-        ctx.setItem(1, new ItemStack(Items.GOLD_INGOT, 3));
-        assertEquals(0, ctx.produce(1, new ItemStack(Items.IRON_INGOT), 10));
-        assertEquals(3, stackOf(ctx, 1).getCount(), "状态未变");
+    @ParameterizedTest(name = "{0}：produce 异类占据 ⇒ 0（内容感知默认：异类放不进）")
+    @MethodSource("allBackends")
+    void produceRejectsDifferentItem(Backend backend) {
+        ContainerContext ctx = newCtx(backend, 2, null);
+        ctx.setItem(0, new ItemStack(Items.GOLD_INGOT, 3));
+        assertEquals(0, ctx.produce(0, new ItemStack(Items.IRON_INGOT), 10));
+        assertEquals(3, stackOf(ctx, 0).getCount(), "状态未变");
     }
 
     @Test
     @DisplayName("produce 超槽位上限 ⇒ 放到上限为止（耕地空槽路径的容量前置判据）")
     void produceRespectsSlotLimit() {
-        ContainerContext ctx = newCtx(false, 2, fill(2, 4));
+        ContainerContext ctx = newCtx(Backend.FAKE, 2, fill(2, 4));
         int actual = ctx.produce(1, new ItemStack(Items.WHEAT), 10);
         assertEquals(4, actual, "槽位上限 4 是权威（旧实现 setItem 后被 clamp 静默截断）");
         assertEquals(4, stackOf(ctx, 1).getCount());
@@ -542,19 +620,19 @@ class ContainerSlotOpsTest {
 
     // ── consume ────────────────────────────────────────────────
 
-    @Test
-    @DisplayName("consume 正常扣 N，返回实际扣减量")
-    void consumeDeductsRequested() {
-        ContainerContext ctx = newCtx(true, 2, null);
+    @ParameterizedTest(name = "{0}：consume 正常扣 N，返回实际扣减量")
+    @MethodSource("allBackends")
+    void consumeDeductsRequested(Backend backend) {
+        ContainerContext ctx = newCtx(backend, 2, null);
         ctx.setItem(0, new ItemStack(Items.COAL, 8));
         assertEquals(3, ctx.consume(0, 3));
         assertEquals(5, stackOf(ctx, 0).getCount());
     }
 
-    @Test
-    @DisplayName("consume 货少于请求 ⇒ 扣光（返回实际量）")
-    void consumeTakesAllWhenShort() {
-        ContainerContext ctx = newCtx(true, 2, null);
+    @ParameterizedTest(name = "{0}：consume 货少于请求 ⇒ 扣光（返回实际量）")
+    @MethodSource("allBackends")
+    void consumeTakesAllWhenShort(Backend backend) {
+        ContainerContext ctx = newCtx(backend, 2, null);
         ctx.setItem(0, new ItemStack(Items.COAL, 2));
         assertEquals(2, ctx.consume(0, 3));
         assertTrue(stackOf(ctx, 0).isEmpty());
@@ -662,9 +740,9 @@ class ContainerSlotOpsTest {
     // ── transform ──────────────────────────────────────────────
 
     @ParameterizedTest(name = "{0}：transform 整槽替换成功（岩浆桶 → 空桶）")
-    @ValueSource(booleans = {true, false})
-    void transformReplacesSlot(boolean handlerBacked) {
-        ContainerContext ctx = newCtx(handlerBacked, 2, null);
+    @MethodSource("allBackends")
+    void transformReplacesSlot(Backend backend) {
+        ContainerContext ctx = newCtx(backend, 2, null);
         ctx.setItem(0, new ItemStack(Items.LAVA_BUCKET));
         long revision = ContainerLivingItemHandler.getContainerRevision(ctx);
 
@@ -1107,12 +1185,52 @@ class ContainerSlotOpsTest {
         verify(entity, never()).getEntityData();
     }
 
+    @Test
+    @DisplayName("Entity：逻辑面不含鞍槽 —— 负槽/越界全拒，读写与映射不出鞍槽偏移（D-container-11）")
+    void entityScopesStorageSlotsAwayFromSaddle() {
+        LimitedHandler handler = new LimitedHandler(64, 64, 64);
+        handler.slots[0] = new ItemStack(Items.SADDLE);
+        AbstractChestedHorse horse = mock(AbstractChestedHorse.class);
+        when(horse.hasChest()).thenReturn(true);
+        when(horse.getUUID()).thenReturn(UUID.randomUUID());
+        when(horse.blockPosition()).thenReturn(BlockPos.ZERO);
+        when(horse.getCapability(Capabilities.ItemHandler.ENTITY)).thenReturn(handler);
+        EntityContainerContext ctx = new EntityContainerContext(horse, emptyServerLevel());
+        ItemStack cargo = new ItemStack(Items.REDSTONE, 5);
+        ItemStack saddle = new ItemStack(Items.SADDLE);
+
+        assertEquals(2, ctx.getSize(), "3 物理槽 − 1 鞍槽 = 2 存储格");
+        assertFalse(ctx.isValidSlot(-1));
+        assertFalse(ctx.isValidSlot(2));
+        assertEquals(-1, ctx.toPhysicalSlot(-1));
+        assertEquals(-1, ctx.toPhysicalSlot(2));
+        assertEquals(-1, ctx.toLogicalSlot(0), "物理 0 是鞍，不是逻辑槽");
+        assertEquals(1, ctx.toPhysicalSlot(0));
+        assertEquals(0, ctx.toLogicalSlot(1));
+        assertEquals(0, ctx.getSlotLimit(-1));
+        assertEquals(64, ctx.getSlotLimit(0), "逻辑 0 = 物理 1 的上限");
+        assertTrue(ctx.getItem(-1).isEmpty());
+        assertTrue(ctx.getItem(2).isEmpty());
+        ctx.setItem(-1, cargo);
+        ctx.setItem(2, cargo);
+        assertTrue(ItemStack.matches(saddle, handler.slots[0]), "越界写入不得落进鞍槽");
+        assertFalse(ctx.supportsExactWrite(-1));
+        assertFalse(ctx.supportsExactWrite(2));
+        assertFalse(ctx.transform(-1, s -> cargo));
+        assertFalse(ctx.transform(2, s -> cargo));
+        assertEquals(0, ctx.produce(-1, cargo, 1));
+        assertEquals(0, ctx.consume(2, 1));
+        assertEquals(MoveResult.Reason.INVALID_ADDRESS,
+            assertInstanceOf(MoveResult.Rejected.class, ctx.move(-1, 0, 1)).reason());
+        assertTrue(ItemStack.matches(saddle, handler.slots[0]));
+    }
+
     // ── swap：双非空整栈互换（活魂符换位原语，2026-11-12） ──────────
 
     @ParameterizedTest(name = "{0}：双非空互换 —— 内容对调、moved=进入 to 的数量、总量守恒")
-    @ValueSource(booleans = {true, false})
-    void swapExchangesBothStacks(boolean handlerBacked) {
-        ContainerContext ctx = newCtx(handlerBacked, 2, null);
+    @MethodSource("storageBackends")
+    void swapExchangesBothStacks(Backend backend) {
+        ContainerContext ctx = newCtx(backend, 2, null);
         ctx.setItem(0, new ItemStack(Items.REDSTONE, 30));
         ctx.setItem(1, new ItemStack(Items.GOLD_INGOT, 2));
 
@@ -1144,9 +1262,9 @@ class ContainerSlotOpsTest {
     }
 
     @ParameterizedTest(name = "{0}：一侧为空 ⇒ SOURCE_EMPTY（一空一非空走 move，不是 swap 职责）")
-    @ValueSource(booleans = {true, false})
-    void swapRequiresBothNonEmpty(boolean handlerBacked) {
-        ContainerContext ctx = newCtx(handlerBacked, 2, null);
+    @MethodSource("storageBackends")
+    void swapRequiresBothNonEmpty(Backend backend) {
+        ContainerContext ctx = newCtx(backend, 2, null);
         ctx.setItem(0, new ItemStack(Items.REDSTONE, 5));
 
         assertEquals(MoveResult.Reason.SOURCE_EMPTY,
@@ -1160,7 +1278,7 @@ class ContainerSlotOpsTest {
     @Test
     @DisplayName("swap：同槽 / 越界 ⇒ INVALID_ADDRESS")
     void swapRejectsInvalidAddress() {
-        ContainerContext ctx = newCtx(true, 2, null);
+        ContainerContext ctx = newCtx(Backend.SIMPLE, 2, null);
         ctx.setItem(0, new ItemStack(Items.REDSTONE, 1));
         ctx.setItem(1, new ItemStack(Items.GOLD_INGOT, 1));
 
@@ -1186,9 +1304,9 @@ class ContainerSlotOpsTest {
     }
 
     @ParameterizedTest(name = "{0}：整栈装不进对方槽（容量 512 → 64）⇒ TARGET_INSUFFICIENT，不部分交换")
-    @ValueSource(booleans = {true, false})
-    void swapRejectsWhenStackDoesNotFit(boolean handlerBacked) {
-        ContainerContext ctx = newCtx(handlerBacked, 2, new int[]{64, 512});
+    @MethodSource("storageBackends")
+    void swapRejectsWhenStackDoesNotFit(Backend backend) {
+        ContainerContext ctx = newCtx(backend, 2, new int[]{64, 512});
         ctx.setItem(0, new ItemStack(Items.REDSTONE, 1));
         ctx.setItem(1, new ItemStack(Items.IRON_INGOT, 512));
 
@@ -1241,10 +1359,10 @@ class ContainerSlotOpsTest {
         assertEquals(4, stackOf(ctx, 1).getCount());
     }
 
-    @Test
-    @DisplayName("swap 保全组件：双方栈的组件随物品完整互换")
-    void swapPreservesComponents() {
-        ContainerContext ctx = newCtx(true, 2, null);
+    @ParameterizedTest(name = "{0}：swap 保全组件 —— 双方栈的组件随物品完整互换")
+    @MethodSource("storageBackends")
+    void swapPreservesComponents(Backend backend) {
+        ContainerContext ctx = newCtx(backend, 2, null);
         ItemStack named = new ItemStack(Items.REDSTONE, 5);
         CompoundTag tag = new CompoundTag();
         tag.putString("marker", "kept");
