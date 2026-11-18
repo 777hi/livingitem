@@ -886,24 +886,15 @@ for (var player : server.getPlayerList().getPlayers()) {
 ### 4.3 玩家末影箱处理
 
 末影箱（`PlayerEnderChestContainer`）既不是方块实体也不是玩家背包的一部分，需要单独处理。
+当前实现（2026-11-18 口径）：**每拍直接构建上下文并交给 `processContext`**——不再做
+「先扫活物品再跳过」的惰性检测；静息成本由 Q4a 快路径统一收口（见 §8）。
 
 ```java
-public static void processEnderChest(Player player, Level level) {
-    PlayerEnderChestContainer enderChest = player.getEnderChestInventory();
-    // 先检查是否有活物品，没有则跳过（惰性优化）
-    boolean hasLivingItem = false;
-    for (int i = 0; i < enderChest.getContainerSize(); i++) {
-        if (LivingItemManager.isLivingItem(enderChest.getItem(i))) {
-            hasLivingItem = true;
-            break;
-        }
-    }
-    if (!hasLivingItem) return;
-    // 通过 InvWrapper 包装为 IItemHandler
-    IItemHandler handler = new InvWrapper(enderChest);
-    ContainerContext context = new EnderChestContainerContext(handler, player, level);
-    processContext(context, level);
-}
+// LivingItem.processEnderChest()
+PlayerEnderChestContainer enderChest = player.getEnderChestInventory();
+IItemHandler handler = new InvWrapper(enderChest);
+ContainerContext context = new EnderChestContainerContext(handler, player, level);
+processContext(context, level);
 ```
 
 **ContainerKey**：`player_<uuid>_ender_chest`（与玩家背包的 key 区分）
@@ -1466,7 +1457,7 @@ if (serverPlayer.containerMenu != serverPlayer.inventoryMenu) {
 ### 8.1 总体流程
 
 ```
-ServerTickEvent.Post
+ServerTickEvent.Pre（LivingItem.onServerTick，2026-11-18 核实口径；容器处理必须早于方块实体 tick）
     ↓
 ┌─ 玩家背包循环 ──────────────────────────────────────────────────┐
 │ for each player:                                                │
@@ -1484,61 +1475,65 @@ ServerTickEvent.Post
 
 ### 8.2 processContext — 按功能分组执行
 
-ContainerLivingItemHandler.processContext 采用六阶段设计：
+ContainerLivingItemHandler.processContext 的现行结构（2026-11-18，Q4a 后）：
 
 ```
 processContext(context, level)
   ├─ 阶段 1：扫描（scanAndGroupLivingItems + syncContentRevision）
-  │   ├─ 遍历全槽位，按功能类型分组收集活物品
-  │   ├─ 自维持通道（1a-1）：把静态自维持清单中的功能塞进 grouped（空 entries）
-  │   │   ⇒ LivingFluidFunction 等「无物品载体的容器级逻辑」在纯源容器也进主流程
+  │   ├─ 遍历全槽位，按功能类型分组收集活物品，同遍混入内容签名（Q2）
+  │   │   并记录 hasAnyLivingItem（扫描见到的 IS_LIVING，与功能分组无关）
   │   └─ 校验内容签名，必要时 bump 修订计数（防稳态死锁）
   │
-  ├─ [空容器分支：handleEmptyContainer]
-  │   └─ grouped 为空时提前返回（⚠️ 自维持清单恒塞入 LivingFluidFunction 后
-  │      grouped 实际不再为空 —— 分支仅剩防御意义）
+  ├─ trackLivingSlots：LAST_SEEN 盖章 + 运行时槽位作废登记 + 位置索引补建
+  │   （必须在任何早退分支之前 —— 「容器已无活物品」正是最需要清理的场景）
+  │
+  ├─ [静息快路径（Q4a，2026-11-18）]
+  │   └─ 扫描无活物品 + 闩锁已结算 + 无自维持候选报告持续工作
+  │      ⇒ 只做监控 / 性能收尾后返回，跳过下方全部阶段；
+  │      闩锁 = ContainerEntry.suffixSettled：进入完整管道即清零，
+  │      整拍成功且本拍无活物品、无持续工作 ⇒ 置真（异常拍因 rethrow 永不置真）
+  │
+  ├─ 自维持注入（1a-1）：把静态自维持清单中的功能塞进 grouped（空 entries）
+  │   ⇒ LivingFluidFunction 等「无物品载体的容器级逻辑」在纯源容器也进主流程
+  │
+  ├─ [空容器分支：grouped.isEmpty() 提前返回]
+  │   └─ ⚠️ 自维持清单恒塞入流体 / 红石 / 门面后 grouped 实际不再为空 —— 分支仅剩防御意义
   │
   ├─ 阶段 2：功能 tick（tickFunctionSlots + runFunctionTicks）
   │   ├─ 将功能槽位集合写入 TickContext
   │   └─ 对每种功能只调用一次 tick()，传入该组所有活物品
   │
-  ├─ 阶段 3：EnderChannel 刷新（flushEnderChannels）
-  │   └─ 刷新脏通道（原「无活水桶清冗余流」已随桶源退役删除，2026-10-03：
-  │      源唯一形态为派生源，无源容器 flows 自然为空）
-  │
-  ├─ 阶段 4：容器级数据（runContainerDataTicks）
+  ├─ 阶段 3：容器级数据（runContainerDataTicks）
   │   └─ 收集 HasContainerData 实现者，按优先级排序后依次执行
   │
-  ├─ 阶段 5：写回 BlockEntity（writebackBlockEntities）
-  │   └─ 应力与流体数据（按 ContainerDataKey 声明的 attachment）写回关联的 BlockEntity
-  │
-  ├─ [残留红石归零（zeroResidualRedstone，1b-2c）]
-  │   └─ 容器有 REDSTONE 数据但 grouped 里无 LivingRedstoneFunction ⇒ 主动归零
-  │      （判据与 grouped 是否为空无关 —— 原 handleEmptyContainer 寄生分支已失效）
+  ├─ 阶段 4：写回（ContainerTickHooks.fireWriteback —— 各领域注册的 ContainerTickHook）
+  │   └─ 应力 / 流体 / 相位 / 末影路由维护等由各自领域钩子完成
   │
   └─ [finally] 脏槽同步 + TickContext 清理（flushDirtySlots + setTickContext(null)）
 ```
+
+> 📌 **原「阶段 3 EnderChannel 刷新」与「阶段 5 writebackBlockEntities / zeroResidualRedstone」
+> 已迁出或删除**（2026-10-08 计划 ⑤ / 1b-2c）：Ender 脏通道改为 L4 每 tick 统一
+> `flushDirtyChannels`；写回与残留红石归零改由领域注册的 `ContainerTickHook` 承担
+> （流体写回 / 海绵边沿 / 门面同步 / 红石复位）。本图不再是六阶段，勿按旧阶段号引用。
 
 > 📌 **运行时数据下发已迁出本流程**（档 2，2026-10-08）：buff 缓存在 L2 只攒脏，发包由 L4 的
 > `LivingItemRuntimeSync.flush` 在 `LivingItem.onServerTick` 的**所有**容器处理之后统一收口
 > —— 见 [runtime-mechanization-plan.md](../archive/runtime-mechanization-plan.md) §7。
 > 原「阶段 4.5」只是调用点，不是职责归属；反转发包后 L2 不再认识网络包（消 R1）。
 
-> 📌 **性能量测入口**（Q3，2026-11-15）：完整 `processContext` 管道的基线、场景与边界见
-> [unit-testing.md](../guides/unit-testing.md)「管道性能基准（Q3）」。本节六阶段图是结构说明，
-> 不是耗时结论；单测环境下 10k 容器每拍中位：空容器 9.31 ms、普通 11.07 ms、复杂 39.63 ms
+> 📌 **性能量测入口**（Q3，2026-11-15；Q4a 后读数口径见该节 2026-11-18 段）：
+> 完整 `processContext` 管道的基线、场景与边界见
+> [unit-testing.md](../guides/unit-testing.md)「管道性能基准（Q3）」。本节结构图不是耗时结论；
+> Q4a 后空 / 普通容器稳态量到的是「扫描前缀 + 静息判定」，与历史完整管道读数不可直接相减
 > （**非真机 MSPT**，量不到 `onServerTick` 外层）。
 
-**阶段 1 — 扫描**：遍历容器中所有物品，将活物品按功能类型分组收集，同时校验内容签名以打破稳态跳过死锁。
+**阶段 1 — 扫描**：遍历容器中所有物品，将活物品按功能类型分组收集，同遍混入内容签名
+（Q2，签名与扫描不再两遍）：
 
 ```java
-Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped = scanAndGroupLivingItems(context);
-syncContentRevision(context);
-
-if (grouped.isEmpty()) {
-    handleEmptyContainer(context, startNanos, monitorKey);
-    return;
-}
+ScanResult scan = scanAndGroupLivingItems(context);   // grouped + contentSig + hasAnyLivingItem
+syncContentRevision(context, scan.contentSig());
 ```
 
 **阶段 2 — 功能 tick**：对每种功能只调用一次 `tick()`，传入该容器中所有拥有此功能的活物品列表。
@@ -1552,7 +1547,7 @@ runFunctionTicks(grouped, context, tick, level);  // 逐功能执行 tick
 
 如果逐个调用 `tick`，每个活物品独立推进自己的状态，导致总速度随活物品数量线性增长（N 个活熔炉 = N 倍速度）。按功能分组后，由功能实现自行决定如何分配处理（如活熔炉每 tick 只处理一个），从根本上避免速度翻倍。
 
-**阶段 4 — 容器级数据计算**：`tick()` 执行完毕后，收集所有实现了 `HasContainerData` 接口的功能类，按优先级排序后依次调用 `tickContainerData()`：
+**阶段 3 — 容器级数据计算**：`tick()` 执行完毕后，收集所有实现了 `HasContainerData` 接口的功能类，按优先级排序后依次调用 `tickContainerData()`：
 
 ```java
 runContainerDataTicks(grouped, context, tick);
@@ -1566,6 +1561,7 @@ runContainerDataTicks(grouped, context, tick);
 | 1 | `LivingWaterWheelFunction` | 应力计算 + postTickSync |
 | 2 | `LivingRedstoneFunction`（自维持） | 红石信号传播 —— **唯一驱动点**（2026-10-08 收归） |
 | 3 | `LivingWaxedCopperFunction` | 电力记账（依赖红石已算完的 edgeGrid） |
+| 4 | `LivingPortalFunction`（自维持） | 门面脆弱维护与失效清除（2026-11-14 起） |
 
 > 旧 `LivingWaterBucketFunction`（prio 0 流体驱动 + postTickSync）已拆分：驱动收归
 > `LivingFluidFunction`（1b-2b，自维持），桶物品侧随桶源退役整体删除（2026-10-03）。
@@ -1574,19 +1570,20 @@ runContainerDataTicks(grouped, context, tick);
 
 通过接口化设计，`ContainerLivingItemHandler.processContext()` 不再需要硬编码任何具体功能类的容器级数据计算逻辑。
 
-**阶段 5 — 写回**：将应力与流体数据写入关联的 BlockEntity：
+**阶段 4 — 写回**：应力 / 流体 / 相位 / 末影路由等写回由各领域注册的 `ContainerTickHook`
+（`ContainerTickHooks.fireWriteback`）完成：
 
 ```java
-writebackBlockEntities(context, tick);
+ContainerTickHooks.fireWriteback(context, tick);
 ```
 
 容器完成写回不再触发全局计数式清理；自动回收由 L4 统一 sweep，见
 [container-data-lifecycle.md](../reference/container-data-lifecycle.md) §2。
 
-**残留红石归零**：`zeroResidualRedstone(grouped, ctx, tick)` 在容器有 REDSTONE 数据但
-`grouped` 里无 `LivingRedstoneFunction` 时主动归零 —— 判据与 grouped 是否为空无关
-（1b-2c 解耦：自维持驱动使 grouped 恒非空，原寄生在 `grouped.isEmpty()` 的分支永不执行；
-顺带修掉「有其它活物品 + 残留红石」场景下也不归零的既有缺陷）。
+**残留红石归零**：旧 `zeroResidualRedstone` 兜底已删（2026-10-08）——红石自维持驱动使
+该兜底守卫恒真、方法体永不执行；无物品时的归零由红石领域的驱动守卫在完整管道内完成
+（有 REDSTONE 数据 ⇒ 跑 calculate ⇒ hasAny=false 分支归零）。Q4a 后无物品容器的这一拍
+由静息闩锁保证：物品离场后闩锁未结算 ⇒ 必有一拍完整管道跑完归零，之后才允许跳过后缀。
 
 ### 8.3 TickContext — Tick 级临时状态
 
@@ -1952,7 +1949,7 @@ PerfMetrics.java 收集模组运行时的性能数据，每 60 秒自动打印�
 | 策略 | 位置 | 效果 |
 |------|------|------|
 | ContainerChunkCache | 容器发现 | 避免全量扫描所有区块 |
-| 惰性检测 | 末影箱处理 | 无活物品时跳过，避免无效 InvWrapper 创建 |
+| 静息快路径（Q4a，2026-11-18） | processContext | 稳定无活物品、无持续流体工作且闩锁已结算的容器跳过后缀（TickContext / 钩子 / 容器级数据 / 写回）；判据用扫描见到的 IS_LIVING（含无功能认领的活黑曜石），不能用功能分组 |
 | 按功能分组 | processContext | 避免 N 倍速度翻倍 |
 | 反向索引 | EnderChannelRegistry | 路由清理 O(路由总数) → O(相关路由) |
 | 延迟同步 | EnderChannelRegistry | tick 末尾统一发包，减少网络抖动 |
@@ -1960,7 +1957,7 @@ PerfMetrics.java 收集模组运行时的性能数据，每 60 秒自动打印�
 | IdentityHashMap 去重 | 大箱子 | 避免同一 IItemHandler 被处理两次 |
 | InvWrapper 缓存 | LivingEnderChestAccessor | 直连模式避免每 tick 重复创建 |
 | handler 统一读写 | SimpleContainerContext.setItem() | 移除 container.setItem() 路径，统一走 IItemHandler，确保大箱子读写一致，消除物品复制 bug |
-| 自维持静态清单 | LivingItemManager（1a-1） | 注册期算出「无物品载体可 tick」的功能清单，每 tick 只遍历 0~1 个，不逐功能判定 |
+| 自维持静态清单 | LivingItemManager（1a-1） | 注册期算出「无物品载体可 tick」的功能清单（当前 3 个：流体 / 红石 / 门面），每 tick 只遍历清单不逐函数判定 |
 | APPLICABLE_CACHE | LivingItemManager | 功能适用性缓存，热路径免重复匹配 |
 
 ---

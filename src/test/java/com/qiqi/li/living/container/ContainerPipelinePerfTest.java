@@ -38,8 +38,10 @@ import net.neoforged.neoforge.items.ItemStackHandler;
  * {@code PerfMetrics} 既有的 60s {@code [Phases]} 报告行，本类不新造采集口径，
  * 也<b>不修改 src/main 的任何 tick 逻辑</b>。</p>
  *
- * <p>复杂场景只放 {@code LivingRedstoneFunction}（tick 为空实现、不读 Level），
- * 量的是「多个活物品 ⇒ 分组 / 快照贡献者」带来的管道开销，不是领域逻辑开销。</p>
+ * <p>复杂场景放 6 枚活红石粉：功能 tick 为空实现、不读 Level，但容器级数据阶段会走
+ * 真实的 {@code ContainerRedstoneData.calculate}（见 {@code [Phases]} 的 container_data 段）
+ * —— 同时覆盖「分组 / 快照贡献者」与「容器级领域计算」两条路径。活漏斗 / 铜灯首行即
+ * {@code level.isClientSide}，单测无真实世界 ⇒ 仍属量不到的外层。</p>
  *
  * <p>断言只防病态回归（阈值取得很松），正常波动不会挂。</p>
  */
@@ -68,6 +70,7 @@ class ContainerPipelinePerfTest {
     @Test
     @DisplayName("量测：processContext 管道在空 / 普通 / 复杂容器 × 1k / 5k / 10k 下的每拍耗时")
     void measurePipeline() {
+        resetResultFile();
         write(String.format("[管道量测] 开始｜槽位=%d 规模=%s 预热=%d容器×%d轮 稳定轮=%d%n",
             SLOTS, Arrays.toString(SIZES), WARMUP_CONTAINERS, WARMUP_ROUNDS, SETTLE_ROUNDS));
 
@@ -148,7 +151,7 @@ class ContainerPipelinePerfTest {
                     handler.setStackInSlot(29, new ItemStack(Items.REDSTONE, 8));
                 }
                 case COMPLEX -> {
-                    // 6 枚活红石粉：LivingRedstoneFunction.tick 是空实现、不读 Level。
+                    // 6 枚活红石粉：功能 tick 为空实现，但容器级数据阶段走真实红石 calculate。
                     // 活漏斗 / 铜灯首行即 level.isClientSide，单测无真实世界 ⇒ 属于量不到的外层。
                     for (int slot : new int[] {2, 11, 20, 29, 38, 47}) {
                         handler.setStackInSlot(slot, living(Items.REDSTONE, 4));
@@ -167,6 +170,16 @@ class ContainerPipelinePerfTest {
         ItemStack stack = new ItemStack(item, count);
         LivingItemManager.setLiving(stack, true);
         return stack;
+    }
+
+    /** 每轮量测开始前清掉上一轮结果：文件是追加式落盘，不截断会把多轮历史混在一起。 */
+    private static void resetResultFile() {
+        try {
+            java.nio.file.Files.deleteIfExists(
+                java.nio.file.Path.of("build", "_perf_pipeline.txt"));
+        } catch (Exception ignored) {
+            // 量测落盘失败不影响测试
+        }
     }
 
     /** 量测结果落盘（build/ 已 gitignore）—— Gradle 会吞掉 stdout，落盘才拿得到数。 */

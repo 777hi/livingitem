@@ -276,7 +276,9 @@ class ContainerCacheSweepTest {
 
         @Override
         public boolean shouldTickWithoutOwnItems(ContainerContext ctx) {
-            return true;
+            // 两阶段语义（Q4a）：注册期声明候选；每拍无持续无物品工作
+            // ⇒ 静息容器在清理拍完成后允许跳过后缀。
+            return ctx == null;
         }
 
         @Override
@@ -358,9 +360,12 @@ class ContainerCacheSweepTest {
 
             inventory.setStackInSlot(0, ItemStack.EMPTY);
             ContainerLivingItemHandler.processContext(ctx, level);
-            assertEquals(COMPLETED_TICKS + 1, hook.writebacks, "移除后空 tick 仍必须完成");
+            assertEquals(COMPLETED_TICKS + 1, hook.writebacks, "移除后的清理拍仍必须完整完成");
             ContainerLivingItemHandler.processContext(ctx, level);
-            assertEquals(COMPLETED_TICKS + 2, hook.writebacks, "持续空 tick 不得重复通告下降沿");
+            assertEquals(COMPLETED_TICKS + 1, hook.writebacks,
+                "静息闩锁结算后的空拍必须跳过后缀（Q4a），不得重复通告下降沿");
+            ContainerLivingItemHandler.processContext(ctx, level);
+            assertEquals(COMPLETED_TICKS + 1, hook.writebacks, "持续静息保持跳过");
             assertAll(
                 () -> assertEquals(Boolean.TRUE, edgeWhilePresent, "活海绵存在时 EDGE 必须跨清理节拍保留"),
                 () -> assertEquals(1L, invalidationsWhilePresent, "持续存在只通告一次能力"),

@@ -24,9 +24,13 @@ public final class LivingPortalFunction implements LivingItemFunction, HasContai
         return ID;
     }
 
+    /**
+     * 两阶段自维持（Q4a）：注册期（ctx == null）声明候选；每拍返回 false —— 无框材时只有
+     * <b>一次性</b>失效门面清除（由完整管道的收口拍完成），没有持续工作。
+     */
     @Override
     public boolean shouldTickWithoutOwnItems(ContainerContext ctx) {
-        return true;
+        return ctx == null;
     }
 
     @Override

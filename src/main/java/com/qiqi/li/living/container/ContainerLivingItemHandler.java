@@ -82,6 +82,12 @@ public class ContainerLivingItemHandler {
         int contentSig = Integer.MIN_VALUE;   // 未算过签名时的哨兵
         long cachedSnapshotRevision = -1;      // 与下方快照配对的修订计数
         ContainerSnapshot cachedSnapshot;
+        /**
+         * 静息闩锁（Q4a）：「扫描无活物品的完整后缀已成功跑过一拍」。tick 级内存态，不持久化
+         * —— entry 销毁（停服 / sweep / 显式删除）即重置，新 entry 首拍必走完整管道
+         * （冷附件 / SavedData 的流体等靠这一拍回填）。
+         */
+        boolean suffixSettled;
     }
 
     static {
@@ -175,6 +181,23 @@ public class ContainerLivingItemHandler {
             indexPositions(ctx, key);
         }
         return e;
+    }
+
+    /** 非创建读取聚合条目（区别于 {@link #entry}）；供静息闩锁判断，不登记回收起点。 */
+    private static ContainerEntry existingEntry(ContainerContext ctx) {
+        String key = cacheKey(ctx);
+        return key == null ? null : CONTAINER_DATA.get(key);
+    }
+
+    /**
+     * 是否有自维持候选声明「现在仍有持续的无物品工作」（两阶段语义，ctx != null 查询）。
+     * 只遍历注册期静态清单；第三方候选若恒返回 true，只会保守地阻止静息跳过，不漏 tick。
+     */
+    private static boolean hasContinuousSelfSustainingWork(ContainerContext ctx) {
+        for (var f : LivingItemManager.getSelfSustainingFunctions()) {
+            if (f.shouldTickWithoutOwnItems(ctx)) return true;
+        }
+        return false;
     }
 
     /**
@@ -662,9 +685,35 @@ public class ContainerLivingItemHandler {
         // （update 内部过 ctx.toPhysicalSlot；这里同样过一遍，否则作废打空）
         trackLivingSlots(context.getCacheKey(), collectLivingSlots(grouped, context), context);
 
+        // 静息快路径（Q4a）：扫描未见活物品 + 闩锁已结算 + 无自维持候选报告持续工作
+        // ⇒ 跳过后缀（TickContext / 开始钩子 / 自维持注入 / 容器级数据 / 写回 / 脏槽收尾）。
+        // 闩锁语义：进入完整管道即清零（防陈旧 true 跳过「物品离场后的清理拍」）；
+        // 整拍成功（catch 会 rethrow，走到 try/finally 之后即成功）且本拍扫描无活物品、
+        // 无持续工作 ⇒ 置真。冷数据（附件 / SavedData 流体）靠新 entry 首拍必完整来回填。
+        // ⚠️ 判据用 scan.hasAnyLivingItem()（扫描见到的 IS_LIVING），不能用 grouped.isEmpty()
+        // —— 活黑曜石等「有标记、无认领」物品不进分组，但静息判定必须看见它们。
+        ContainerEntry idleEntry = existingEntry(context);
+        boolean hasLivingItems = scan.hasAnyLivingItem();
+        boolean continuousWork = !hasLivingItems && hasContinuousSelfSustainingWork(context);
+        if (!hasLivingItems && !continuousWork
+                && idleEntry != null && idleEntry.suffixSettled) {
+            long skipEndNanos = System.nanoTime();
+            PerfMetrics.recordPhase("scan", skipEndNanos - startNanos);
+            PerfMetrics.recordTick(skipEndNanos - startNanos);
+            PerfMetrics.recordIdleSuffixSkip();
+            com.qiqi.li.living.debug.ContainerMonitor.afterProcess(monitorKey, context);
+            if (PerfMetrics.shouldReport()) {
+                PerfMetrics.printReport();
+            }
+            return;
+        }
+        if (idleEntry != null) {
+            idleEntry.suffixSettled = false;
+        }
+
         // 自维持功能（如活水源）：即便容器内没有它自己的活物品，也要进入主流程参与 tick。
-        // 遍历的是注册期算好的静态清单（通常 0~1 个），不逐函数判定，保证成千上万个容器
-        // 下的每 tick 开销可控（详见 LivingItemFunction#shouldTickWithoutOwnItems）。
+        // 遍历的是注册期算好的静态清单（当前 3 个：流体 / 红石 / 门面），不逐函数判定，
+        // 保证成千上万个容器下的每 tick 开销可控（详见 LivingItemFunction#shouldTickWithoutOwnItems）。
         for (var f : LivingItemManager.getSelfSustainingFunctions()) {
             grouped.computeIfAbsent(f, k -> new ArrayList<>());
         }
@@ -734,6 +783,12 @@ public class ContainerLivingItemHandler {
         // 阶段 6：脏槽刷新（from finally）后的 perf 收尾
         long flushSlotsEndNanos = System.nanoTime();
         PerfMetrics.recordPhase("flush_slots", flushSlotsEndNanos - stressEndNanos);
+
+        // 静息闩锁置真（Q4a）：只有无异常走到这里才算「无活物品后缀成功收口」。
+        // catch 分支会 rethrow ⇒ 异常拍永远到不了这一行，下拍继续完整清理。
+        if (!hasLivingItems && !continuousWork && idleEntry != null) {
+            idleEntry.suffixSettled = true;
+        }
 
         PerfMetrics.recordTick(flushSlotsEndNanos - startNanos);
 
@@ -819,24 +874,31 @@ public class ContainerLivingItemHandler {
         return current;
     }
 
-    /** 单遍全槽扫描产物：功能分组 + 内容签名（Q2：签名并入扫描循环，两遍降为一遍）。 */
+    /** 单遍全槽扫描产物：功能分组 + 内容签名 + 是否见到活物品（Q2：签名并入扫描循环，两遍降为一遍）。 */
     private record ScanResult(
             Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped,
-            int contentSig) {}
+            int contentSig,
+            boolean hasAnyLivingItem) {}
 
     /**
      * 扫描容器全部槽位，将活物品按功能分组收集，同遍计算内容签名。
      *
      * <p>两阶段设计的「扫描」阶段：先按功能分组，再对每种功能只调用一次 tick，
      * 从根本上避免 N 个活物品 = N 倍速度（如活熔炉每 tick 只处理一个）。</p>
+     *
+     * <p>⚠️ {@code hasAnyLivingItem} 必须在循环里直接由 {@code isLivingItem} 置真，
+     * <b>不能用 {@code !grouped.isEmpty()} 代答</b>：活黑曜石等「有活物品标记、无功能认领」的物品
+     * （如地狱门框材，行为归容器级门面驱动）不进任何分组，但静息判定必须看见它们。</p>
      */
     private static ScanResult scanAndGroupLivingItems(ContainerContext context) {
         Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped = new LinkedHashMap<>();
         int sig = 1;
+        boolean anyLiving = false;
         for (int i = 0; i < context.getSize(); i++) {
             ItemStack stack = context.getItem(i);
             sig = mixSlot(sig, stack);
             if (LivingItemManager.isLivingItem(stack)) {
+                anyLiving = true;
                 var functions = LivingItemManager.getApplicableFunctions(stack);
                 for (var function : functions) {
                     grouped.computeIfAbsent(function, k -> new ArrayList<>())
@@ -844,7 +906,7 @@ public class ContainerLivingItemHandler {
                 }
             }
         }
-        return new ScanResult(grouped, sig);
+        return new ScanResult(grouped, sig, anyLiving);
     }
 
     /**

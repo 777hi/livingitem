@@ -42,11 +42,12 @@ public class LivingItemManager {
     private static final Map<Item, List<LivingItemFunction>> APPLICABLE_CACHE = new ConcurrentHashMap<>();
 
     /**
-     * 自维持函数清单（{@link LivingItemFunction#shouldTickWithoutOwnItems} 为真的函数）。
+     * 自维持函数清单（{@link LivingItemFunction#shouldTickWithoutOwnItems} 注册期为真的函数）。
      *
-     * <p>在<b>注册期</b>一次性算出，每 tick 的 {@code processContext} 只遍历这张静态清单，
-     * 避免逐函数调用判定（22 个函数 × 成千上万个容器 = 不可接受的每 tick 开销）。
-     * 详见 {@link LivingItemFunction#shouldTickWithoutOwnItems} 的注册期约定。</p>
+     * <p>在<b>注册期</b>一次性算出，每 tick 只遍历这张静态清单（当前 3 个：流体 / 红石 / 门面），
+     * 避免逐函数判定（三十余个函数 × 成千上万个容器 = 不可接受的每 tick 开销）。
+     * 静息快路径（Q4a）还会以非 null 上下文逐候选查询「是否仍有持续无物品工作」，
+     * 见 {@link LivingItemFunction#shouldTickWithoutOwnItems} 的两阶段语义。</p>
      */
     private static volatile List<LivingItemFunction> SELF_SUSTAINING_FUNCTIONS = List.of();
 

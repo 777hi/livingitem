@@ -137,22 +137,24 @@ class ContainerRedstoneIntegrationTest {
     // ════════════════════════════════════════
 
     @Test
-    @DisplayName("驱动链路：残留红石账本在空容器里仍被归零（原 zeroResidualRedstone 职责已由守卫接管）")
+    @DisplayName("驱动链路：残留红石账本在空容器里由首拍完整管道归零，之后不再阻止静息（Q4a 语义）")
     void residualLedger_stillZeroedByGuard() {
         ItemStack[] slots = new ItemStack[9];
         Level level = mockServerLevel();
         var ctx = new SimpleContainerContext(new FakeHandler(slots), level);
 
         var rd = ctx.getOrCreateContainerData(ContainerRedstoneData.KEY);
-        assertFalse(rd.hasEdgeHistory(), "前置：本会话尚未 calculate 过（首拍恒 false，2026-10-27 审查修）");
+        assertFalse(rd.everCalculatedForTest(), "前置：本会话尚未 calculate 过");
 
         ContainerLivingItemHandler.processContext(ctx, level);
-        rd.resetProcessedFlag();   // 模拟下一个 server tick
-        ContainerLivingItemHandler.processContext(ctx, level);
-
-        assertTrue(rd.hasEdgeHistory(),
-            "有残留账本 ⇒ 守卫放行 ⇒ calculate 照跑（hasAny=false 分支归零）。"
+        assertTrue(rd.everCalculatedForTest(),
+            "有残留账本 ⇒ 首拍完整管道必跑 calculate（hasAny=false 分支归零）。"
             + "2026-10-08 前这项工作由 ContainerLivingItemHandler.zeroResidualRedstone 兜底，该守卫已删。");
+
+        // Q4a：归零是「一次性清理」—— 本容器此后无持续红石工作，不阻止静息闩锁结算；
+        // 管道级「第二拍起跳过后缀」由 ContainerIdleSuffixTest 守卫。
+        assertFalse(new LivingRedstoneFunction().shouldTickWithoutOwnItems(ctx),
+            "无元件残留工作 ⇒ 红石侧放行静息（两阶段语义：ctx != null 查询持续工作）");
     }
 
     // ════════════════════════════════════════

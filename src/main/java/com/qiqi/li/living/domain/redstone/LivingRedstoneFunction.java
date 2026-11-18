@@ -95,10 +95,13 @@ public class LivingRedstoneFunction implements LivingItemFunction, HasContainerD
      *
      * <p>为什么必须自维持：容器里只有活按钮 / 拉杆 / 中继器（没有活红石粉）时，本类若不在
      * {@code grouped} 里就<b>无人驱动</b> {@code calculate} ⇒ 那些元件失灵。</p>
+     *
+     * <p>两阶段语义（Q4a）：注册期（ctx == null）声明候选；每拍返回 false —— 红石无物品时
+     * 只有<b>一次性</b>残留账本归零（由完整管道的收口拍完成），没有持续工作。</p>
      */
     @Override
     public boolean shouldTickWithoutOwnItems(ContainerContext ctx) {
-        return true;
+        return ctx == null;
     }
 
     /** 容器级数据顺序：2 = 红石层（流体 0 → 水车 1 → 红石 2 → 电力 3，电力依赖本层已算完）。 */

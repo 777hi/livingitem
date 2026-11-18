@@ -8,6 +8,7 @@ import net.minecraft.world.level.Level;
 import com.qiqi.li.living.api.HasContainerData;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.container.ContainerContext;
+import com.qiqi.li.living.container.ContainerLivingItemHandler;
 import com.qiqi.li.living.container.TickContext;
 
 /**
@@ -43,10 +44,16 @@ public class LivingFluidFunction implements LivingItemFunction, HasContainerData
         return ID;
     }
 
-    /** 自维持：容器内没有本功能自己的活物品时也 tick（纯源容器的关键）。 */
+    /**
+     * 两阶段自维持：注册期（ctx == null）声明候选；每拍回答「容器是否仍有持续流体工作」
+     * —— 数据非空（含派生源，{@code isEmpty()} 口径）即 true。只 peek 不创建。
+     */
     @Override
     public boolean shouldTickWithoutOwnItems(ContainerContext ctx) {
-        return true;
+        if (ctx == null) return true;
+        ContainerFluidData data = ContainerLivingItemHandler.peekExistingContainerData(
+            ctx, ContainerFluidData.KEY);
+        return data != null && !data.isEmpty();
     }
 
     /** 容器级数据顺序：0 = 最先（BFS 先于应力 / 红石）。 */

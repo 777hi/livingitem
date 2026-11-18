@@ -9,7 +9,7 @@
 ## 本轮评估执行队列（2026-11-15 登记）
 
 > **性质**：工作层执行队列，不是新规格，也不复制机制正文。状态用 ⏳ 待办 / 🟢 进行中 / ✅ 完成 / ⏸ 暂缓（不占队首）；**每次只从队首取一项**，一个批次做完、全量测试与门禁绿、文档同步后再取下一项；完成项保留删除线 + 日期。
-> **当前队首**：暂空，待下轮选择；Q4 仍暂缓且不占队首。Q5/Q6 已按 2026-11-17 用户整体反馈结案；涉及代码口径变化的后续批次，完成判据统一包含 `./gradlew test --rerun`、CI 同款门禁和对应 tech / system-design 文档同步。
+> **当前队首**：暂空，待下轮选择；Q4b 仍暂缓且不占队首（Q4a 已于 2026-11-18 完成）。Q5/Q6 已按 2026-11-17 用户整体反馈结案；涉及代码口径变化的后续批次，完成判据统一包含 `./gradlew test --rerun`、CI 同款门禁和对应 tech / system-design 文档同步。
 
 1. ✅ **Q1 大箱相位文档结案** —— ~~待办~~ ✅ 已结案（2026-11-15）：旧结论「未修」改为 A6 已修 + 指针；稳定层补规则，真机证据沿用 2026-10-28 A6 复验的「红电重新锁相、拆半前相位布局不作数」。
    - 留痕：`PhaseDataMigration.clearPhaseOnChestSplit` / `ContainerDrops.otherChestHalf` / `PhaseDataMigrationChestSplitTest` / `tech/living-power-tech.md` §0 规则 12；archive 与 buffer 的历史描述按规约保留，**未改生产代码**。
@@ -25,17 +25,22 @@
    - 基线（本机 FML / JDK 21.0.11，10k 容器 × 54 槽，每拍中位）：空容器 **9.31 ms**、普通 **11.07 ms**、复杂 **39.63 ms**；每容器每拍 0.93 / 1.11 / 3.96 µs，1k / 5k / 10k 三档线性度好；P90 @10k 为 9.67 / 11.89 / 48.20 ms。
    - 结论：三个自维持功能（`living_redstone` / `living_nether_portal` / `living_fluid`）每容器每拍各跑一次，空容器也不例外 ⇒ 早退上限约 9 ms/拍；但复杂场景 39.63 ms/拍 的增量集中在 `container_data`（10k 稳态 avg 1.3 µs vs 空场景 0.2 µs）⇒ **Q4 不能只做早退**，收益取决于真实存档的空容器占比。按 50 ms/tick 粗算，10k 复杂容器已占约 79%，且未计外层。
    - 留痕：落盘 `build/minecraft-junit/build/_perf_pipeline.txt`；分阶段见同轮 `[Phases]` 日志；入口与口径见 `docs/guides/unit-testing.md`「管道性能基准（Q3）」；`docs/reference/test-map.md` 已登记测试类；`living-item-infrastructure.md` §8.2 补指针。
-   - 边界：单测无真实 `Level` / BE / 玩家列表，量不到 L4 外层；依赖 `level.isClientSide` 的领域功能（活漏斗）未纳入，复杂场景只用 `tick` 为空实现的活红石粉。数字只用于同环境前后比较，**不能宣称真机 MSPT**；快照命中率计数器仍缺，留到 Q2 定案前补。
-   - 口径（2026-11-15 定）：**性能基准是仪表盘读数，不设 tick 预算阈值、不需要约定数值**；Q4 及后续优化一律按「同环境 / 同口径 / 优化前后对比」判定，真机开销另由专用服务端实测留痕。Q2 暂缓期间量到的是「两遍扫描」现状，Q2 落地后本基线需重测。
+   - 边界：单测无真实 `Level` / BE / 玩家列表，量不到 L4 外层；依赖 `level.isClientSide` 的领域功能（活漏斗）未纳入，复杂场景只用 `tick` 为空实现的活红石粉。数字只用于同环境前后比较，**不能宣称真机 MSPT**。（快照命中率计数器已随 Q2 补齐，此边界不再是缺口。）
+   - 口径（2026-11-15 定）：**性能基准是仪表盘读数，不设 tick 预算阈值、不需要约定数值**；Q4 及后续优化一律按「同环境 / 同口径 / 优化前后对比」判定，真机开销另由专用服务端实测留痕。（2026-11-17 注：Q2 落地后基线已重测，见 `unit-testing.md` Q3 节 2026-11-17/18 读数；2026-11-15 的 9.31 / 11.07 / 39.63 为 **Q2 前历史读数**。）
 
-4. ⏸ **Q4 空容器早退与缓冲复用** —— **暂缓（2026-11-15），不占队首**：Q3 基线已给，但核查后确认这是队列里第一个改生产逻辑、且踩缓存生命周期 / 自维持语义的批次，工作量与风险都明显高于 Q3，本轮不动。
-   - 已核查（避免重查）：① 早退点必须在 `trackLivingSlots`（`ContainerLivingItemHandler.java:235-264`）**之后** —— 它同时是 LAST_SEEN 盖章、槽位运行时作废与位置索引补建，注释 `:228-231` 明确「必须在任何早退 / 清理分支之前」；`syncContentRevision`（`:628`）也不能跳，否则 Q2 的签名洞更大。② `grouped.isEmpty()`（`:650`）因自维持函数注入（`:641-643`）恒不可达，判定门需另写。
-   - 判据两个坑：③ 「无持久容器数据」不能走 `getOrCreate` 型接口 —— `ContainerFluidWriteback.onTickStart`（`:32-36`）无条件建流体数据；`RedstoneRegistration.java:52-56` 已警告 getOrCreate 会让 `peek == null` 恒假、零开销路径失效 ⇒ 用 `peek` / `ContainerDataStore.isEmpty()`（`:48`）。④ 自维持函数（红石归零 / 流体）在**无活物品但有容器级数据**时仍须运行，不能一刀切跳过。⑤ 创建 `TickContext` 经 `setTickContext` 触发 `fireTickStart`，现有 4 个 `onTickStart` 钩子（流体写回 / 海绵 / 传送门同步 / 红石复位），早退会一并跳过，需逐个确认。
-   - 缓冲复用边界：`getProcessableChunks`（`ContainerChunkCache.java:314`）每 tick 新建 `ObjectOpenHashSet`，但注释 `:303-304` 明确返回副本是为避免区块加载 / 卸载回调引发 CME，**不能直接复用成视图**；`reusableHandlerMap` / `reusableKeySet`（`LivingItem.java:338-339`）**已在复用**；更值得看的是 `processChunkContainers` 每 tick 每区块 `new ArrayList<>(chunk.getBlockEntities().values())`（`:681`）；`processBlockEntities` 的 `new HashSet`（`:927`）是另一入口、非主链路。
-   - 收益错位（Q3）：早退上限是 10k 全空容器 **9.31 ms/拍**（0.93 µs/容器）；复杂场景 39.63 ms/拍 的增量在 `container_data`（1.3 µs vs 0.2 µs），早退帮不上 ⇒ 收益取决于真实存档的空容器占比。
-   - 建议拆分（做时再定案）：**Q4a 早退**（先补「行为不变」回归：空容器仍盖章 / 作废 / 清理、红石归零、流体自维持、放置后立刻放活物品能被扫到）；**Q4b 缓冲复用**（先验证 CME 约束，只处理 BE 列表）。两批独立验收。
-   - 恢复条件：拿到真实存档的空容器占比后重新排期；或先做不依赖该数据的 Q4b。本条不设预算阈值。完成判据不变：空容器仍完成 last-seen、运行时作废和清理；活流体 / 红石自维持行为不变；同环境同口径复测，10k 空容器每拍中位较 9.31 ms 基线有可复算下降。
-   - 不做：无实测支撑的活跃容器索引、重写分层、把传给功能实现的 List/Map 直接池化。
+4. ✅ **Q4a 静息容器跳过后缀** —— ~~暂缓（2026-11-15）~~ ✅ 已完成（2026-11-18）：前提经用户纠正后收窄——三个自维持候选中**只有活流体是无物品时的持续工作**，红石/门面无物品只剩一次性清理。不需要通用活动账本：`ContainerEntry` 加单布尔闩锁 `suffixSettled`（进入完整管道即清零；整拍成功且扫描无活物品、无持续工作 ⇒ 置真），`processContext` 在扫描 + 签名 + `trackLivingSlots` 之后、自维持注入之前判定。
+   - 留痕：`ContainerLivingItemHandler` 快路径与 `ScanResult.hasAnyLivingItem`；`LivingItemFunction#shouldTickWithoutOwnItems` 两阶段语义（null=注册期候选声明，ctx=本拍是否有持续无物品工作；流体答数据非空、红石/门面答 false）；`PerfMetrics` 补 `[IdleSuffix] full/skipped` 仪表盘。
+   - 判据口径：**判「有活物品」用扫描见到的 IS_LIVING，不能用 `grouped.isEmpty()`** —— 活黑曜石等「有标记、无认领」物品不进分组但必须被看见（守卫 `ContainerIdleSuffixTest.unclaimedLivingItem_neverSettles`，负向变异验证：判据退回分组 ⇒ 红）。陈旧 settled 不清会跳过物品离场清理拍（负向变异验证：删清闩锁 ⇒ 红）。
+   - 回归入口：`ContainerIdleSuffixTest`（首拍完整后跳过 / 放活物品唤醒 / 移除后恰好一拍清理 / 流体工作阻止 settling / 异常拍不结算 / 普通货物变化保持静息）+ `ContainerCacheSweepTest` 海绵边沿新语义（清理拍后跳过）。
+   - 完成判据（同环境前后）：2026-11-17 基线（EMPTY 10k 中位 14.72ms / PLAIN 15.37ms / COMPLEX 58.58ms）对 2026-11-18 落地后复测读数见 `unit-testing.md`「管道性能基准（Q3）」；只报告读数，不设阈值、不宣称真机 MSPT。
+   - 不做：Q4b 缓冲复用仍暂缓；不改区块 Set 防御副本、不池化 List/Map、不做按功能条件注入；第三方自维持函数恒 true 只是保守（相关容器永不静息），不新增 API。
+   - Q4a-0 影子分类计数器未实施：落地后 `[IdleSuffix]` 的 skipRate 即真实命中率仪表盘，无需先测占比（占比只决定 ROI，不影响正确性）。
+
+4b. ⏸ **Q4b BE 列表缓冲复用** —— **暂缓，不占队首**（自 2026-11-15 拆分独立验收；Q4a 已完成，本条范围不变）：
+   - 唯一目标：`processChunkContainers` 每 tick 每区块 `new ArrayList<>(chunk.getBlockEntities().values())`（`LivingItem.java`）改为调用期独占的复用缓冲 —— 仍先复制后遍历（区块加载/卸载回调可增删 BE ⇒ 防御快照与 CME 约束不变），用完清引用。
+   - 已核查：`getProcessableChunks`（`ContainerChunkCache.java:314`）返回副本是为防 CME，**不能复用成视图**；`reusableHandlerMap` / `reusableKeySet` 已在复用；`processBlockEntities` 的 `new HashSet` 是另一入口、非主链路。
+   - 回归先补：回调内增删 BE 不影响本轮快照、不出 CME（沿用现有区块夹具 `LivingItemChunkContainerScanTest`）。
+   - 完成判据：同环境同口径，`-Pperf` 外层不可测 ⇒ 需专用量测或实测报告；无读数不立项。不做：早退相关（Q4a 已闭）、Set 视图化、领域 List/Map 池化。
 
 5. ✅ **Q5 创造模式活化** —— ~~代码已接线，待实机验收~~ ✅ 已结案（2026-11-17）：用户反馈本轮既定验收均正常，关闭剩余真机债；未逐项说明的极端与第三方组合不外推为单独证据。
    - 范围与协议口径已沉淀到 [GUI交互 §6.2](system-design/gui-interaction-system.md#62-生存背包按钮启用与位置)，仅 INVENTORY 页小人框底部；服务端 `evaluate/apply` 与生存同源，取消活化活箱子照常掉物并清存储。
@@ -150,9 +155,9 @@
 
 4. **`scanAndGroupLivingItems` 每容器 `new LinkedHashMap<>()`** —— 同上量级。
 
-5. **（收益最大）合并两次全槽位遍历** —— `scanAndGroupLivingItems` 与
-   `computeContentSignature` 各遍历一遍全部槽位 ⇒ 合并可**省 50% 扫描**。
-   详见 [infrastructure-refactoring-plan.md](archive/infrastructure-refactoring-plan.md) §1.7 / §6.3-B。
+5. ✅ **（收益最大）合并两次全槽位遍历** —— ~~`scanAndGroupLivingItems` 与
+   `computeContentSignature` 各遍历一遍全部槽位 ⇒ 合并可**省 50% 扫描**~~
+   **2026-11-17 已随队列 Q2 完成**（签名并入扫描单遍，`ScanResult` 同遍产出）。
 
 6. **配方书标签页每帧扫描玩家背包**（2026-10-03 起）——
    `LivingChestRecipeTab.collectLivingChestItems()`（原 `RecipeBookComponentMixin` 内联）

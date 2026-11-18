@@ -48,6 +48,9 @@ public class PerfMetrics {
     private static final AtomicLong snapshotRebuilds = new AtomicLong(0);
     private static final AtomicLong snapshotHits = new AtomicLong(0);
 
+    // ===== 静息快路径（Q4a 仪表盘：跳过后缀的 processContext 次数；full = tickCount - skipped） =====
+    private static final AtomicLong idleSuffixSkips = new AtomicLong(0);
+
     // ===== 传输 =====
     private static final AtomicLong transferSuccess = new AtomicLong(0);
     private static final AtomicLong transferFail = new AtomicLong(0);
@@ -132,6 +135,11 @@ public class PerfMetrics {
         snapshotHits.incrementAndGet();
     }
 
+    /** 静息快路径计数（Q4a）：本次 processContext 在扫描后跳过了后缀。 */
+    public static void recordIdleSuffixSkip() {
+        idleSuffixSkips.incrementAndGet();
+    }
+
     // ══════════════════════════════════════════════
     // 传输
     // ══════════════════════════════════════════════
@@ -212,6 +220,9 @@ public class PerfMetrics {
             count, formatNanos(avgNanos), formatNanos(computeP99()),
             formatNanos(containerTickMaxNanos.get()),
             formatNanos(CONTAINER_THRESHOLD_NANOS), overThreshold);
+        long skips = idleSuffixSkips.get();
+        ModLog.PERF.info("[IdleSuffix] full={}, skipped={} (skipRate={}%)",
+            Math.max(0, count - skips), skips, count == 0 ? "-" : (skips * 100 / count));
         ModLog.PERF.info("[LivingItems] {}", formatMap(livingItemCounts));
         ModLog.PERF.info("[FunctionCalls] {}", formatMap(functionCalls));
 
@@ -327,6 +338,7 @@ public class PerfMetrics {
         cacheSelfCleanRemoves.set(0);
         snapshotRebuilds.set(0);
         snapshotHits.set(0);
+        idleSuffixSkips.set(0);
         transferSuccess.set(0);
         transferFail.set(0);
         superContentChanged.set(0);

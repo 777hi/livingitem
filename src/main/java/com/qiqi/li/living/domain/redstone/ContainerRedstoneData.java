@@ -132,6 +132,11 @@ public class ContainerRedstoneData implements RedstoneSensor {
      */
     private boolean everCalculated;
 
+    /** 测试专用：观察「残留账本由首拍完整管道归零」（Q4a 静息语义；对称 {@link #setPrevIncomingEdgeForTest} 一族的 seam）。 */
+    public boolean everCalculatedForTest() {
+        return everCalculated;
+    }
+
     public ContainerRedstoneData() {
         this.processedThisTick = false;
     }

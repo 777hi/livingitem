@@ -136,13 +136,14 @@ src/test/java/com/qiqi/li/
 │   ├── ContainerUuidsDiscardTest.java         # 取消活化**彻底清理**（2026-10-28）·discard 必须清内存层容器数据（旧实现只删 SavedData ⇒ 物品形态无位置可反查 ⇒ 熔炉进度留到停服）/ UUID 被剥掉（重新活化拿新身份）
 │   ├── ItemFormLiveViewsTest.java             # 物品形态容器的按 UUID 寻址（2026-10-28，活末影箱路由取货）·登记后可按 UUID 取同一活视图 / 未登记或清空后 null（停服清空、背包没在 tick）/ null 输入安全 / **无人查询也要能收：evictExpired 主动淘汰过期条目（2026-11-01 R-06，惰性 find 回收的补集）**
 │   ├── ContainerContentSignatureTest.java    # Q2 内容签名·原版途径换不同内容量活箱子（rawSet 不 bump）⇒ 签名兜底 bump + 快照按新容量重建/**真实 processContext 单遍扫描接线亦能 bump**/数量变化检出（组件哈希不含 count）/等值替换不空转/空槽移动检出
-│   ├── ContainerCacheSweepTest.java           # **跨 tick 缓存的统一回收口**（R-06；2026-11-06退役旧类型心跳清理）·真实processContext连续3600次：海绵EDGE仅真实存在性翻转通知/活物品-only索引保留·查询创建五入口登记且查询不续期/空与修订-only回收/真实tick续期/子数据清空保索引·显式删除清时间记录且sweep不重复/同键重建/32轮创建删除无泄漏·消失阈值/返回窗口/双箱任一半/无ctx盖章/removeSlot空壳
+│   ├── ContainerCacheSweepTest.java           # **跨 tick 缓存的统一回收口**（R-06；2026-11-06退役旧类型心跳清理）·真实processContext连续3600次：海绵EDGE仅真实存在性翻转通知且清理拍后静息（Q4a 新语义）/活物品-only索引保留·查询创建五入口登记且查询不续期/空与修订-only回收/真实tick续期/子数据清空保索引·显式删除清时间记录且sweep不重复/同键重建/32轮创建删除无泄漏·消失阈值/返回窗口/双箱任一半/无ctx盖章/removeSlot空壳
+│   ├── ContainerIdleSuffixTest.java           # 静息快路径（Q4a，2026-11-18）·首拍完整收口后跳过后缀且盖章续期不退化/放入活物品下一拍唤醒/移除后恰好一拍清理再静息/**活黑曜石「有标记无认领」不得用 grouped.isEmpty 判静息**/非空流体阻止 settling、数据清空后的清屏拍完成才允许跳过/异常拍不结算闩锁（恢复后补一拍清理）/普通货物变化保持静息（负向变异：判据退回分组、删清闩锁均红）
 │   ├── ContainerKeysTest.java                 # 容器键解析唯一入口(2026-10-13)·5 种键形各自归位(背包/末影箱前缀相同必须按后缀分开)/缓存键剥维度前缀/未知形态返回 null 不抛异常/ownerOf 末影箱回归(旧实现抛异常被吞⇒从不发包)/isOwnedByPlayer(null 安全)/positionsOf(大箱两段·维度 id 含下划线取末三段)/维度前缀
 │   ├── ContainerRuntimeCacheSlotMappingTest.java  # 读写槽位键对称（2026-10-27 审查 P1，熔炉/酿造台/漏斗域）·update 过 toPhysicalSlot、get 不过 ⇒ 马/驴容器（storageOffset=1）读永远 miss ⇒ 熔炉每 tick 烧 1 燃料零产出、酿造台每 tick 空耗烈焰粉 / get(ctx, logical) 对称重载：带偏移上下文读回自己写的值 / 裸 get(key,3) miss·物理槽 4 命中 / 恒等映射两版等价
 │   ├── ContainerPersistRoutingTest.java      # 容器级数据**持久层二分**（2026-10-29）·有身份⇒只写 SavedData（附件一次不写）/ 无身份⇒只写附件 / 回填优先级：内存空 + 有身份 ⇒ 从 SavedData 取回
 │   ├── ContainerRuntimeCacheLifecycleTest.java # 运行时缓存生命周期(方案A)·物品离开槽位/换物品⇒登记作废·同类持续⇒不作废·drain 取走即空·null 键忽略·整容器作废键==运行时存储键
 │   ├── ContainerTickHooksTest.java            # tick 钩子注册表（2026-10-29）·同类去重 / 两阶段按注册顺序 / ctx+tick 透传 / 默认空实现
-│   ├── ContainerPipelinePerfTest.java        # 管道性能量测（Q3，@Tag("perf") 默认不跑；`-Pperf` 才计入）·空/普通/复杂容器 × 1k/5k/10k 的 processContext 每拍中位与 P90 + 每容器每拍 µs + 线性外推/JIT 预热/组间清缓存与冷启动+稳定轮不计/复杂场景只放不读 Level 的活红石粉/沿用 PerfMetrics 五阶段 `[Phases]` 明细/只防病态回归/落盘 build/_perf_pipeline.txt·**不改 src/main 生产逻辑**
+│   ├── ContainerPipelinePerfTest.java        # 管道性能量测（Q3，@Tag("perf") 默认不跑；`-Pperf` 才计入）·空/普通/复杂容器 × 1k/5k/10k 的 processContext 每拍中位与 P90 + 每容器每拍 µs + 线性外推/JIT 预热/组间清缓存与冷启动+稳定轮不计/复杂场景只放不读 Level 的活红石粉/沿用 PerfMetrics 五阶段 `[Phases]` 明细/只防病态回归/落盘 build/_perf_pipeline.txt（每轮先截断）·**不改 src/main 生产逻辑**（Q4a 后空/普通稳态轮量到的是静息快路径前缀，读数口径见 unit-testing.md）
 │   └── ContainerTickIsolationTest.java        # tick 异常隔离（R-01）·RuntimeException 不向外抛且可重复调用 / 取 key 本身抛异常仍隔离 / Error 不被吞；真实管道正常、开始钩子失败、写回失败、刷新失败均解绑 / 双异常保留 / 同异常对象不自抑制 / Error 优先传播 / 失败后下一容器照常处理
 ├── living/domain/maid/
 │   ├── LivingSoulSlabClockTest.java           # 概率活跃度I·初始7/成功失败±1/1-49钳位/非法值

@@ -271,10 +271,13 @@ class ContainerFluidDataTest {
     }
 
     @Test
-    @DisplayName("⑩ 通用驱动：自维持 + prio 0 + 不挂物品（纯容器级）")
+    @DisplayName("⑩ 通用驱动：两阶段自维持 + prio 0 + 不挂物品（纯容器级）")
     void fluidDriver_isSelfSustainingContainerLevel() {
         var driver = new LivingFluidFunction();
-        assertTrue(driver.shouldTickWithoutOwnItems(row()), "必须自维持 —— 纯源容器的关键");
+        assertTrue(driver.shouldTickWithoutOwnItems(null),
+            "注册期声明：无物品阶段的候选者（纯源容器的关键）");
+        assertFalse(driver.shouldTickWithoutOwnItems(row()),
+            "每拍查询：无流体数据的容器没有持续无物品工作（Q4a 两阶段语义，允许静息）");
         assertEquals(0, driver.getPriority(), "prio 0：BFS 先于应力(1)/红石(2)");
         assertEquals("living_fluid", driver.getFunctionId());
         assertFalse(driver.canApply(new ItemStack(Items.WATER_BUCKET)), "不挂任何物品");
