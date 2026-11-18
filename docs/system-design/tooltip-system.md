@@ -289,7 +289,7 @@ EMA 类 double 读数（共振增益 / 平衡度 / 域快照 effDeltaSum）写�
 
 ```
 src/main/java/com/qiqi/li/
-├── LivingItemClient.java                    # 客户端入口：GatherComponents 挂载（图形层）
+├── client/LivingItemClient.java             # 客户端入口：GatherComponents 挂载（图形层）
 ├── client/render/LivingItemTooltip.java     # 文本层桥接：ItemTooltipEvent + ThreadLocal
 ├── client/render/LivingWaxedCopperTooltipRenderer.java  # 仪器面板绘制（相位圆盘 + 展开条 + 锈级柱状图）
 ├── living/runtime/                          # L2 机制（档 2 从 domain/runtime/ 泛化而来）

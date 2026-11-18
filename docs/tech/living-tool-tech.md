@@ -53,7 +53,7 @@
 
 **能力清单**：✅ 记忆录制 / 回放 · ✅ 四宿主（方块容器 / 实体容器 / 玩家背包 / 掉落物）· ✅ 挖掘 / 交互回放
 · ✅ 射线微调（起点锚点 + 朝向跟随）· ✅ 辅助 / 自主模式 · ✅ 记忆清除 · ✅ 悬浮模型渲染 · ✅ Tooltip
-· 手动槽内去皮（自动回归通过，实机未验，见 §2.6）
+· 手动槽内去皮（自动回归通过，核心流程简单实测通过、边界项未验，见 §2.6）
 
 
 （活武器是同一套「代玩家出手」抽象的另一半）
@@ -230,7 +230,7 @@ LivingEntity 的 body 旋转推进只走 `isEffectiveAi` 分支，玩家不满�
 
 **自动验证**：`AxeStripHandlerTest`（转换/组件/数量/损耗/权限/拒写/过期输入）、`AxeStripInteractionTest`、`AxeStripHintTest`、`InteractionRuleConfigTest`；精确写与恢复见 `ContainerSlotOpsTest`，双索引拒绝见 `GuiInteractionPacketTest`。损耗守卫已负向验证：改为按木料数量扣耐久时，多件木料用例失败，恢复一次基础损耗后通过。
 
-**实机未验**：本轮 `runClient` 在 NeoForge early display 阶段因 WGL 不支持 OpenGL 而退出，未进入游戏。真实 logs tag、普通/大箱两半/实体前置槽/物品形态存储的点击与落盘、创造虚拟光标、附魔与模组工具、提示层级及活锄头/活桶回归，仍按 [去皮验收清单](../buffer/living-axe-strip-design.md#73-游戏内验收不可由单测代替) 核对；单测和客户端启动不能代替这些手势与跨模组验证。
+**实机验证**：核心去皮流程经用户简单实测正常（2026-11-18，功能逻辑层面，未深入游玩）。开发客户端 `runClient` 仍在 NeoForge early display 阶段因 WGL 不支持 OpenGL 退出。**边界项未验**：真实 logs tag 全木种、普通/大箱两半/实体前置槽/物品形态存储的点击与落盘、创造虚拟光标、附魔与模组工具、提示层级及活锄头/活桶回归，仍按 [去皮验收清单](../buffer/living-axe-strip-design.md#73-游戏内验收不可由单测代替) 核对；单测和客户端启动不能代替这些手势与跨模组验证。
 
 ## 3. 数据模型
 

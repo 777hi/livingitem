@@ -21,7 +21,7 @@
 | [container-menu-introspection-topic.md](container-menu-introspection-topic.md) | 设计论证原稿（2026-11-07 复核）—— 无实施计划，保留查证、翻案与否决 |
 | [framework-evolution-plan.md](framework-evolution-plan.md) | 提案（buffer）——未定案、未排期，别当现状读**。 |
 | [gui-interaction-redesign.md](gui-interaction-redesign.md) | 设计稿（已定案未实施）—— E2 交互设计，不是现状。 |
-| [living-axe-strip-design.md](living-axe-strip-design.md) | 核心代码已接入，实机待验 —— 整堆加工只请求一次基础耐久损耗；现状见 [活工具 |
+| [living-axe-strip-design.md](living-axe-strip-design.md) | 核心代码已接入，核心流程简单实测通过（2026-11-18，边界清单仍未验）—— |
 | [living-tnt-explosion-design.md](living-tnt-explosion-design.md) | 设计稿（设计已确认，供实施与验收）—— 保留规模化论证与决策来源，不是完成报告。 |
 | [living-weapon-design.md](living-weapon-design.md) | 设计探讨层（buffer）。⚠️ 描述的是**计划 / 未决**，不是现状。 |
 | [open-plan.md](open-plan.md) | 未定案** —— 对外开放计划探讨稿，别当现状读。 |

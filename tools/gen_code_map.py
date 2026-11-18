@@ -83,7 +83,7 @@ for _m in ("living/compat", "living/components", "living/debug", "living/functio
     MODULE_LAYER[_m] = 2
 for _m in ("(root)", "living/command", "living/mixin", "network"):
     MODULE_LAYER[_m] = 4
-for _m in ("client/gui", "client/icon", "client/input", "client/mixin",
+for _m in ("client", "client/gui", "client/icon", "client/input", "client/mixin",
            "client/mixinsupport", "client/render", "client/util"):
     MODULE_LAYER[_m] = 5
 

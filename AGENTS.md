@@ -108,7 +108,6 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 ```
 src/main/java/com/qiqi/li/
 ├── LivingItem.java                          # Mod 主类：tick 入口、网络包注册
-├── LivingItemClient.java                    # 客户端入口
 ├── living/
 │   ├── api/                                 # 公开接口 + 管理器
 │   ├── container/                           # 容器抽象层（跨活物品共享基础设施）
@@ -138,6 +137,7 @@ src/main/java/com/qiqi/li/
 │   ├── debug/                               # 调试工具（默认关闭，命令启用）
 │   └── perf/                                # 性能监控
 ├── client/
+│   ├── LivingItemClient.java                # 客户端入口（@Mod，dist=CLIENT）
 │   ├── gui/LivingButton.java                # 活按钮
 │   ├── icon/                                # 图标系统（声明式配置）
 │   ├── input/                               # 输入处理

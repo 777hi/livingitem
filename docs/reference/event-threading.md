@@ -44,7 +44,6 @@
 | `ItemFrameMapTeleportHandler` | `onEntityInteractSpecific`(`EntityInteractSpecific`) |
 | `LivingItem` | `onChunkLoad`(`Load`) `onChunkUnload`(`Unload`) `onContainerOpen`(`Open`) `onServerStarting`(`ServerStartingEvent`) `onServerStopped`(`ServerStoppedEvent`) `onServerTick`(`Pre`) |
 | `LivingItemActivationCommand` | `onRegisterCommands`(`RegisterCommandsEvent`) |
-| `LivingItemClient` | `onClientLogin`(`LoggingIn`) `onClientSetup`(`FMLClientSetupEvent`) `onGatherTooltipComponents`(`GatherComponents`) `onModifyBakingResult`(`ModifyBakingResult`) `onRegisterAdditionalModels`(`RegisterAdditional`) `onRegisterItemDecorations`(`RegisterItemDecorationsEvent`) `onRegisterTooltipComponentFactories`(`RegisterClientTooltipComponentFactoriesEvent`) `onRenderLevelStage`(`RenderLevelStageEvent`) |
 | `LivingItemContainerCommand` | `onRegisterCommands`(`RegisterCommandsEvent`) |
 | `LivingItemInteractionCommand` | `onRegisterCommands`(`RegisterCommandsEvent`) |
 | `LivingItemTransformCommand` | `onRegisterCommands`(`RegisterCommandsEvent`) |
@@ -63,6 +62,7 @@
 | `CreativeActivationRequests` | `onClosing`(`Closing`) `onLogout`(`LoggingOut`) |
 | `FluidClientCacheCleanup` | `onLoggingOut`(`LoggingOut`) |
 | `LivingContainerOverlaySubscriber` | `onRenderForeground`(`Foreground`) |
+| `LivingItemClient` | `onClientLogin`(`LoggingIn`) `onClientSetup`(`FMLClientSetupEvent`) `onGatherTooltipComponents`(`GatherComponents`) `onModifyBakingResult`(`ModifyBakingResult`) `onRegisterAdditionalModels`(`RegisterAdditional`) `onRegisterItemDecorations`(`RegisterItemDecorationsEvent`) `onRegisterTooltipComponentFactories`(`RegisterClientTooltipComponentFactoriesEvent`) `onRenderLevelStage`(`RenderLevelStageEvent`) |
 | `LivingItemInputHandler` | `onCharTyped`(`Pre`) `onClientLoggingOut`(`LoggingOut`) `onKeyPressed`(`Pre`) `onLeftClickEmpty`(`LeftClickEmpty`) `onLevelTick`(`Post`) `onMouseDragged`(`Pre`) `onScreenClosing`(`Closing`) |
 | `LivingItemTooltip` | `onItemTooltip`(`ItemTooltipEvent`) |
 | `LivingSoulSlabSlotPreview` | `onClientSetup`(`FMLClientSetupEvent`) `onRegisterReloadListeners`(`RegisterClientReloadListenersEvent`) |

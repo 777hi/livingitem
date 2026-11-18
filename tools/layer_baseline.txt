@@ -4,11 +4,9 @@
 # 格式：规则 <TAB> 源 <TAB> 目标 <TAB> 条数
 
 # R1 跨模块方向违规（下层依赖上层）
-module	(root)	client/render	7
 module	living/api	living/container	4
 module	living/container	living/transfer	3
 module	living/container	living/components	2
-module	(root)	client/icon	1
 module	living/api	living/components	1
 module	living/container	living/debug	1
 

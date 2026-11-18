@@ -1,6 +1,7 @@
-package com.qiqi.li;
+package com.qiqi.li.client;
 
 import com.mojang.datafixers.util.Either;
+import com.qiqi.li.LivingItem;
 import com.qiqi.li.client.icon.LivingIconRegistry;
 import com.qiqi.li.living.domain.tools.LivingToolHostClientCache;
 import com.qiqi.li.client.render.LivingChestTooltipRenderer;
