@@ -5,7 +5,8 @@
     python tools/gen_doc_toc.py           # 写入
 
 口径：
-- 锚点按 GitHub slug 规则：小写 → 空格转 `-` → 删除非字母数字中文连字符 → 合并连续 `-`。
+- 锚点按 GitHub slug 规则：小写 → 删除标点（保留空格与 `-`）→ 每个空格各转一个 `-`；
+  **不合并连续 `-`**（`文本层 + 图形层` ⇒ `文本层--图形层`）。
 - 只收 H2/H3；忽略 H1、H4+、以及 `## 目录` 自身。
 - 已有目录：整块替换（保留块尾的 `---` 分隔线）。
 - 无目录：插在 `## §0` 之前；没有 §0 则插在 H1 之后。
@@ -70,7 +71,8 @@ def rewrite(text: str):
     if toc_idx is not None:
         end = next((k for k in range(toc_idx + 1, len(lines)) if re.match(r"^##\s", lines[k])), len(lines))
         had_rule = any(l.strip() in ("---", "***") for l in lines[toc_idx + 1:end])
-        tail = ["", "---", ""] if had_rule else []
+        # build() 已以空行结尾，分隔线不再补前导空行 —— 否则每跑一次就多一行（非幂等）
+        tail = ["---", ""] if had_rule else []
         new = lines[:toc_idx] + build(heads) + tail + lines[end:]
         start = toc_idx
     else:

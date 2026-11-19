@@ -34,7 +34,6 @@
   - [8.3 建议](#83-建议)
 - [相位圆盘渲染（`LivingWaxedCopperTooltipRenderer`）像素对齐规约](#相位圆盘渲染livingwaxedcoppertooltiprenderer像素对齐规约)
 
-
 ---
 
 ## 1. 概述与设计目标
