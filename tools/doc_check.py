@@ -555,7 +555,9 @@ def check_play_sections():
 DONE_WORDS = ("已实现", "已验收", "全部完成", "已完成", "已落地")  # 不含「已定案」：合法分类「已定案未实施」会误报（2026-11-08 状态行口径）
 OPEN_WORDS = ("进行中", "部分", "未定案", "待办", "待做", "待拍板", "探讨",
               "设计中", "未实现", "规划中", "未完成", "待决")
-STATUS_WINDOW = 40              # 只取「状态:」后这几十字符 —— 再往后就是正文里的局部完成标记
+# 旧 40 字窗口（STATUS_WINDOW）已退出（2026-11-18）：固定窗口会漏后置完成词，
+# 且对粗体「**状态**：」失明。检测改用 gen_buffer_index.status_sentence
+# （完整状态句，到「——」/「；」为止），与第 12 项共用同一实现。
 
 
 def check_buffer_staleness():
@@ -567,17 +569,22 @@ def check_buffer_staleness():
 
     **只报警，不自动搬运**：其它活跃文档或 `buffer/README.md` 索引可能正指向它，
     搬走必然断链（第 1 项随后会报）⇒ 搬 / 改状态标注由人决定，脚本只负责提醒。
+
+    判定口径 = `gen_buffer_index.status_sentence`（状态句到「——」/「；」为止），
+    与第 12 项共用同一实现：粗体「**状态**：」与后置完成词都不再漏（2026-11-18 收口）。
     """
+    try:
+        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        import gen_buffer_index as gbi
+    except ImportError as e:  # 生成器缺失/语法错：直接红，别静默跳过
+        failures.append("[buffer 滞留] 无法导入 tools/gen_buffer_index.py（%s）" % e)
+        print("11. buffer 滞留      : FAIL（生成器不可用）")
+        return
     stale = []
     for p in sorted(glob.glob(os.path.join(BUFFER, "*.md"))):
-        head = read(p).split("\n")[:20]          # 状态横幅只出现在文件头
-        for line in head:
-            if not re.search(r"状态[:：]", line):
-                continue
-            val = line.split("状态", 1)[-1].lstrip("：: ")[:STATUS_WINDOW]
-            if any(w in val for w in DONE_WORDS) and not any(w in val for w in OPEN_WORDS):
-                stale.append(os.path.basename(p))
-            break                                 # 只看第一条状态行
+        val = gbi.status_sentence(p)          # 只看状态句，不含「——」后的指针 / 正文
+        if any(w in val for w in DONE_WORDS) and not any(w in val for w in OPEN_WORDS):
+            stale.append(os.path.basename(p))
     if stale:
         warnings.append(
             "[buffer 滞留] 已完成文档仍在 buffer（会被当未定案读）: " + ", ".join(stale)

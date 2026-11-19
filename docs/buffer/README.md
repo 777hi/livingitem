@@ -14,24 +14,23 @@
 
 | 文件 | 状态（头部「状态：」行摘录） |
 |---|---|
-| [2026-10-27-全项目审查报告.md](2026-10-27-全项目审查报告.md) | 原始台账（2026-10-27）—— 全项目审查的观察底稿，不是现状。 |
-| [2026-10-29-全项目审查整改计划.md](2026-10-29-全项目审查整改计划.md) | 整改计划（2026-10-29）—— 本文是计划文档，不是现状。 |
-| [2026-10-29-测试域梳理.md](2026-10-29-测试域梳理.md) | 分析探讨（2026-10-29）—— 本文是测试域的建议，不是测试规范定案。 |
-| [architecture-evolution-roadmap.md](architecture-evolution-roadmap.md) | 未定案 —— 本文是演进编排与排期依据，不是现状描述，也不是已批准的执行计划 |
-| [container-menu-introspection-topic.md](container-menu-introspection-topic.md) | 设计论证原稿（2026-11-07 复核）—— 无实施计划，保留查证、翻案与否决 |
-| [framework-evolution-plan.md](framework-evolution-plan.md) | 提案（buffer）——未定案、未排期，别当现状读**。 |
-| [gui-interaction-redesign.md](gui-interaction-redesign.md) | 设计稿（已定案未实施）—— E2 交互设计，不是现状。 |
-| [living-axe-strip-design.md](living-axe-strip-design.md) | 核心代码已接入，核心流程简单实测通过（2026-11-18，边界清单仍未验）—— |
-| [living-tnt-explosion-design.md](living-tnt-explosion-design.md) | 设计稿（设计已确认，供实施与验收）—— 保留规模化论证与决策来源，不是完成报告。 |
+| [2026-10-27-全项目审查报告.md](2026-10-27-全项目审查报告.md) | 原始台账（2026-10-27） |
+| [2026-10-29-全项目审查整改计划.md](2026-10-29-全项目审查整改计划.md) | 整改计划（2026-10-29） |
+| [2026-10-29-测试域梳理.md](2026-10-29-测试域梳理.md) | 分析探讨（2026-10-29） |
+| [architecture-evolution-roadmap.md](architecture-evolution-roadmap.md) | 未定案 |
+| [container-menu-introspection-topic.md](container-menu-introspection-topic.md) | 设计论证原稿（2026-11-07 复核） |
+| [framework-evolution-plan.md](framework-evolution-plan.md) | 提案（buffer） |
+| [gui-interaction-redesign.md](gui-interaction-redesign.md) | 设计稿（已定案未实施） |
+| [living-tnt-explosion-design.md](living-tnt-explosion-design.md) | 设计稿（设计已确认，供实施与验收） |
 | [living-weapon-design.md](living-weapon-design.md) | 设计探讨层（buffer）。⚠️ 描述的是**计划 / 未决**，不是现状。 |
-| [open-plan.md](open-plan.md) | 未定案** —— 对外开放计划探讨稿，别当现状读。 |
-| [redstone-evolution-roadmap.md](redstone-evolution-roadmap.md) | 路线图 —— 红电架构演进探讨稿，别当现状读。 |
-| [活地狱门设计稿.md](活地狱门设计稿.md) | 后续探讨 —— 现行玩法已归技术文档，本稿只留未定的扩展，不是现状或执行授权。 |
-| [活滴水石锥.md](活滴水石锥.md) | 探讨中 —— 滴水石锥设计稿，不是现状。 |
-| [活潜影箱实现细节.md](活潜影箱实现细节.md) | 探索性实现提案 —— 不是现状、玩法定案或代码实施授权。 |
-| [活物品大战僵尸.md](活物品大战僵尸.md) | 探讨中（2026-10-30 头脑风暴沉淀）。本文描述的全部机制均未实现，别当现 |
-| [活魂符坐下互动设计.md](活魂符坐下互动设计.md) | 设计稿（已拍板未实施）—— 活魂符"坐下"互动与行动暂停，不是现状；实施前别当 |
-| [活魂符换位玩法设计.md](活魂符换位玩法设计.md) | 设计稿（已拍板未实施）—— 活魂符"换位"动词与食物语义翻转，不是现状；实施前别 |
+| [open-plan.md](open-plan.md) | 未定案 |
+| [redstone-evolution-roadmap.md](redstone-evolution-roadmap.md) | 路线图 |
+| [活地狱门设计稿.md](活地狱门设计稿.md) | 后续探讨 |
+| [活滴水石锥.md](活滴水石锥.md) | 探讨中 |
+| [活潜影箱实现细节.md](活潜影箱实现细节.md) | 探索性实现提案 |
+| [活物品大战僵尸.md](活物品大战僵尸.md) | 探讨中（2026-10-30 头脑风暴沉淀）。本文描述的全部机制均未实现，别当现状读。 |
+| [活魂符坐下互动设计.md](活魂符坐下互动设计.md) | 设计稿（已拍板未实施） |
+| [活魂符换位玩法设计.md](活魂符换位玩法设计.md) | 设计稿（已拍板未实施） |
 
 <!-- buffer-index:end -->
 
@@ -85,3 +84,8 @@
 > 想查做到哪了，走 `TODO.md`（未做）/ `changelog.md`（已做）/ 代码与测试（生效与否），
 > **不靠文档自述**：自述的进度会随一次拍板或提交失效，比空白更糟 ——
 > 空白只是要你去查，过期断言会让你基于它做事。
+
+## 设计稿写什么（2026-11-19 定）
+
+> **只写判据，不写清单。** 设计稿保留「规则 → 验证入口」映射（哪条规则由哪个测试 / 实机项兜底）与「方案选择 / 否决理由」；
+> 逐条操作式的验收清单是待办，进 [TODO.md](../TODO.md) —— 写进稿子会变成没人认领的任务列表，还会被 tech 与 TODO 反向引用。

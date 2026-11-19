@@ -88,6 +88,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 >
 > ⭐ **读子系统先读它 tech 文档最前面的「§0 玩法定义」**（是什么 / 怎么玩 / 规则 / 能力清单）
 > —— 它是**功能需求的来源**与**行为对错的判据**（规约见 [docs/README.md](docs/README.md)）。
+> 📏 **四份大文档先看开头再决定深读**：活地图 107K · 活工具 73K · 活漏斗 68K · 活红石 65K；其余 tech 多在 10–30K。
 
 | 族 | 子系统（点击直达文档） |
 |----|----------------------|
@@ -96,7 +97,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 | **容器基础设施（6）** | [容器七问总览](docs/system-design/container-overview.md) · [基础设施](docs/system-design/living-item-infrastructure.md) · [多方块容器身份解析](docs/system-design/container-identity.md) · [容器边界口径](docs/system-design/container-boundary.md) · [数据模型](docs/system-design/data-model.md) · [超大堆叠审计](docs/system-design/oversized-stack-audit.md) |
 | **红电 · 电力（2）** | [红电架构演进](docs/buffer/redstone-evolution-roadmap.md) · [红电不变量测试](docs/system-design/power-invariants.md) |
 | **跨域机制（3）** | [GUI交互](docs/system-design/gui-interaction-system.md) · [图标系统](docs/system-design/icon-system.md) · [Tooltip 系统](docs/system-design/tooltip-system.md) |
-| **工程实践（4）** | [单元测试](docs/guides/unit-testing.md) · [活物品设计模板](docs/guides/living-item-design-template.md) · [槽位操作选型](docs/guides/slot-ops.md) · [分层现状与检查工具](docs/archive/architecture-layering-plan.md) |
+| **工程实践（6）** | [单元测试](docs/guides/unit-testing.md) · [活物品设计模板](docs/guides/living-item-design-template.md) · [槽位操作选型](docs/guides/slot-ops.md) · **配置字段**：[活化规则](docs/guides/activation-rules.md) / [交互规则](docs/guides/interaction-rules.md) / [容器兼容](docs/guides/container-compatibility.md) · [分层现状与检查工具](docs/archive/architecture-layering-plan.md) |
 
 ---
 
@@ -204,19 +205,13 @@ python tools/doc_check.py             # 文档一致性：路径 / 测试全绿�
 1. **先找官方配置入口。** 该机制通常**留了口子** ——
    看到 getter / container / 事件名，就**顺着追**它的 setter 与调用方。
 
-   > 🔴 **反面案例（2026-09-24）**：需要"无视实体无敌帧打出多段伤害"时，
-   > 我 grep 到 `LivingEntity#hurt` 里的 `getPostAttackInvulnerabilityTicks()`，
-   > **却没深追**，直接去改 `public int invulnerableTime` 字段。
-   > 而正解是 NeoForge 官方接口：
-   > `LivingIncomingDamageEvent#getContainer().setPostAttackInvulnerabilityTicks(0)`
-   > （铁魔法 `DamageSources#preHitEffects` 正是这么做的）。
-
 2. **确认没有，才考虑改字段 / 反射 / Access Transformer** ——
    并在代码注释里写明**代价**（如"生产环境会因混淆失效"）。
 
 > ⚠️ **跳步的代价**：野路子会在 MC / NeoForge 改内部实现时**静默失效**，
 > 且往往比官方接口**影响面更大**（波及本不该波及的场景）。
-> 📌 教训：**看到 getter 就该想到有 setter，看到 container 就该想到有事件入口。**
+> 📌 **判据**：**看到 getter 就该想到有 setter，看到 container 就该想到有事件入口。**
+> 依据（2026-09-24 无敌帧事故：直接改 `invulnerableTime` 而错过官方 `setPostAttackInvulnerabilityTicks`）见 [agents-rationale §1](docs/archive/agents-rationale.md)。
 
 ## Mixin 铁律：@Accessor / @Invoker 方法名必须带 `living_item$` 前缀
 
@@ -231,24 +226,16 @@ Mixin 的 `@Accessor` / `@Invoker` 会在**目标类上生成合成方法，名�
 接口名可带 `LivingItem` 前缀，但**方法名前缀才是关键** —— 冲突判定以「在目标类上生成的
 方法名」为键，与接口名 / 包名无关。新增访问器 / 调用器前先确认方法名全局唯一。
 
-> 🔴 **前缀的代价（2026-10-11 实测踩坑，启动即 FATAL）**：Mixin 靠方法名的
-> `get` / `is` / `set`（Invoker：`call`）前缀**推断目标成员名**，裸 `@Accessor` + 带前缀方法名
-> ⇒ 推断失效 ⇒ `InvalidAccessorException: Failed to inflect target name ... supported
-> prefixes: [get, is]`。**「加前缀」与「显式指定成员名」必须成对出现，缺一即崩。**
+> 🔴 **两条硬约束的来历（2026-10-11）**：① 裸 `@Accessor` + 带前缀方法名 ⇒ Mixin 推断不出目标成员，
+> 启动即 FATAL（`InvalidAccessorException`）；② 通用名（`getTarget` 等）与其它模组同名、命中同一
+> 目标类 ⇒ 加载期 `Incompatible @Accessor` 崩溃，单人环境测不出。
+> 现场记录见 [agents-rationale §2](docs/archive/agents-rationale.md)。
 
-> 🔴 **反面案例（2026-10-11）**：
-> 1. `SlotWrapperAccessor.getTarget()` 与 inventoryessentials（背包必备）的同名 `@Accessor`
->    命中同一 `CreativeModeInventoryScreen$SlotWrapper` ⇒ 崩溃。已改名
->    `LivingItemSlotWrapperAccessor` + 方法 `living_item$getWrappedTarget()`。
-> 2. `AbstractContainerScreenAccessor.getSkipNextRelease / setSkipNextRelease` 是**原版私有字段
->    `skipNextRelease` 推导出的通用名**，与 `getTarget` **同一类隐患**（只是暂未撞上其它模组）。
->    已全部加 `living_item$` 前缀。
->
 > ⚠️ `@Inject` / `@Mixin` 注入器的 handler 方法名任意（惯例 `living_item$xxx`），不在目标类生成
 > 同名合成方法 ⇒ 无此碰撞。**`@Shadow` 恰恰相反**：它是「别名目标已有成员」，必须与目标成员
 > **同名**、**不能**加前缀（加了 = 解析不到目标而失效）；且 shadow 成员被剥离、不生成新成员
 > ⇒ 无碰撞风险。（「建议 @Shadow 也加前缀」是 2026-10-11 更正掉的错误说法。）
->
+
 > **「以小见大」原则**：通用名（原版字段派生 / 短方法名）一律默认有全局碰撞风险，
 > 先加前缀再写，别等撞了才改。
 >
@@ -290,6 +277,8 @@ viewer 驱动 / 框架扫描 / 框架判定才回到 `LivingItemFunction`）。
 
 ## 文档导航
 
+> grep 找机制时排除 `docs/archive`。
+
 **冷启动默认路径（可按任务偏离）**
 
 默认从本文件 → `docs/glossary.md` → 目标子系统 `docs/tech/living-*-tech.md` §0 建立心智模型；
@@ -302,14 +291,15 @@ viewer 驱动 / 框架扫描 / 框架判定才回到 `LivingItemFunction`）。
 文档按**层**组织（契约 / 实现 / 指南 / 参考 / 归档）—— 分层定义、体量约束与维护规约见
 [docs/README.md](docs/README.md)（**改文档前先读**）。
 
-**该读哪一篇**：见上方「子系统索引」（每个子系统一行，直链到对应文档）。其余常用入口：
+**该读哪一篇**：见上方「子系统索引」（每个子系统一行，直链到对应文档）。
+两个有分类需求的层入口：[archive/README.md](docs/archive/README.md)（33 份按用途分组）· [buffer/README.md](docs/buffer/README.md)（状态索引）。其余常用入口：
 
 | 想做的事 | 读它 |
 |---|---|
 | **看不懂某个名词**（活物品 / 锈级 / 相位域 / 跳变 / 口径…） | [glossary.md](docs/glossary.md)（**术语表，先扫这一页**） |
 | **查「为什么这么定」/ 某口径是否已被取代** | [decisions.md](docs/decisions.md)（决策索引 + 翻转留痕） |
 | 改文档 / 归档 / 校验 | [docs/README.md](docs/README.md) + `python tools/doc_check.py` |
-| **设计新活物品 / 写设计稿** | [living-item-design-template.md](docs/guides/living-item-design-template.md) —— **五张横切检查表**（生命周期 / 准入 / 反馈 / 容器能力 / 槽位操作选型）+ 原版对齐清单 + 规则→验证入口对应表 |
+| **设计新活物品 / 写设计稿** | [living-item-design-template.md](docs/guides/living-item-design-template.md) —— **最小集 3 项**（玩法原点五问 / 规则→验证入口 / 落地同步表；缺了还不能进实现）+ **按需检查表**（生命周期 / 准入 / 交互 / 反馈 / 容器能力 / 槽位操作 / 爆炸半径 / 原版对齐）；按需表按功能实际涉及面自选 |
 | **写槽位数量操作 / 更新槽内组件 / 对外报资源量** | [slot-ops.md](docs/guides/slot-ops.md)（数量原语与组件提交选型）—— 契约见 [api-contract §1.7/§1.8](docs/system-design/api-contract.md)；设计前过 [模板 §1.4/§2.2](docs/guides/living-item-design-template.md) 的报账与宿主写回检查 |
 | 写测试 / 跑全量 / mock `Level` | [unit-testing.md](docs/guides/unit-testing.md) |
 | **梳理上下游 / 估改动爆炸半径 / 判断模块是否真解耦 / 查新增子系统的扩展点** | [code-map.md](docs/guides/code-map.md) —— 人看 HTML，**AI 直接调 `python tools/gen_code_map.py --query <类名>` / `--extend`**（文本输出、直接解析源码、**不会读到过期图**）；**改完代码跑 `python tools/check_layers.py`**（分层违规即退出 1，棘轮式「只减不增」） |
