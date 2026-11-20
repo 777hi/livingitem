@@ -1,5 +1,8 @@
 # buffer 状态索引（中间层）
 
+> ⭐ 本目录是草稿堆，内容不作事实来源；唯一值得认真做的是「毕业」——
+> **结论进稳定层、进度归 TODO/changelog、原件与指针清干净**，三者缺一不算毕业。
+>
 > **用途**：本目录 = **不稳定 / 未定案**（设计稿 · 计划 · 路线图 · 探讨）。
 > 新会话**先读本页**，不要逐个文件猜状态；终态按下方「维护判据」三分支分流。
 >
@@ -14,9 +17,6 @@
 
 | 文件 | 状态（头部「状态：」行摘录） |
 |---|---|
-| [2026-10-27-全项目审查报告.md](2026-10-27-全项目审查报告.md) | 原始台账（2026-10-27） |
-| [2026-10-29-全项目审查整改计划.md](2026-10-29-全项目审查整改计划.md) | 整改计划（2026-10-29） |
-| [2026-10-29-测试域梳理.md](2026-10-29-测试域梳理.md) | 分析探讨（2026-10-29） |
 | [architecture-evolution-roadmap.md](architecture-evolution-roadmap.md) | 未定案 |
 | [container-menu-introspection-topic.md](container-menu-introspection-topic.md) | 设计论证原稿（2026-11-07 复核） |
 | [framework-evolution-plan.md](framework-evolution-plan.md) | 提案（buffer） |
@@ -29,12 +29,10 @@
 | [活滴水石锥.md](活滴水石锥.md) | 探讨中 |
 | [活潜影箱实现细节.md](活潜影箱实现细节.md) | 探索性实现提案 |
 | [活物品大战僵尸.md](活物品大战僵尸.md) | 探讨中（2026-10-30 头脑风暴沉淀）。本文描述的全部机制均未实现，别当现状读。 |
-| [活魂符坐下互动设计.md](活魂符坐下互动设计.md) | 设计稿（已拍板未实施） |
-| [活魂符换位玩法设计.md](活魂符换位玩法设计.md) | 设计稿（已拍板未实施） |
 
 <!-- buffer-index:end -->
 
-## 已搬 archive（2026-10-28 整理 · 2026-10-31 / 2026-11-11 增补）
+## 已搬 archive（2026-10-28 整理 · 2026-10-31 / 2026-11-11 / 2026-11-19 增补）
 
 | 文件 | 原因 | 现状去哪读 |
 |---|---|---|
@@ -44,6 +42,9 @@
 | [living-fluid-review.md](../archive/living-fluid-review.md) | 问题池条目全部清零（2026-10-31） | [tech/living-fluid-tech.md](../tech/living-fluid-tech.md) §3.3 / §0 规则 10 · [TODO 活流体 §9-10](../TODO.md) |
 | [container-layout-resolution.md](../archive/container-layout-resolution.md) | 自动学落地为 Tier 1.5；收编部分维持暂缓（2026-10-31） | [TODO §5](../TODO.md) · [infrastructure §6.2](../system-design/living-item-infrastructure.md) |
 | [活观测者-design.md](../archive/活观测者-design.md) | 旧「整容器内容签名」方案已被 D-redstone-01 取代（2026-11-11） | [tech/living-redstone-tech.md](../tech/living-redstone-tech.md) §0 规则 8-10 · [decisions D-redstone-01](../decisions.md) |
+| [2026-10-27-全项目审查报告.md](../archive/2026-10-27-全项目审查报告.md) | 原始审查台账，待拍板 10 项全处置 / 缺口已移交（2026-11-19 归档） | [TODO 审查后续](../TODO.md) · 各 `tech` / `decisions.md` |
+| [2026-10-29-全项目审查整改计划.md](../archive/2026-10-29-全项目审查整改计划.md) | 批次 0~6 完成；尾巴已移交 roadmap 1.3 + TODO 性能节（2026-11-19 归档） | [roadmap 阶段 1.3](architecture-evolution-roadmap.md) · [TODO 性能节](../TODO.md) |
+| [2026-10-29-测试域梳理.md](../archive/2026-10-29-测试域梳理.md) | 行动全完成；L1~L5 分层与 known-gap 已入 unit-testing（2026-11-19 归档） | [guides/unit-testing.md](../guides/unit-testing.md) |
 
 ## 维护判据
 

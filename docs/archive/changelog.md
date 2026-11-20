@@ -77,11 +77,11 @@
 
 - ⚙️ **首份联动专属配置：活魂符女仆预览缩放（D-maid-08）** —— 仅TLM存在时注册`CLIENT`文件`living_item-tlm-client.toml`，默认1.25（旧尺寸1.0，范围0.25～4.0）；每帧动态乘TLM模型scale/槽高度/投喂脉冲，热重载不重建预览；补通用配置界面双语与配置/公式守卫。→ [女仆 §2](../tech/living-maid-tech.md#2-宿主与客户端接缝)。
 
-- 🪑 **活魂符空光标右键坐下（D-maid-07）** —— GUI交互规则+空光标谓词toggle owned sitting组件；坐下行动零随机零写、I保持，被活塞推走仍坐；预览一行`setInSittingPose`复用TLM坐姿链，tooltip休息行取代概率行；+组件/handler/过滤/跳过/tooltip守卫，YSM与实机坐姿待验。→ [女仆 §0/§2](../tech/living-maid-tech.md) · [设计稿](../buffer/活魂符坐下互动设计.md)。
+- 🪑 **活魂符空光标右键坐下（D-maid-07）** —— GUI交互规则+空光标谓词toggle owned sitting组件；坐下行动零随机零写、I保持，被活塞推走仍坐；预览一行`setInSittingPose`复用TLM坐姿链，tooltip休息行取代概率行；+组件/handler/过滤/跳过/tooltip守卫，YSM与实机坐姿待验。→ [女仆 §0/§2/§4](../tech/living-maid-tech.md)（设计稿 2026-11-19 结论归位后删，验证点并入 §4）。
 
-- ✅ **活魂符换位玩法实机验收** —— 用户反馈"基本功能逻辑正常"；换位/供品/挡路核心链路通过，食物堆逐份消耗、活塞压制、超大堆叠等未逐项组合继续按设计稿验证点核对。→ [女仆 §4](../tech/living-maid-tech.md#4-验证状态与已知边界)。
+- ✅ **活魂符换位玩法实机验收** —— 用户反馈"基本功能逻辑正常"；换位/供品/挡路核心链路通过，食物堆逐份消耗、活塞压制、超大堆叠等未逐项组合继续按 §4 验证清单核对。→ [女仆 §4](../tech/living-maid-tech.md#4-验证状态与已知边界)。
 
-- 🔀 **活魂符换位动词 + `swap` 槽位原语（D-maid-06）** —— 新增 `ContainerContext.swap`（双非空整栈互换、`canFullyReceive` 清空后接纳预检、验证式原子 + 双槽终验、逆操作 = 再 swap）与普通物品碰撞表分支；居家餐翻转为"吃一份并换位进入"（swap → consume → commit，吃失败换回，翻转 D-maid-05"站着吃"）；活化物品挡路，被动位移不触发换位。守卫：swap 契约组并入 `ContainerSlotOpsTest`、女仆碰撞表 +9 例。→ [女仆 §0/§1.2](../tech/living-maid-tech.md) · [slot-ops §2/§3](../guides/slot-ops.md) · [设计稿](../buffer/活魂符换位玩法设计.md)。
+- 🔀 **活魂符换位动词 + `swap` 槽位原语（D-maid-06）** —— 新增 `ContainerContext.swap`（双非空整栈互换、`canFullyReceive` 清空后接纳预检、验证式原子 + 双槽终验、逆操作 = 再 swap）与普通物品碰撞表分支；居家餐翻转为"吃一份并换位进入"（swap → consume → commit，吃失败换回，翻转 D-maid-05"站着吃"）；活化物品挡路，被动位移不触发换位。守卫：swap 契约组并入 `ContainerSlotOpsTest`、女仆碰撞表 +9 例。→ [女仆 §0/§1.2/§4](../tech/living-maid-tech.md) · [slot-ops §2/§3](../guides/slot-ops.md)（设计稿 2026-11-19 结论归位后删，验证点并入 §4）。
 
 - ⭐ **实体宿主的辅助背后环（D-container-25 泛化）** —— 实体容器直接内容（hostSlot=-1）里的无记忆工具/武器进【该宿主的背后环】，环心 = 载体身后（`renderBackRing` 泛化到 Entity）；数据零新增同步（复用 K2 实体路径的工具清单）。方块容器是地点不是携带者 ⇒ 无环；物品形态嵌套不进环（与补刀收集同口径，展开活背包缓办）。顺带修渲染配置门（见下）。→ `living-tool-tech.md` §11.8
 - 🐛 **渲染配置门改按 hostSlot 分流（D-container-25 渲染侧补齐）** —— K2 实体路径引入「实体容器直接条目（hostSlot=-1）」后被旧门 `Kind != BLOCK` 误伤（开关关 ⇒ 有回放无外显）。`LivingToolModelRenderer` ③ / `LivingToolRayRenderer#renderContainerHosts` 改为 `hostSlot ≥ 0 && !开关`（hostSlot ≥ 0 ⇔ 物品形态借锚；-1 ⇔ 宿主直接内容，不设门）。→ `living-tool-tech.md` §6.1
@@ -901,7 +901,7 @@
   📌 **补记**：上一批 `829aeea`（建立三份参考索引 + doc_check 13~15）**漏写 changelog 正文**，
   只在 AGENTS 留了指针 —— 一并在此补齐。纯文档 + 1 处 javadoc，测试 1266 不变（全量绿，0 失败）。
   → `docs/decisions.md` D-container-21/22 · `docs/reference/event-threading.md` §2 ·
-  `docs/README.md` §7（13~15 盲区）· `docs/buffer/2026-10-29-全项目审查整改计划.md` §6
+  `docs/README.md` §7（13~15 盲区）· `docs/archive/2026-10-29-全项目审查整改计划.md` §6
 
 - ✂️ **给参考层做减法：七列手写复述表 → 生成名单 + 带判据的判断清单**（同一天下半场，
   由上一条的实验结论驱动）。判据是「**可重推的别写，不可重推的必须写且必须带理由**」：
@@ -1512,7 +1512,7 @@
 
   - **已修（按域）**：活箱子（满背包取出静默销毁 P0、16KB 字节门在传输路径失效 P1）；红石元件层（交互 handler 服务端信任缺口）；红石信号层（双箱自反馈隔空压灭 P1、hasHistory 首拍失效毁锁相 P2）；活流体（鞍槽倒水流体凭空消失 P1）；活TNT（求和溢出吞物品 P2、爆炸归因错误、引信不标脏、死代码）；红电（maxDelta 棘轮「一次高堆叠永久收割」P1）；熔炉/酿造（马/驴容器读写槽位键不对称 ⇒ 每 tick 烧燃料零产出 P1、输出槽组件级预检 P1、无配方缓存失效 P2）；耕地（骨粉创造模式空手刷生长）；地图传送（落点嵌地 v50 回归 P1、组件条目劫持 P2、Sable 拒绝路径副作用 P2、changeDimension 取消仍扣珍珠 P2）；图标/Tooltip（方向模型非 GUI 不回退原版外观 P2 + 三处缓存卫生）；兼容层（零 P0-P2，三处 P3 卫生）。
   - **审查自省**：守卫修复（f7322df）自身引入过一条 P1（till_to_farmland 5 条规则被首条 return 误杀，耕活泥土链断裂）——被同日后续审查当场抓出当场修掉并加回归钉（「审查的审查」）。
-  - **未修项全量登记**：`docs/buffer/2026-10-27-全项目审查报告.md`（待拍板设计 10 项 / 冻结文档冲突约 50 处 / 挂起 P3 约 40 项 / 测试缺口清单——末影箱路由全域零测试为最高价值缺口）。真机复验 3 条见 TODO 专项节。
+  - **未修项全量登记**：`docs/archive/2026-10-27-全项目审查报告.md`（待拍板设计 10 项 / 冻结文档冲突约 50 处 / 挂起 P3 约 40 项 / 测试缺口清单——末影箱路由全域零测试为最高价值缺口）。真机复验 3 条见 TODO 专项节。
   - 测试 1024 → **1074 全绿**（+50：维度双 flush/末影箱口径/写回守卫/速度分层/自反馈/字节门/守卫多条目/落点站立面/装饰匹配/三通道映射等）；`check_layers` / `doc_check` 全程无新增违规；审查 token 消耗 ≈ 90M。
 
 - 🚀 **Sable 飞艇传送高度收口：普通坐骑落载具，飞艇艇底对齐目标 Y** —— 对照 NeoForge 1.21.1 的马 / 船 / 矿车 / 骆驼骑乘链后，明确两种落点语义不能混用：普通坐骑仍把载具实体放到目标，再由原版把乘客放回各自座位；飞艇则保持操作者的艇内相对位置和整艇姿态，X/Z 对齐操作者选择的目标，Y 用 Sable 当前世界投影包围盒 `boundingBox().minY()` 把**艇底**平移到目标高度。删除旧「只升不降」的 `max(currentY, destY)`；不扶正、不找安全地形、不保留旧高度。坐标内核抽成 `SableTeleportMath`，回归 +3（艇底在原点上/下两方向 + 平移后底面严格等于目标）。 | `docs/tech/living-map-ender-pearl-tech.md` §11.2.1 · `docs/buffer/code-doc-alignment.md` A4

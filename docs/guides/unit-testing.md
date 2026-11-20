@@ -204,8 +204,8 @@ python tools/test_inventory.py --unreferenced     # 附带主类未引用清单�
 | L4 | 集成 / 端到端（`processContext`、真实菜单） | `*IT` / `*IntegrationTest`，每次 `test` |
 | L5 | 游戏内验证（tag 依赖、渲染、手势、落盘） | 文档清单，发版前 |
 
-当前梳理（**未定案**）见 [测试域梳理](../buffer/2026-10-29-测试域梳理.md)；
-known-gap 必须带 ID 且不得绿色通过，口径同该文档 §5。
+上表 L1~L5 分层已定案；当时的梳理过程见 [测试域梳理](../archive/2026-10-29-测试域梳理.md)（已归档）。
+known-gap 必须带 ID 且不得绿色通过（原口径同该文档 §5）。
 
 ---
 

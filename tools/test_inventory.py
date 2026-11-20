@@ -14,7 +14,7 @@
     - 声明方法数取源码注解（@Test / @ParameterizedTest / @RepeatedTest）
     - “类型”是按包名 / 类名的**启发式**归类，只用于看形状，不作契约
     - “KnownGap”只做文本标记识别，不代表已登记；登记规范见
-      docs/buffer/2026-10-29-测试域梳理.md §5
+      docs/archive/2026-10-29-测试域梳理.md §5（原 buffer，2026-11-19 归档）
 """
 from __future__ import annotations
 

@@ -537,7 +537,7 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
 
     /**
      * 一步整栈互换：两槽内容对调 —— 活魂符「换位」动词的槽位原语（2026-11-12 拍板，
-     * 设计稿见 {@code buffer/活魂符换位玩法设计.md}）。
+     * 口径见 {@code decisions.md} D-maid-06 与 {@code guides/slot-ops.md} §2/§3）。
      *
      * <p><b>语义</b>：双方非空、整栈互换、不拆分不合并（一空一非空走 {@link #moveStack}）。
      * 成功时 {@code Success.moved} = 移入 {@code to} 的数量（即原 {@code from} 栈数量）。
