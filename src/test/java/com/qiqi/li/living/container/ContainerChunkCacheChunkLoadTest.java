@@ -29,7 +29,7 @@ import net.neoforged.neoforge.event.level.ChunkEvent;
 import net.neoforged.neoforge.items.IItemHandler;
 
 /**
- * 区块加载死锁回归守卫（2026-09-18）。
+ * 区块加载死锁回归守卫（2026-09-18）+ 重扫 BE 权威门（2026-11-21，未 ticking 不判定、升 ticking 补发现）。
  *
  * <p>背景：{@code ChunkEvent.Load} 在区块 FULL 任务的主线程回调里触发
  * （{@code ChunkStatusTasks.full()} → {@code EVENT_BUS.post(...)}）。在这个回调里做世界交互
@@ -332,8 +332,8 @@ class ContainerChunkCacheChunkLoadTest {
     // ---------- 5. 只处理 ticking 区（防止跨区块强制加载） ----------
 
     @Test
-    @DisplayName("只处理 ticking 区：已加载但不 tick 的最外一圈（33 圈）被排除，但仍留在缓存里不丢发现")
-    void processableChunks_excludesNonTickingButKeepsDiscovery() {
+    @DisplayName("只处理 ticking 区：最外一圈（33 圈）被排除；发现延后到升 ticking，由保留的重试请求补上")
+    void processableChunks_excludesNonTickingButDiscoversAfterPromotion() {
         ServerLevel level = mockLevel();
         ChunkPos ticking = new ChunkPos(1, 1);
         ChunkPos dangerRing = new ChunkPos(2, 2); // 已加载但不 tick = 危险带
@@ -350,15 +350,20 @@ class ContainerChunkCacheChunkLoadTest {
         Mockito.when(source.isPositionTicking(dangerRing.toLong())).thenReturn(false);
 
         cache.flushPendingRescans(level);
-        assertEquals(2, cache.getCacheSize(Level.OVERWORLD), "两个区块都该被发现（扫描不过滤 ticking）");
+        assertEquals(1, cache.getCacheSize(Level.OVERWORLD),
+            "BE 未权威（未 ticking）的区块不判定 —— blockEntities 可能不完整，此时扫描「无容器」是误判");
 
         var processable = cache.getProcessableChunks(level);
         assertTrue(processable.contains(ticking), "ticking 区块必须被处理");
         assertFalse(processable.contains(dangerRing),
             "已加载但不 tick 的区块必须排除 —— 它的邻居可能落在未加载的生成余量圈，读邻居会强制加载");
 
+        // 区块提升到 ticking 没有对应事件 —— 保留的重试请求自身轮询补上发现，不能丢
+        Mockito.when(source.isPositionTicking(dangerRing.toLong())).thenReturn(true);
+        cache.flushPendingRescans(level);
         assertEquals(2, cache.getCacheSize(Level.OVERWORLD),
-            "排除只影响「处理」不影响「发现」—— 区块提升到 ticking 没有对应事件，剔掉就会永久漏掉");
+            "升 ticking 后 dangerRing 必须被补发现 —— 靠重试请求，不靠第二次 Load");
+        assertTrue(cache.getProcessableChunks(level).contains(dangerRing));
     }
 
     // ---------- 6. 可观测性：验证钉住/外扩的唯一直接观测量 ----------
@@ -414,15 +419,16 @@ class ContainerChunkCacheChunkLoadTest {
         ServerLevel level = mockLevel();
         AtomicLong gameTime = mockGameTime(level);
         ChunkPos pos = new ChunkPos(3, 7);
-
-        fireChunkLoad(level, pos);
         Map<Long, LevelChunk> loaded = new HashMap<>();
         loaded.put(pos.toLong(), containerChunk(level, pos));
         ServerChunkCache source = mockChunkSource(level, loaded);
-        Mockito.when(source.isPositionTicking(pos.toLong())).thenReturn(false); // 已加载但不 tick
 
+        fireChunkLoad(level, pos);
         cache.maintain(level);
-        assertEquals(1, cache.getCacheSize(Level.OVERWORLD), "发现阶段不按 ticking 过滤");
+        assertEquals(1, cache.getCacheSize(Level.OVERWORLD), "先正常发现");
+
+        // 模拟降级：区块已加载但不 tick —— 条目保留（卸载才清），维度无可处理区块
+        Mockito.when(source.isPositionTicking(pos.toLong())).thenReturn(false);
         assertTrue(cache.getProcessableChunks(level).isEmpty(),
             "该维度没有任何可处理区块 —— 旧实现会在这里直接 return，连清理一起跳过");
 

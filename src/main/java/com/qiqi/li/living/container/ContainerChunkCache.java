@@ -32,9 +32,9 @@ import com.qiqi.li.living.util.StaticCacheRegistry;
  *   实际上大部分区块不包含任何容器，所以只需缓存"有容器的区块"即可。
  *
  * 缓存维护策略（事件驱动 + 每 tick 维护）：
- *   - 区块加载 → **只登记坐标**，下一 tick 扫描该区块，若有容器则加入缓存
+ *   - 区块加载 → **只登记坐标**，区块升到 ticking（BE 晋升完成）后扫描，若有容器则加入缓存
  *   - 区块卸载 → **不立即移除**（与加载事件存在时序窗口），由 {@link #cleanupStaleEntries} 兜底
- *   - 方块放置/破坏 → 下一 tick 重新扫描该区块，更新缓存
+ *   - 方块放置/破坏 → 下一 tick 重新扫描该区块，更新缓存（玩家交互必在 ticking 区，无等待窗口）
  *
  * 使用方式：
  *   在 {@link com.qiqi.li.LivingItem#onServerTick} 中先调用 {@link #maintain}，
@@ -72,7 +72,7 @@ public class ContainerChunkCache {
      * 因此把重扫推迟到下一 tick，由 {@link #flushPendingRescans} 执行。</p>
      *
      * <p>区块加载事件走同一条队列，事件回调里不得查询世界。
-     * 未就绪请求移到队尾重试；卸载事件只撤销待重扫，不改已发现的区块集合。</p>
+     * <b>未就绪请求移到队尾重试</b>（不可见，或可见但 BE 未权威）；卸载事件只撤销待重扫，不改已发现的区块集合。</p>
      */
     private final Map<ResourceKey<Level>, ObjectLinkedOpenHashSet<ChunkPos>> pendingRescans =
         new Object2ObjectOpenHashMap<>();
@@ -194,7 +194,11 @@ public class ContainerChunkCache {
      * <b>不要把 {@link #scanChunkForContainers} 挪回事件回调里</b> —— 见 {@link #onChunkLoad} 的红线说明。</p>
      *
      * <p>每 tick 最多尝试 {@value #MAX_RESCANS_PER_TICK} 个请求；未就绪请求留到队尾，
-     * 不阻塞尚未尝试的请求。扫描期间新增/撤销的请求作用于同一队列，不迭代可变集合。</p>
+     * 不阻塞尚未尝试的请求。<b>未就绪 = 不可见</b>（{@code getChunkNow} null）或 BE 未权威
+     * （区块可见但未 ticking ⇒ {@code postProcessGeneration} 未跑，{@code blockEntities}
+     * 可能不完整）—— 两者都只移到队尾重试，不判定。永不 ready 的请求（外圈 / spawn 区块）
+     * 会滞留轮转（成本 = 每 tick 一次队首轮转），卸载时由 {@code onChunkUnload} 撤销。
+     * 扫描期间新增/撤销的请求作用于同一队列，不迭代可变集合。</p>
      *
      * @param level 服务端世界
      */
@@ -210,6 +214,19 @@ public class ContainerChunkCache {
             // 非阻塞：尚未可见不是再次触发 Load 的承诺，必须保留请求。
             LevelChunk chunk = chunkSource.getChunkNow(cPos.x, cPos.z);
             if (chunk == null) {
+                pending.removeFirst();
+                pending.add(cPos);
+                continue;
+            }
+
+            // ⚠️ BE 未权威不判定：磁盘加载的区块在「FULL 未 ticking」期间 BE 仍在
+            // pendingBlockEntities（要等 ChunkMap.prepareTickingChunk → postProcessGeneration
+            // 批量晋升，此步无事件）⇒ 此时 blockEntities 不完整，扫描会把刚重载的容器区块
+            // 误判「无容器」并踢出缓存，升 ticking 后无人再发现 ⇒ 箱子静默停 tick
+            // （2026-11-21 修「走远回来活物品失灵」）。处理路径经 getProcessableChunks 的
+            // isPositionTicking（⇒ tickingChunkFuture 完成 ⇒ BE 已晋升）不受影响；
+            // 此处对齐同一判据：未 ready 同 null 语义移到队尾，升 ticking 后再判定。
+            if (!chunkSource.isPositionTicking(cPos.toLong())) {
                 pending.removeFirst();
                 pending.add(cPos);
                 continue;
@@ -243,6 +260,10 @@ public class ContainerChunkCache {
      * 注册的能力提供者，其中有些（如 Create 传送带）会去查别的区块的方块实体、
      * 从而触发同步区块加载。在 {@code ChunkEvent.Load} 里这么干会死锁 —— 见 {@link #onChunkLoad}。</p>
      *
+     * <p>⚠️ <b>调用前置：目标区块必须已 ticking</b>（BE 权威）—— 见
+     * {@link #flushPendingRescans} 的未就绪门。对「FULL 未 ticking」的区块判定
+     * 「无容器」是误判（BE 可能还在 pendingBlockEntities）。</p>
+     *
      * @param level 服务端世界
      * @param chunk 要扫描的区块
      */
@@ -271,8 +292,8 @@ public class ContainerChunkCache {
         Set<ChunkPos> chunkSet = chunkCache.computeIfAbsent(dim, k -> new ObjectOpenHashSet<>());
         if (hasContainer) {
             chunkSet.add(pos);
-        } else {
-            chunkSet.remove(pos);
+        } else if (chunkSet.remove(pos)) {
+            logContainerChunkEvicted(dim, pos, "重扫判定无容器");
         }
     }
 
@@ -332,7 +353,21 @@ public class ContainerChunkCache {
         Set<ChunkPos> chunkSet = chunkCache.get(dim);
         if (chunkSet != null && chunkSet.remove(pos)) {
             PerfMetrics.recordCacheSelfClean();
+            logContainerChunkEvicted(dim, pos, "tick 循环判定无容器");
         }
+    }
+
+    /**
+     * 「曾发现的容器区块被移出发现缓存」的观测点（2026-11-21）。
+     *
+     * <p>合法成因只有「区块内已无容器」（容器被拆 / 被替换）。若无对应成因却频发，
+     * 即区块发现同族回归的直接信号 —— 2026-11-21 修复的「走远回来箱子停 tick」
+     * 正是此处被误触发（pending 窗口扫描误判无容器）。{@code cleanupStaleEntries}
+     * 的卸载清理不走此点：区块已不在世界，属正确回收。</p>
+     */
+    private static void logContainerChunkEvicted(ResourceKey<Level> dim, ChunkPos pos, String reason) {
+        ModLog.CONTAINER.warn("[容器发现] 曾发现的容器区块被移出缓存 dim={} chunk={} 原因={}",
+            dim.location(), pos, reason);
     }
 
     /**

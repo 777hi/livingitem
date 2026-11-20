@@ -493,10 +493,11 @@ ContainerChunkCache.java 维护"包含容器方块实体的区块"列表，避�
 > **不要把它挪回事件回调里**。回归守卫：`ContainerChunkCacheChunkLoadTest`。
 
 **延后重扫队列**：`pendingRescans`（按维度、入队顺序去重）同时承接区块加载、方块放置、方块破坏三类事件。
-`flushPendingRescans` 每 tick 最多尝试 `MAX_RESCANS_PER_TICK = 64` 个；暂未就绪
-（`getChunkNow` 返回 null）时请求移到队尾，不能丢弃，也不能反复抢占队首让其它区块饥饿。
-全程只用非阻塞查询，**绝不主动加载区块**；`onChunkUnload` 撤销待重扫，停服清空队列。
-能力查询可能触发事件重入，因此消费与登记/撤销必须操作同一队列，不能取走整份集合后覆盖新状态。
+`flushPendingRescans` 每 tick 最多尝试 `MAX_RESCANS_PER_TICK = 64` 个；暂未就绪时请求移到队尾，
+不能丢弃，也不能反复抢占队首让其它区块饥饿。<b>未就绪 = 不可见</b>（`getChunkNow` null）
+**或 BE 未权威**（可见但未 ticking，见 2026-11-21）。全程只用非阻塞查询，**绝不主动加载区块**；
+`onChunkUnload` 撤销待重扫，停服清空队列。能力查询可能触发事件重入，因此消费与登记/撤销
+必须操作同一队列，不能取走整份集合后覆盖新状态。
 
 **2026-10-30 重载恢复修复**：旧实现把 null 请求丢掉，并误认为「真正就绪时还会再来一次
 `ChunkEvent.Load`」。实际 `ChunkStatusTasks.full()` 在返回 FULL 结果前发布 Load，之后不保证重发；
@@ -504,6 +505,22 @@ ContainerChunkCache.java 维护"包含容器方块实体的区块"列表，避�
 已移出发现缓存的旧区块同样必须能恢复。守卫：`ContainerChunkCacheChunkLoadTest` 的单 Load 延迟可见、
 限额公平性、卸载撤销与重入；`LivingItemChunkContainerScanTest` 的真实单箱附件往返→重新发现→tick→发包。
 测试复现的是受控时序；用户「走远回来不显示、重进恢复」现场仍需游戏内复测，不等同已证明唯一根因。
+
+**2026-11-21 BE 权威门（走远回来箱子停 tick 根因修复）**：磁盘加载的区块在「FULL 未 ticking」期间，
+BE 全在 `LevelChunk.pendingBlockEntities` —— 批量晋升只发生在 `ChunkMap.prepareTickingChunk` →
+`postProcessGeneration()`（tickingChunkFuture 链内，且无事件），此前 `chunk.getBlockEntities()`
+不完整。旧实现的重扫在该窗口扫描 ⇒ 把刚重载的容器区块误判「无容器」并移出缓存，升 ticking 后
+无人再发现 ⇒ 箱子静默停 tick（流体不回填不渲染、耕地不长不产出、红电停发 —— 玩家反馈
+「离重生点区块远了回来活物品全出问题」的根因）。修复：重扫对「可见但未 ticking」的请求与 null
+同语义移到队尾，等 BE 权威后再判定（`isPositionTicking` ⇒ tickingChunkFuture 完成 ⇒
+`postProcessGeneration` 已跑，与处理路径同一判据）；处理路径本来就经该过滤，不受影响。
+代价：永不 ready 的请求（外圈 / spawn 区块）滞留轮转（每 tick 一次队首轮转，卸载时撤销）。
+守卫：`ContainerChunkCacheChunkLoadTest` 两用例改判据（33 圈发现延后到升 ticking、清理不依赖可处理区块）；
+`LivingItemChunkContainerScanTest` 新增 stale 条目 + pending 窗口 + 升 ticking 补发现全链路用例
+（负向变异：删 ready 门 ⇒ 误踢条目 ⇒ 红）。
+配套观测点：两条判定移出路径（重扫判无容器 / tick 循环判无容器）移出**曾发现**的容器区块时
+打 `ModLog.CONTAINER` WARN（`[容器发现]`）—— 合法成因只有「区块内已无容器」，无对应成因频发
+即本族回归的直接信号；`cleanupStaleEntries` 的卸载清理不打（区块已不在世界，正确回收）。
 
 > 📌 **同一机制的"温和版"（tick 阶段仍可能发生，不是死锁但代价高）**
 >

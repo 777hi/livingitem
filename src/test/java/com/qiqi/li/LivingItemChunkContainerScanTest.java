@@ -14,6 +14,7 @@ import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 
@@ -69,7 +70,7 @@ import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.items.wrapper.InvWrapper;
 import net.neoforged.neoforge.registries.NeoForgeRegistries;
 
-/** 区块容器扫描回归：战利品容器保留、真实附件重载后的发现与流体渲染恢复。 */
+/** 区块容器扫描回归：战利品容器保留、真实附件重载后的发现与流体渲染恢复、重扫延后到 BE 权威（pending 窗口不误踢条目）。 */
 class LivingItemChunkContainerScanTest {
 
     private static final ResourceKey<LootTable> LOOT = ResourceKey.create(
@@ -227,6 +228,51 @@ class LivingItemChunkContainerScanTest {
         Mockito.verifyNoInteractions(world.connection);
     }
 
+    @Test
+    @DisplayName("重扫延后到 BE 权威：可见但未 ticking 不误踢缓存条目；升 ticking 后补发现并恢复 tick")
+    void rescan_defersVerdictUntilChunkTicking() {
+        ChestWorld world = new ChestWorld();
+        seedAndTick(world, Fluids.WATER.getFluidType());
+        CompoundTag saved = saveChest(world.chest);
+
+        // 首次发现：区块可处理 ⇒ Load → 重扫进缓存并处理（走远前的正常状态）
+        ContainerChunkCache cache = ContainerChunkCache.getInstance();
+        world.makeChunkAvailable();
+        cache.onChunkLoad(new ChunkEvent.Load(world.chunk, true));
+        assertEquals(1, world.tickDiscoveredChunks(), "可处理区块当拍发现并处理");
+        assertEquals(1, cache.getCacheSize(Level.OVERWORLD));
+
+        // 走远重载：卸载不清缓存条目（< 5min，stale 残留）；sweep 清容器级内存态；新 BE 随附件读回。
+        world.demoteChunk();
+        ContainerLivingItemHandler.clearAllCaches();
+        world.reloadChest(saved);
+        assertNull(ContainerLivingItemHandler.peekContainerDataByPos(
+            world.level, CHEST_POS, ContainerFluidData.KEY), "重载后容器级内存态必须为空");
+
+        // pending 窗口：区块重新可见（FULL）但未 ticking —— 真实区块此刻 BE 仍在
+        // pendingBlockEntities（夹具以空 blockEntities 模拟）。重扫必须不判定：
+        // 既不补发现，也不把 stale 条目踢掉，请求保留到升 ticking。
+        world.loaded.put(world.chunkPos.toLong(), world.chunk);
+        world.blockEntities.clear();
+        Mockito.clearInvocations(world.level, world.source, world.connection);
+        cache.onChunkLoad(new ChunkEvent.Load(world.chunk, true));
+        assertEquals(0, world.tickDiscoveredChunks(), "BE 未权威拍：不扫描、不处理");
+        assertEquals(1, cache.getCacheSize(Level.OVERWORLD),
+            "扫描判据未权威 ⇒ 不得把「无容器」误判写进缓存（旧实现会在这里踢掉条目）");
+
+        // 升 ticking：postProcessGeneration 已跑 ⇒ BE 晋升（blockEntities 有箱子）⇒ 补发现 + 恢复 tick
+        world.blockEntities.put(CHEST_POS, world.chest);
+        world.makeChunkAvailable();
+        assertEquals(1, world.tickDiscoveredChunks(),
+            "升 ticking 后由保留的重扫请求补发现 —— 没有第二次 Load 事件");
+        assertEquals(1, cache.getCacheSize(Level.OVERWORLD));
+        ContainerFluidData restored = ContainerLivingItemHandler.peekContainerDataByPos(
+            world.level, CHEST_POS, ContainerFluidData.KEY);
+        assertNotNull(restored, "恢复 tick 的首拍必须经附件回填建立流体运行时数据");
+        assertEquals(Map.of(SOURCE_SLOT, Fluids.WATER.getFluidType()), restored.getGeneratedSources());
+        assertTrue(restored.isSource(SOURCE_SLOT), "恢复后的源必须重新进入自维持驱动");
+    }
+
     /** 倒入单源后经真实区块处理落附件；不直接调用流体引擎或写回钩子。 */
     private static ContainerFluidData seedAndTick(ChestWorld world, FluidType fluid) {
         var context = ContainerLivingItemHandler.resolveContextAt(world.level, CHEST_POS, world.handler);
@@ -276,7 +322,7 @@ class LivingItemChunkContainerScanTest {
             world.level, CHEST_POS, ContainerFluidData.KEY), "首个空查询不能回填流体或沿用旧 runtime cache");
         Mockito.verifyNoInteractions(world.connection);
 
-        world.loaded.put(world.chunkPos.toLong(), world.chunk); // 不再触发 ChunkEvent.Load
+        world.makeChunkAvailable(); // 不再触发 ChunkEvent.Load
         assertEquals(1, world.tickDiscoveredChunks(),
             "后续可用且没有第二次 Load：maintain 必须重试发现，processChunkContainers 必须实际处理");
         assertTrue(cache.getProcessableChunks(world.level).contains(world.chunkPos));
@@ -290,7 +336,10 @@ class LivingItemChunkContainerScanTest {
         final ServerChunkCache source = Mockito.mock(ServerChunkCache.class);
         final LevelChunk chunk = Mockito.mock(LevelChunk.class);
         final ChunkPos chunkPos = new ChunkPos(CHEST_POS);
+        /** getChunkNow 可见性（区块已到 FULL）。 */
         final Map<Long, LevelChunk> loaded = new HashMap<>();
+        /** isPositionTicking（BE 权威）：与 loaded 解耦，模拟「FULL 未 ticking」的 pending 窗口。 */
+        final Set<Long> ticking = new HashSet<>();
         final Map<BlockPos, BlockEntity> blockEntities = new HashMap<>();
         final AtomicLong gameTime = new AtomicLong();
         final ServerPlayer viewer = Mockito.mock(ServerPlayer.class);
@@ -316,7 +365,7 @@ class LivingItemChunkContainerScanTest {
                 .thenAnswer(inv -> loaded.get(ChunkPos.asLong(
                     inv.getArgument(0, Integer.class), inv.getArgument(1, Integer.class))));
             Mockito.when(source.isPositionTicking(Mockito.anyLong()))
-                .thenAnswer(inv -> loaded.containsKey(inv.getArgument(0, Long.class)));
+                .thenAnswer(inv -> ticking.contains(inv.getArgument(0, Long.class)));
             Mockito.when(chunk.getLevel()).thenReturn(level);
             Mockito.when(chunk.getPos()).thenReturn(chunkPos);
             Mockito.when(chunk.getBlockEntities()).thenReturn(blockEntities);
@@ -338,6 +387,18 @@ class LivingItemChunkContainerScanTest {
             ChestBlockEntity reloaded = new ChestBlockEntity(CHEST_POS, Blocks.CHEST.defaultBlockState());
             reloaded.loadWithComponents(saved, REGISTRIES);
             installChest(reloaded);
+        }
+
+        /** 区块「可见且可处理」：loaded（getChunkNow 可见）+ ticking（BE 权威）同时登记。 */
+        void makeChunkAvailable() {
+            loaded.put(chunkPos.toLong(), chunk);
+            ticking.add(chunkPos.toLong());
+        }
+
+        /** 模拟卸载 / 降级：区块不再可见、不再可处理；缓存条目是否保留由生产代码决定。 */
+        void demoteChunk() {
+            loaded.remove(chunkPos.toLong());
+            ticking.remove(chunkPos.toLong());
         }
 
         private void installChest(ChestBlockEntity current) {

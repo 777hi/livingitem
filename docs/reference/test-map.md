@@ -24,7 +24,7 @@
 <!-- test-map:begin（本区由 tools/gen_test_map.py 从 src/test 扫描生成；测试类增删 = 改代码后重跑本脚本，勿手改本区） -->
 ```
 src/test/java/com/qiqi/li/
-├── LivingItemChunkContainerScanTest.java  # 区块容器扫描回归：战利品容器保留、真实附件重载后的发现与流体渲染恢复。
+├── LivingItemChunkContainerScanTest.java  # 区块容器扫描回归：战利品容器保留、真实附件重载后的发现与流体渲染恢复、重扫延后到 BE 权威（pending 窗口不误踢条目）。
 ├── LivingItemMenuRuntimeTest.java  # ⚠️ 源码无类注释
 ├── LivingItemRuntimeContainerPositionsTest.java  # 运行时遥测发包的「容器键 → 位置」反查守卫。
 ├── client/
@@ -110,7 +110,7 @@ src/test/java/com/qiqi/li/
 │   │   ├── ContainerAnchorTest.java  # 容器世界锚点的守卫（2026-10-23）。
 │   │   ├── ContainerBoundaryContractTest.java  # 容器边界守卫测试 —— 把 container-boundary.md 的 I-C3 / I-C4 / I-C7 / I-C11 钉成可执行断言。
 │   │   ├── ContainerCacheSweepTest.java  # R-06 缓存生命周期回收（2026-11-01）—— 守「容器不再被 tick 看到 ⇒ 数据要被收」这条不变量。
-│   │   ├── ContainerChunkCacheChunkLoadTest.java  # 区块加载死锁回归守卫（2026-09-18）。
+│   │   ├── ContainerChunkCacheChunkLoadTest.java  # 区块加载死锁回归守卫（2026-09-18）+ 重扫 BE 权威门（2026-11-21，未 ticking 不判定、升 ticking 补发现）。
 │   │   ├── ContainerComponentCommitTest.java  # 原数量组件提交的接缝契约：旧值重验、独立快照、精确写入、恢复与最终状态通知。
 │   │   ├── ContainerContentSignatureTest.java  # Q2 回归：内容签名必须检出「同 ID 同数量、组件不同」的原版途径变化。
 │   │   ├── ContainerContextsTest.java  # ContainerContexts 边界带共享内核的单元测试（Q6 批次 B，2026-10-04）。

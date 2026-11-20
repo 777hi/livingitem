@@ -15,6 +15,11 @@
 
 ---
 
+## 2026-11-21
+
+- 🐛 **容器发现：重扫延后到 BE 权威再判定（「走远回来箱子停 tick」根因修复）** —— 玩家反馈走远回来后箱子里的活物品全出问题（活耕地水消失 / 种子不输出 / 红电停发）。根因在原版时序：磁盘加载的区块在「FULL 未 ticking」期间 BE 全在 `pendingBlockEntities`，批量晋升只发生在 `ChunkMap.prepareTickingChunk → postProcessGeneration()`（tickingChunkFuture 链内，无事件）；旧重扫在该窗口扫描 ⇒ 把刚重载的容器区块误判「无容器」并移出发现缓存 ⇒ 升 ticking 后无人再发现 ⇒ 箱子静默停 tick。修复：`flushPendingRescans` 对「可见但未 ticking」的请求与 null 同语义移到队尾（`isPositionTicking` ⇒ tickingChunkFuture 完成 ⇒ BE 已晋升，与处理路径同一判据）；主循环处理路径本来就经该过滤不动。代价：永不 ready 的请求滞留轮转（卸载时撤销）。守卫：`ContainerChunkCacheChunkLoadTest` 两用例改判据 + `LivingItemChunkContainerScanTest` 新增 stale 条目 / pending 窗口 / 升 ticking 补发现全链路用例（负向变异：删 ready 门 ⇒ 红）。→ [基础设施 §延后重扫队列](../system-design/living-item-infrastructure.md)。
+- 🔍 **容器发现误踢观测点** —— 重扫 / tick 循环两条判定路径把**曾发现**的容器区块移出发现缓存时打 `ModLog.CONTAINER` WARN（`[容器发现]` 前缀）；合法成因仅「区块内容器已全部拆除」，无对应操作频发即同族回归的直接信号（本次根因当年若有此日志可分钟级定位）。卸载清理不打。→ [基础设施 §延后重扫队列](../system-design/living-item-infrastructure.md)。
+
 ## 2026-11-20
 
 - **活流体源格加活标记角标** —— 用户反馈源格观感不明显（首级流动格 alpha≈0.51 与源格 0.55 几乎相同），源格 still 贴图之上叠原尺寸 `living.png` 四角标记、白色不染色，与流动格的区分不再靠 alpha；纯渲染叠加，不改数据/同步/玩法口径。渲染位姿单测不可覆盖，走实机验收。→ [活流体 §7](../tech/living-fluid-tech.md#7-渲染与同步)。
