@@ -734,6 +734,10 @@ vanilla 双箱 = CompoundContainer 单容器天然一网；末影箱路由模式
 slot/level/fromSlot）→ 客户端 `FluidFlowClientCache` → `ContainerFluidOverlay`
 自适应渲染（`IClientFluidTypeExtensions` 贴图/染色，alpha 按 `maxLevel` 归一；动画白拿）。
 
+源格（level==0）在 still 贴图之上叠 `living.png` 四角标记（原尺寸、不缩放、白色不染色），
+与流动格的区分不依赖 alpha 差（首级流动格 alpha≈0.51 曾与源格 0.55 几乎相同）。
+该标记只是**渲染叠加**，不改数据/同步/玩法口径；单测不可覆盖（渲染位姿），走实机验收。
+
 > ⚠️ **2026-10-19 换挂点：挂在 `AbstractContainerScreen.render` 的 Mixin 对部分模组界面是死的**
 > （真机：精妙背包 GUI 死活不渲染，而数据/派发/缓存全部正常）。
 > 根因：那些模组的界面类**自己抄了一份 `super.render` 而不调用父实现**（精妙的

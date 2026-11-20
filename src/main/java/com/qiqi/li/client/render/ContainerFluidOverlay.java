@@ -53,6 +53,10 @@ public final class ContainerFluidOverlay {
     private static final int DIR_UP = 2;
     private static final int DIR_LEFT = 3;
 
+    /** 源格的活标记角标（living.png，四角白记、中间透明）——与物品活标记同一视觉语言。 */
+    private static final ResourceLocation LIVING_MARK =
+        ResourceLocation.fromNamespaceAndPath("living_item", "textures/item/living.png");
+
     /** 每流体的渲染参数缓存（贴图位置 + 染色 + level 上限）。贴图 sprite 每帧取，资源重载安全。 */
     private static final Map<FluidType, FluidVisual> FLUID_VISUAL_CACHE = new java.util.HashMap<>();
 
@@ -160,6 +164,10 @@ public final class ContainerFluidOverlay {
 
         if (level == 0) {
             guiGraphics.blit(x, y, 0, 16, 16, still);
+            // 源格叠活标记角标：重置染色避免被流体 tint 冲淡；blit 后恢复 atlas 纹理供后续 cell 用
+            RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
+            guiGraphics.blit(LIVING_MARK, x, y, 0, 0, 16, 16, 16, 16);
+            RenderSystem.setShaderTexture(0, TextureAtlas.LOCATION_BLOCKS);
         } else {
             float angleDeg = directionToRotation(direction);
             PoseStack pose = guiGraphics.pose();
