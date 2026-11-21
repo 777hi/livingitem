@@ -25,6 +25,7 @@
 └── debug                          # 开发者排障
     ├── monitor on|off|status
     ├── dump_inventory
+    ├── container                   # 准心容器的单点体检（发现层 + 管道层，只读）
     └── cache
 ```
 
@@ -34,7 +35,7 @@
 | `activation` | 控制哪些物品可被活化（禁玩家自己活化、放行任务奖励等途径） | [`buffer/activation-rule-design.md`](../guides/activation-rules.md) |
 | `interaction` | 重载 / 查看活物品 GUI 交互规则（规则本体在 `config/living_item/interaction_rules.json`，只写差异；增删改直接编辑文件） | [`buffer/interaction-rule-design.md`](../guides/interaction-rules.md) |
 | `transforms` | 重载 / 查看流体转化表（源格物品转化，条目本体在 `config/living_item/fluid_transforms.json`，只写差异；增删改直接编辑文件） | [`tech/../tech/living-fluid-tech.md`](../tech/../tech/living-fluid-tech.md) |
-| `debug` | 容器监控开关、背包转储、区块缓存统计（排障工具） | [`guides/container-monitor.md`](../guides/container-monitor.md) |
+| `debug` | 容器监控开关、背包转储、准心容器单点体检、区块缓存统计（排障工具） | [`guides/container-monitor.md`](../guides/container-monitor.md) |
 
 ## activation 的「目标」语法（三种颗粒度）
 

@@ -521,6 +521,13 @@ BE 全在 `LevelChunk.pendingBlockEntities` —— 批量晋升只发生在 `Chu
 配套观测点：两条判定移出路径（重扫判无容器 / tick 循环判无容器）移出**曾发现**的容器区块时
 打 `ModLog.CONTAINER` WARN（`[容器发现]`）—— 合法成因只有「区块内已无容器」，无对应成因频发
 即本族回归的直接信号；`cleanupStaleEntries` 的卸载清理不打（区块已不在世界，正确回收）。
+单容器只读体检：`/livingitem debug container`（准心对容器），报告发现层 + 容器管道层四层状态，
+全程只读不建状态；原版侧时序细节（BE 懒晋升 / `isPositionTicking` 语义 / spawn 区块口径）见
+[reference/chunk-pipeline-timeline.md](../reference/chunk-pipeline-timeline.md)。
+
+> ⚠️ **玩家口径（常见误解）**：spawn 区块 1.20.5+ 保持加载但**不 tick** ⇒ 其中的箱子活物品
+> 不运行 —— 原版行为，不是 bug。默认半径只有 2（5×5），多数基地其实不在其中；
+> 处理过滤（ticking）与重扫 ready 门（BE 权威）都不会放行它。
 
 > 📌 **同一机制的"温和版"（tick 阶段仍可能发生，不是死锁但代价高）**
 >

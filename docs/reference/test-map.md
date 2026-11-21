@@ -116,6 +116,7 @@ src/test/java/com/qiqi/li/
 │   │   ├── ContainerContextsTest.java  # ContainerContexts 边界带共享内核的单元测试（Q6 批次 B，2026-10-04）。
 │   │   ├── ContainerDataKeyTest.java  # 容器级数据 key 的落盘判据 + ContainerContext#persist 的默认路径 （2026-10-22，`D-container-13`）。
 │   │   ├── ContainerDataSavedDataTest.java  # ContainerDataSavedData 的守卫（2026-10-22，活背包地基）。
+│   │   ├── ContainerDiagnoseTest.java  # 单容器只读体检（/livingitem debug container）回归 —— 守「诊断不得改变被诊断的状态」与「报告覆盖管道各层状态」两条不变量。
 │   │   ├── ContainerHandoffTest.java  # 容器级数据「第三方交接」通道的守卫（2026-10-21）。
 │   │   ├── ContainerIdleSuffixTest.java  # 静息快路径（Q4a）—— 守「稳定无活物品、无持续流体工作的容器在收口拍后跳过后缀」这条不变量。
 │   │   ├── ContainerKeysTest.java  # 容器键解析唯一入口的守卫（2026-10-13）。

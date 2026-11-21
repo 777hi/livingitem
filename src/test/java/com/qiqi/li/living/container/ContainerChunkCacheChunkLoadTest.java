@@ -386,6 +386,7 @@ class ContainerChunkCacheChunkLoadTest {
 
         assertTrue(line.contains("loaded区块=631"), "必须输出 loaded 区块数，否则无法观测钉住/外扩：" + line);
         assertTrue(line.contains("基准625"), "视距 12 的基准 (2×12+1)² = 625，用于判断是否超出：" + line);
+        assertTrue(line.contains("待重扫=0"), "必须输出待重扫队列规模（BE 权威门引入滞留轮转后的代价观测量）：" + line);
     }
 
     // ---------- 7. 每 tick 维护：兜底清理不依赖可处理区块 ----------

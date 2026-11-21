@@ -416,6 +416,24 @@ public class ContainerChunkCache {
         return chunkSet == null ? 0 : chunkSet.size();
     }
 
+    /** 指定区块是否已在发现缓存中（只读；单容器体检用）。 */
+    public boolean isChunkDiscovered(ResourceKey<Level> dim, ChunkPos pos) {
+        Set<ChunkPos> chunkSet = chunkCache.get(dim);
+        return chunkSet != null && chunkSet.contains(pos);
+    }
+
+    /** 指定区块是否还有待重扫请求在排队（只读；单容器体检用）。 */
+    public boolean isRescanPending(ResourceKey<Level> dim, ChunkPos pos) {
+        var pending = pendingRescans.get(dim);
+        return pending != null && pending.contains(pos);
+    }
+
+    /** 本维度待重扫队列规模（只读；BE 权威门引入滞留轮转后的代价观测量）。 */
+    public int pendingRescanCount(ResourceKey<Level> dim) {
+        var pending = pendingRescans.get(dim);
+        return pending == null ? 0 : pending.size();
+    }
+
     /**
      * 生成一行「缓存 / 加载」统计，供日志与调试命令共用（{@code /living_monitor cache}）。
      *
@@ -431,11 +449,12 @@ public class ContainerChunkCache {
     public String describeCacheStats(ServerLevel level) {
         int viewDistance = level.getServer().getPlayerList().getViewDistance();
         int baseline = (2 * viewDistance + 1) * (2 * viewDistance + 1);
-        return String.format("dim=%s 缓存区块=%d 可处理=%d loaded区块=%d（视距%d基准%d）",
+        return String.format("dim=%s 缓存区块=%d 可处理=%d loaded区块=%d 待重扫=%d（视距%d基准%d）",
             level.dimension().location(),
             getCacheSize(level.dimension()),
             getProcessableChunks(level).size(),
             level.getChunkSource().getLoadedChunksCount(),
+            pendingRescanCount(level.dimension()),
             viewDistance,
             baseline);
     }

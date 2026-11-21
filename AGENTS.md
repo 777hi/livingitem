@@ -316,3 +316,4 @@ viewer 驱动 / 框架扫描 / 框架判定才回到 `LivingItemFunction`）。
 | **配方书 / 拼音搜索**（跨活物品的共享技术） | `docs/tech/common/` |
 | **未定案的草稿**（设计稿 / 计划 / 路线图 / 探讨 / 待办） | `docs/buffer/`（**中间层 —— 不稳定，别当现状读**） |
 | 红电波形分析 / 方块朝向 / Sable 投影 | `docs/reference/`（**查表：快照 / 外部资料**） |
+| **跨原版边界排查**（区块加载 / BE 时序 / spawn 区块不 tick） | [chunk-pipeline-timeline.md](docs/reference/chunk-pipeline-timeline.md)（原版事实查表） |

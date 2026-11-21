@@ -348,6 +348,84 @@ public class ContainerLivingItemHandler {
             POS_TO_CACHE_KEY.size(), PENDING_RUNTIME_INVALIDATIONS.size());
     }
 
+    /**
+     * 单容器只读体检（{@code /livingitem debug container}，2026-11-21）—— 诊断「箱子为什么不 tick」用。
+     *
+     * <p>输出四层状态：身份键 / 聚合条目（含静息闩锁与容器级数据键）/ 盖章年龄 / 活物品槽位追踪，
+     * 末尾逐关联位置报「位置反查」指向 —— 索引不指回本键是发现缓存同族回归的直接签名
+     * （mixin 热路径按位置 O(1) 查容器级数据，查不到即红石等世界互通失灵）。</p>
+     *
+     * <p>⚠️ 全程只读：不建聚合条目、不盖章、不建位置索引、不回填容器级数据 ——
+     * 诊断本身不得改变被诊断的状态（对比 {@code getOrCreateContainerData} 会回填）。</p>
+     */
+    public static String diagnoseContainer(ContainerContext ctx) {
+        String cacheKey = cacheKey(ctx);
+        if (cacheKey == null) {
+            return "containerKey=null（上下文无键，无法关联任何跨 tick 表）";
+        }
+        StringBuilder sb = new StringBuilder("key=").append(cacheKey);
+        java.util.UUID uuid = ctx.getContainerUuid();
+        if (uuid != null) sb.append(" uuid=").append(uuid);
+
+        ContainerEntry e = CONTAINER_DATA.get(cacheKey);
+        sb.append(" | 聚合条目=").append(e == null ? "无（不在容器管道，或已被 sweep / 显式删除）" : "有");
+        if (e != null) {
+            sb.append(" 静息闩锁=").append(e.suffixSettled ? "已结算（无活物品时走快路径）" : "未结算（完整管道）");
+            sb.append(" 修订=").append(e.revision);
+            sb.append(" 容器级数据=[");
+            boolean anyData = false;
+            for (ContainerDataKey<?> key : ContainerDataKey.all()) {
+                if (e.store.peek(key) != null) {
+                    if (anyData) sb.append(", ");
+                    sb.append(key.id());
+                    anyData = true;
+                }
+            }
+            if (!anyData) sb.append("无");
+            sb.append(']');
+        }
+
+        Long lastSeen = LAST_SEEN.get(cacheKey);
+        if (lastSeen == null) {
+            sb.append(" | 盖章=无记录（从未进入 tick，或已被回收）");
+        } else {
+            long ageMs = System.currentTimeMillis() - lastSeen;
+            sb.append(" | 盖章距今=").append(String.format("%.1f", ageMs / 1000.0)).append("s");
+            if (ageMs >= UNSEEN_TTL_MS) {
+                sb.append("（已超 TTL，sweep 将回收）");
+            }
+        }
+
+        Map<Integer, Item> slots = LIVING_SLOT_ITEMS.get(cacheKey);
+        if (slots == null) {
+            sb.append(" | 活物品槽位追踪=无");
+        } else {
+            sb.append(" | 活物品槽位追踪=[");
+            boolean anySlot = false;
+            for (var en : slots.entrySet()) {
+                if (anySlot) sb.append(", ");
+                sb.append(en.getKey()).append('=').append(en.getValue());
+                anySlot = true;
+            }
+            if (!anySlot) sb.append("空");
+            sb.append(']');
+        }
+
+        ResourceKey<Level> dim = ctx.getLevel() == null ? null : ctx.getLevel().dimension();
+        if (dim != null) {
+            for (BlockPos pos : ctx.getAssociatedBlockPositions()) {
+                String indexed = POS_TO_CACHE_KEY.get(new PosKey(dim, pos.immutable()));
+                sb.append(" | 位置反查 ").append(pos.toShortString()).append('=');
+                if (indexed == null) {
+                    sb.append("无索引（mixin 热路径查不到该容器）");
+                } else {
+                    sb.append(indexed.equals(cacheKey) ? "指向本键" : "指向其他(" + indexed + ")");
+                }
+            }
+        }
+        return sb.toString();
+    }
+
     /** 从扫描结果收集「本 tick 的活物品槽位 → 物品类型」（同槽位多功能 ⇒ 去重）。 */
     private static Map<Integer, Item> collectLivingSlots(
             Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped,
