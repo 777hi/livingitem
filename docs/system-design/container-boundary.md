@@ -354,6 +354,7 @@
   | 通道 | 口径 | 典型位置 |
   |---|---|---|
   | 读写 / 容量 | 逻辑 → `toPhysicalSlot` | `getItem` / `setItem` / `getSize` |
+  | 容量 / 有效性 / 模拟查询 | 逻辑 → `toPhysicalSlot` | `getSlotLimit` / `isItemValid` / `simulateInsertItem` / `simulateExtractItem`（`EntityContainerContext` 已覆写带偏移；2026-10-27 审查 P2-1 补，见其源码注释）|
   | 槽位同步比对 | 逻辑 → `toPhysicalSlot` | `syncWorldContainer`（GUI 图标刷新）|
   | 遥测 / 缓存键 | **物理**槽 | `ContainerRuntimeCache.update`（在方法内部映射，调用方不可能漏）|
   | 作废键 | **物理**槽 | `trackLivingSlots` |

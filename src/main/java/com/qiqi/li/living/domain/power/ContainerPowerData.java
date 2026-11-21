@@ -46,7 +46,7 @@ public class ContainerPowerData {
     /**
      * 共振 EMA 的归零阈值（浮点卫生常数，**非**平衡常数）。
      *
-     * <p>EMA 是指数衰减，数学上永远趋近 0 而达不到 0。若不设截断，某个锈蚟级
+     * <p>EMA 是指数衰减，数学上永远趋近 0 而达不到 0。若不设截断，某个锈蚀级
      * 停止发电后其 EMA 会以一个极小但非零的值长期存在，被
      * {@link #activeOxidationLevels()} 永远算作活跃锈级，进而把平衡度 s 永久压在
      * 接近 0——拆除一个网会毁掉整个容器的共振且无法自愈。</p>
@@ -74,12 +74,12 @@ public class ContainerPowerData {
     private final Map<Integer, List<DerivedPhase>> phaseRegistry = new HashMap<>();
 
     /**
-     * 各锈蚟级的**基础**出力 EMA（共振 + 锈级功率读数共用，见 living-power-tech.md §3.7）。
+     * 各锈蚀级的**基础**出力 EMA（共振 + 锈级功率读数共用，见 living-power-tech.md §3.7）。
      *
      * <p>⚠️ 只跟踪共振前的基础出力。若喂入乘过共振增益的值，会形成
      * {@code 增益↑ → EMA↑ → s 变 → 增益↑} 的回代环，必须杜绝。
-     * 共振是容器级账本行为，因此这里按锈蚟级（而非按 BFS 连通块）记账——
-     * 同锈蚟级的多个连通块出力在 glue 层相加后一并喂入。</p>
+     * 共振是容器级账本行为，因此这里按锈蚀级（而非按 BFS 连通块）记账——
+     * 同锈蚀级的多个连通块出力在 glue 层相加后一并喂入。</p>
      *
      * <p>v18：这套 EMA 兼任「本锈级功率」读数口径（tooltip / 仪表盘），
      * 旧的容器总账 EMA 已随锈级分账拆除。</p>
@@ -87,7 +87,7 @@ public class ContainerPowerData {
     private final double[] emaPowerByOxidation = new double[PowerMath.OXIDATION_LEVELS];
 
     /**
-     * 各锈蚟级的**显示均值**（v19.1：tooltip「本锈级功率」、锈级柱状图，
+     * 各锈蚀级的**显示均值**（v19.1：tooltip「本锈级功率」、锈级柱状图，
      * 以及**网络级共振的读数口径**——平衡度 s / 共振增益 / 活跃锈级数）。
      *
      * <p>跳变门控记账是脉冲式的，快 EMA 对高频信号有峰谷纹波 → 平衡度与增益
@@ -272,7 +272,7 @@ public class ContainerPowerData {
         return Math.round(getLevelDisplayEmaPowerRe(oxidation) * PowerMath.RE_TO_FE * 1000.0);
     }
 
-    /** 各锈蚟级显示均值功率副本（毫 FE 定点，tooltip 锈级柱状图数据源） */
+    /** 各锈蚀级显示均值功率副本（毫 FE 定点，tooltip 锈级柱状图数据源） */
     public long[] getDisplayEmaByOxidationMilliFe() {
         long[] out = new long[displayEmaByOxidation.length];
         for (int i = 0; i < out.length; i++) {
@@ -284,12 +284,12 @@ public class ContainerPowerData {
     // ── 网络级共振（见 living-power-tech.md §3.7）──
 
     /**
-     * 用本 tick 各锈蚟级的**基础**出力更新共振 EMA。
+     * 用本 tick 各锈蚀级的**基础**出力更新共振 EMA。
      *
-     * <p>必须每 tick 调用（包括没有发电机的 tick），否则停止发电的锈蚟级其 EMA
+     * <p>必须每 tick 调用（包括没有发电机的 tick），否则停止发电的锈蚀级其 EMA
      * 不会衰减，会一直被算作「活跃锈级」拖低平衡度。</p>
      *
-     * @param baseReThisTick 各锈蚟级本 tick 基础发电量（RE，共振前）；
+     * @param baseReThisTick 各锈蚀级本 tick 基础发电量（RE，共振前）；
      *                       长度不足的部分按 0 处理
      */
     public void updateOxidationEma(long[] baseReThisTick) {
@@ -297,7 +297,7 @@ public class ContainerPowerData {
             double v = (baseReThisTick != null && i < baseReThisTick.length)
                 ? (double) baseReThisTick[i] : 0.0;
             emaPowerByOxidation[i] += (v - emaPowerByOxidation[i]) * EMA_ALPHA;
-            // 指数衰减达不到 0，必须截断，否则停发的锈蚟级会被永久算作活跃锈级
+            // 指数衰减达不到 0，必须截断，否则停发的锈蚀级会被永久算作活跃锈级
             if (emaPowerByOxidation[i] < EMA_EPSILON) emaPowerByOxidation[i] = 0.0;
         }
 
@@ -340,7 +340,7 @@ public class ContainerPowerData {
     }
 
     /**
-     * 当前有出力的锈蚟级数 N（活跃锈级数，1~4；0 表示无任何发电）。
+     * 当前有出力的锈蚀级数 N（活跃锈级数，1~4；0 表示无任何发电）。
      *
      * <p>v19.1：读显示窗口均值——结算即精确归零，停发锈级 32 tick 内自愈，
      * 无需 EMA_EPSILON 截断（铁律 3 由结算清零天然满足）。</p>
@@ -353,7 +353,7 @@ public class ContainerPowerData {
         return n;
     }
 
-    /** 各锈蚟级基础出力 EMA 副本（测试 / 调试用） */
+    /** 各锈蚀级基础出力 EMA 副本（测试 / 调试用） */
     public double[] getEmaPowerByOxidation() {
         return emaPowerByOxidation.clone();
     }

@@ -257,16 +257,18 @@ public record EnderChannelEntry(
 // 单例
 private static final EnderChannelRegistry INSTANCE = new EnderChannelRegistry();
 
-// 内部结构
-private final Map<Integer, ChannelData> channels = new HashMap<>();
+// 内部结构（v12 起频道键复合化）
+private final Map<EnderChannelKey, ChannelData> channels = new HashMap<>();   // EnderChannelKey(owner, count)
 
-// 反向索引（v5 新增）
-private final Map<BlockPos, List<EnderChannelEntry>> posIndex = new HashMap<>();     // 方块位置 → 路由条目
+// 反向索引（v5 新增；posIndex 外层带维度，2026-10-28 修）
+private final Map<ResourceKey<Level>, Map<BlockPos, List<EnderChannelEntry>>> posIndex = new HashMap<>();
 private final Map<String, List<EnderChannelEntry>> keyIndex = new HashMap<>();       // 容器 key → 路由条目
 private final Map<String, List<EnderChannelEntry>> registrarKeyIndex = new HashMap<>(); // 注册者容器 key → 路由条目（v9 新增）
+private final Map<UUID, List<EnderChannelEntry>> uuidIndex = new HashMap<>();         // 源容器 UUID → 条目（跨形态稳定）
+private final Map<EnderChannelEntry, EnderChannelKey> entryToChannel = new HashMap<>(); // 条目 → 所属频道（O(1) 查）
 
 // 延迟同步（v6 新增）
-private final Set<Integer> dirtyChannels = new HashSet<>();                          // 本 tick 内被修改的频道集合
+private final Set<EnderChannelKey> dirtyChannels = new HashSet<>();                  // 本 tick 内被修改的频道集合
 ```
 
 **反向索引**（v5 新增）：
@@ -283,29 +285,32 @@ private final Set<Integer> dirtyChannels = new HashSet<>();                     
 
 **关键方法**：
 
+> 下表 `key` 一律是复合键 `EnderChannelKey`（owner + 堆叠数，见 §8.1），不是 int。
+
 | 方法 | 职责 |
 |------|------|
-| `offer(channel, entry)` | 注册路由条目（去重），同步更新反向索引 |
-| `contains(channel, entry)` | 检查条目是否已存在（快速路径） |
-| `peek(channel, filterData)` | 轮询查看路由条目（不移除），支持物品过滤 |
-| `peek(channel, filterData, preferredItemType)` | 贪心查看：优先返回匹配偏好类型的条目（v10 新增） |
-| `poll(channel)` | 从头部取出路由条目 |
-| `poll(channel, preferredItemType)` | 贪心取出：优先取出匹配偏好类型的条目（v10 新增） |
-| `reoffer(channel, entry)` | 将条目放回尾部（源物品还有剩余时） |
-| `remove(channel, entry)` | 移除指定路由条目，同步更新反向索引 |
-| `removeByPositionAndSlot(channel, pos, slot)` | 移除指定位置+槽位的路由 |
+| `offer(key, entry)` | 注册路由条目（去重），同步更新反向索引 |
+| `contains(key, entry)` | 检查条目是否已存在（快速路径） |
+| `peek(key, filterData)` | 轮询查看路由条目（不移除），支持物品过滤 |
+| `peek(key, filterData, preferredItemType)` | 贪心查看：优先返回匹配偏好类型的条目（v10 新增） |
+| `poll(key)` | 从头部取出路由条目 |
+| `poll(key, preferredItemType)` | 贪心取出：优先取出匹配偏好类型的条目（v10 新增） |
+| `reoffer(key, entry)` | 将条目放回尾部（源物品还有剩余时） |
+| `remove(key, entry)` | 移除指定路由条目，同步更新反向索引 |
+| `removeByPositionAndSlot(key, pos, slot)` | 移除指定位置+槽位的路由 |
 | `validateRoutes(context, activeRegistrarSlots, activeTargetSlots)` | 统一路由验证：一次遍历完成注册者/目标/源物品三项检查（v9 新增，替代旧版 5 个独立清理方法） |
 | `onChunkUnload(level, chunkPos)` | 区块卸载时清理该区块所有相关路由 |
-| `flushDirtyChannels()` | 延迟同步：遍历 dirty 频道统一发包后清空（由 `ContainerLivingItemHandler.processContext()` 在 tick 末尾调用） |
+| `flushDirtyChannels()` | 延迟同步：遍历 dirty 频道统一发包后清空（由 `LivingItem.onServerTick`（L4）每 tick 收口调用一次，不再随容器数重复调用） |
 
 ### 2.3 ChannelData — 频道数据
 
 ```java
 private static class ChannelData {
-    List<EnderChannelEntry> entries = new ArrayList<>();
-    int nextIndex;  // 轮询指针，保证公平调度
+    final Deque<EnderChannelEntry> entries = new ArrayDeque<>();  // 轮询 = 取头/放回尾
+    final Set<RouteKey> routeKeys = new HashSet<>();              // O(1) 去重（含维度，见上）
 }
 ```
+（旧版 `List + int nextIndex` 轮询指针已在 v10 改为 `peekEntry`/`advancePointer` 分离、后随队列化删除；见 §12.9。）
 
 ---
 
@@ -549,7 +554,7 @@ if (source.unwrap() instanceof LivingEnderChestAccessor sourceEnder && !sourceEn
 }
 
 // EnderChannelRegistry.peek()
-public EnderChannelEntry peek(int channel, FilterData filterData, String preferredItemType) {
+public EnderChannelEntry peek(EnderChannelKey key, FilterData filterData, String preferredItemType) {
     // 1. 优先查找偏好类型
     if (preferredItemType != null) {
         EnderChannelEntry preferred = findPreferred(data, filterData, preferredItemType);
@@ -569,9 +574,9 @@ public EnderChannelEntry peek(int channel, FilterData filterData, String preferr
 ```
 活漏斗 tick → TransferPipeline.execute() → target=活末影箱
   └─ EnderRouteManager.registerRoute()
-      └─ EnderChannelRegistry.insert(channel, entry)
+      └─ EnderChannelRegistry.offer(key, entry)
           ├─ 检查重复（contains）
-          └─ 添加到 channels[channel].entries
+          └─ 添加到 channels[key].entries
 ```
 
 ### 6.2 路由消费
@@ -866,12 +871,12 @@ public void addToTooltip(Item.TooltipContext context,
             "tooltip.livingitem.ender_chest.bound_player", name)
             .withStyle(style -> style.withColor(0xDD44FF).withBold(true)));
     } else {
-        // 路由模式 — 从客户端缓存读取
-        int ch = stack.getCount();
-        var snapshot = EnderChannelClientCache.getSnapshot(ch);
+        // 路由模式 — 从客户端缓存读取（键为复合键，显示值取堆叠数）
+        EnderChannelKey key = EnderChannelKey.of(stack);
+        var snapshot = EnderChannelClientCache.getSnapshot(key);
 
         tooltipAdder.accept(Component.translatable(
-            "tooltip.livingitem.ender_chest.channel", ch)
+            "tooltip.livingitem.ender_chest.channel", key.count())
             .withStyle(style -> style.withColor(0xCC66FF)));
         tooltipAdder.accept(Component.translatable(
             "tooltip.livingitem.ender_chest.routes", snapshot.channelSize(), snapshot.totalRoutes())
@@ -906,17 +911,17 @@ public void addToTooltip(Item.TooltipContext context,
 路由变化时不再立即发包，而是标记频道为 dirty，在 tick 末尾统一同步：
 
 ```
-服务端 EnderChannelRegistry.insert/remove
-  └─ syncChannelToAll(channel)
-      └─ dirtyChannels.add(channel)              ← 仅标记 dirty，不发包
+服务端 EnderChannelRegistry.offer/remove
+  └─ syncChannelToAll(key)
+      └─ dirtyChannels.add(key)                  ← 仅标记 dirty，不发包
 
-ContainerLivingItemHandler.processContext() 末尾
+LivingItem.onServerTick（L4，每 tick 收口调用一次）
   └─ EnderChannelRegistry.flushDirtyChannels()
-      └─ for each dirty channel:
+      └─ for each dirty key:
           ├─ 构造 EnderChannelSyncPacket
           └─ 发送给所有在线玩家
-              └─ 客户端 EnderChannelClientCache.update(channel, ...)
-                  └─ Tooltip 读取 EnderChannelClientCache.getSnapshot(ch)
+              └─ 客户端 EnderChannelClientCache.update(key, ...)
+                  └─ Tooltip 读取 EnderChannelClientCache.getSnapshot(key)
 ```
 
 **为什么需要延迟同步？** 同一个 tick 内，push 端注册路由和 pull 端提取删除路由可能交替发生。如果每次变化都立即同步，客户端会收到"有路由→无路由→有路由"的闪烁序列，导致 Tooltip 闪烁。延迟同步将同一 tick 内的所有变化合并为一次同步（最终状态），消除闪烁。
@@ -962,7 +967,7 @@ ContainerLivingItemHandler.processContext() 末尾
 
 **问题**：路由模式下 Tooltip 中路由条目频繁闪烁（消失又出现）。原因是 `syncChannelToAll()` 在每次路由变化时立即发包，同一 tick 内 push 端注册路由和 pull 端提取删除路由交替发生，客户端收到"有路由→无路由"的闪烁序列。
 
-**修复**：引入延迟同步机制。`syncChannelToAll()` 不再立即发包，只标记频道为 dirty；`flushDirtyChannels()` 在 `ContainerLivingItemHandler.processContext()` 的 tick 末尾统一同步所有 dirty 频道。同一 tick 内的所有变化合并为一次同步（最终状态），消除闪烁。
+**修复**：引入延迟同步机制。`syncChannelToAll()` 不再立即发包，只标记频道为 dirty；`flushDirtyChannels()` 由 `LivingItem.onServerTick`（L4）每 tick 收口调用一次，统一同步所有 dirty 频道（不再随容器数重复调用）。同一 tick 内的所有变化合并为一次同步（最终状态），消除闪烁。
 
 ---
 
@@ -1014,7 +1019,7 @@ EnderChannelComponent: cleaned N stale routes at tick T
 
 **变更1：延迟同步机制（Deferred Sync）**
 
-`syncChannelToAll()` 不再在每次路由变化时立即发包，只标记频道为 dirty。新增 `flushDirtyChannels()` 方法，由 `ContainerLivingItemHandler.processContext()` 在 tick 末尾统一同步所有 dirty 频道。
+`syncChannelToAll()` 不再在每次路由变化时立即发包，只标记频道为 dirty。新增 `flushDirtyChannels()` 方法，由 `LivingItem.onServerTick`（L4）每 tick 收口调用一次，统一同步所有 dirty 频道。
 
 修复 Tooltip 路由闪烁问题：同一 tick 内 push 端注册路由和 pull 端提取删除路由交替发生时，延迟同步将所有变化合并为一次同步（最终状态），消除"有路由→无路由"的闪烁序列。
 

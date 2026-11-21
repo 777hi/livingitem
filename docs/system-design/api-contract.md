@@ -112,6 +112,8 @@ javadoc 明写「新增 LivingItemFunction 必须回来手添」⇒ **第三方�
 | `MechanicalReceivers.register` | `living/transfer/` | ✅（2026-11-03）机械施压接收端：共享层提供原始本体源 + 实际交付量 q，领域只认中立请求；首个 matches 独占（返回0也不回落）。当前实现者：活漏斗；common setup 注册，按类去重 |
 | `SlotInteractions.register` | `SlotInteractions.java` | ⚠️ public，但全仓仅 1 处调用（内置静态块）——**从未被外部验证** |
 | `LivingIconRegistry.register` | `LivingIconRegistry.java` | ⚠️ public，但内置调用时机在 mod 构造函数，无时序契约 |
+| `ContainerHandoff.registerMover` | `living/container/ContainerHandoff.java` | ✅ 容器级数据跨形态搬运方向注册（`Mover` 两方向都要实现；内置水 / 门 / 电领域注册） |
+| `ItemFormContainers.register` | `living/container/ItemFormContainers.java` | ✅ 物品形态容器来源注册（第三方背包物品接入；内置 `SophisticatedBackpackSource`） |
 | 可选钩子 `onActivated` / `onDeactivated` | `living/api/LivingItemFunction.java` | ✅ default 空实现，契约见 §1.5（2026-10-04）—— ⚠️ 与其它钩子不同，它**有守卫测试**（`ActivationHookTest`） |
 
 #### GUI 动作访问边界

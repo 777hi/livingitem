@@ -28,7 +28,7 @@
 |---|---|---|
 | **活物品**（Living Item） | 被「活化」的方块功能物品：放在容器里**自动 tick**，状态存 DataComponent，跟随物品跨容器迁移 | `../AGENTS.md` 项目概述 |
 | **活化 / 取消活化** | 把普通方块物品变成活物品（写 `IS_LIVING` 组件）／反向清除全部活物品数据 | `LivingItemManager.setLiving` / `clearLivingData` |
-| **活物品隔离** | 活物品**不被其它活物品**当普通物品处理（不传输、不熔炼、不作燃料）；唯一定义点 `SlotInteractions.isEligibleCargo` | `tech/living-hopper-tech.md` §6.2.1 |
+| **活物品隔离** | 活物品**不被其它活物品**当普通物品处理（不传输、不熔炼、不作燃料）；唯一定义点 `SlotInteractions.isEligibleCargo` | `system-design/living-item-invariants.md` §1 |
 | **数据组件**（DataComponent） | 1.21 的物品数据载体；活物品的一切状态都存这里（`networkSynchronized` 的会随物品同步到客户端） | `system-design/living-item-infrastructure.md` |
 | **功能**（`LivingItemFunction`） | 活物品行为的实现：`canApply` + `tick(entries, ctx, tick, level)` + tooltip | 同上 |
 | **容器上下文**（`ContainerContext`） | 活物品 tick 时对所在容器的抽象读写入口（`getItem` / `setItem` / `syncSlotToClients`…） | 同上 |

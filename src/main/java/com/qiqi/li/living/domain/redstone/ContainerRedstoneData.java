@@ -483,7 +483,7 @@ public class ContainerRedstoneData implements RedstoneSensor {
             observersBusyAtTickStart);
 
         reset();
-        // 外部输入已在方法开头（稳态判定前）采样，faceInput 此时已就绪，无需再调。
+        // 外部输入已在方法开头（reset() 前）采样，faceInput 此时已就绪，无需再调。
 
         RedstonePropagation prop = new RedstonePropagation(
             edgeGrid, slotMask, faceInput, currentSnapshot, context, size, width);

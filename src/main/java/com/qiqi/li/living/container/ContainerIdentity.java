@@ -86,9 +86,11 @@ public interface ContainerIdentity {
      * {@code ContainerLivingItemHandler} 的 {@code CONTAINER_DATA}（流体 / 红石 / 电力）、
      * {@code LIVING_SLOT_ITEMS}（槽位追踪）、{@code POS_TO_CACHE_KEY}（位置索引）。
      *
-     * <p><b>规则</b>：身份锚在<b>世界方块</b>上的容器 ⇒ {@code <维度>|<稳定键>}
+     * <p><b>规则</b>：带<b>关联方块位置</b>的容器 ⇒ {@code <维度>|<稳定键>}
      * （如 {@code minecraft:overworld|chest_12_64_34}，大箱子带两段坐标）；
-     * 身份锚在<b>玩家 / 实体 UUID</b> 上的（背包 / 末影箱 / 掉落物）⇒ 原样返回稳定键。</p>
+     * 无关联位置的（玩家背包 / 末影箱 / 掉落物）⇒ 原样返回稳定键（UUID 裸键）。
+     * ⚠️ <b>实体容器</b>（船 / 矿车 / 带箱驴骡）虽以 UUID 为稳定键，但持有 blockPosition
+     * 快照 ⇒ 关联位置非空 ⇒ 同样带维度前缀 {@code <维度>|entity_<uuid>}。</p>
      *
      * <p><b>为什么世界容器必须带维度</b>：主世界与下界允许存在<b>同坐标</b>的两个容器
      * （如都在 (0,64,0) 放一个箱子）⇒ 裸坐标键会让两个容器共用一条缓存数据：

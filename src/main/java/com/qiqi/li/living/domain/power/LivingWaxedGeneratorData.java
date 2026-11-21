@@ -37,7 +37,7 @@ public record LivingWaxedGeneratorData(
     double resonanceGain,    // 网络级共振增益 R^2（容器级，见 §3.6.1）；1.0=无共振
     double resonanceBalance, // 平衡度 s ∈ [0,1]（各锈级基础出力接近程度）
     int activeLevels,        // 活跃锈级数 N（1~4；0=无发电）
-    List<Long> levelPowerMilliFe // 各锈蚟级显示均值功率（毫 FE 定点，长度=OXIDATION_LEVELS）
+    List<Long> levelPowerMilliFe // 各锈蚀级显示均值功率（毫 FE 定点，长度=OXIDATION_LEVELS）
 ) implements TooltipProvider {
 
     /** 线圈形态常量 */

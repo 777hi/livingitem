@@ -135,9 +135,14 @@ src/main/java/com/qiqi/li/
 │   ├── domain/piston/                       #   活活塞领域（红石触发的位移执行件）
 │   ├── domain/power/                        #   红电发电领域（活涂蜡铜块）
 │   ├── function/                             # 简单活物品功能（无需领域模块）
-│   ├── compat/                              # 第三方模组兼容层
-│   │   ├── create/                          #   Create 兼容（软依赖）
-│   │   └── sable/                           #   Sable 飞艇兼容（软依赖）
+│   ├── compat/                              # 第三方模组兼容层（均软依赖、条件加载）
+│   │   ├── create/                          #   Create 兼容（应力输出 / KineticOps 接缝）
+│   │   ├── sophisticated/                   #   精妙背包兼容（菜单解析 + 物品形态容器来源 + Mixin）
+│   │   ├── avaritia/                        #   无尽箱子兼容（菜单→BE 位置解析）
+│   │   ├── tlm/                             #   女仆联动（活魂符 / 女仆背包宿主）
+│   │   ├── sable/                           #   Sable 飞艇兼容
+│   │   ├── iris/                            #   Iris 光束标记（信标光束兼容）
+│   │   └── jade/                            #   Jade 取数扩展（客户端 tooltip）
 │   ├── components/                          # 无状态工具组件
 │   ├── transfer/                            # 传输基础设施
 │   ├── interaction/                         # GUI交互
@@ -312,6 +317,7 @@ viewer 驱动 / 框架扫描 / 框架判定才回到 `LivingItemFunction`）。
 | 红电系统总体设计 | [红电系统.md](docs/system-design/红电系统.md) |
 | 活潜影箱独立设计 | [活潜影箱实现细节.md](docs/buffer/活潜影箱实现细节.md) |
 | **给第三方写扩展 / 查对外契约**（**违反即 bug**） | [api-contract.md](docs/system-design/api-contract.md)（对外开放计划与待决问题池见 [open-plan.md](docs/buffer/open-plan.md)） |
+| **查全项目通用纪律**（活物品隔离 / 数据层 per-item，违反即 bug） | [living-item-invariants.md](docs/system-design/living-item-invariants.md)（跨 ≥2 域、不属于任一域的硬规矩，正文唯一归宿） |
 | GUI 点击拦截 / 单元测试 / 活TNT测试 | `docs/guides/`（**做法**） |
 | **配方书 / 拼音搜索**（跨活物品的共享技术） | `docs/tech/common/` |
 | **未定案的草稿**（设计稿 / 计划 / 路线图 / 探讨 / 待办） | `docs/buffer/`（**中间层 —— 不稳定，别当现状读**） |

@@ -16,18 +16,20 @@ import com.mojang.serialization.DataResult;
  * 被「重载时刻」重新洗牌，玩家调好的满相布局（n=P）不再适配。快照把退出前
  * 已锁定的锁相状态冻结，重进后以它为初值无缝续接（肉鸽感只留给真正的重新搭建）。</p>
  *
- * <p><b>时间轴平移</b>：{@code tickCounter} 是容器本地 tick（不与世界 tick 对齐），
- * 会话间不连续。快照存 (P, φ, 距上次上升沿的 tick 数 d)：φ 是周期内偏移、
- * 回填时 {@code lastRisingTick = 新 tickCounter − d}——本地时间轴平移下
- * φ 天然不变（P 整除性质），无需任何世界 tick 换算。回填后首个真实跳变会
- * 覆盖校准（漂移 ≤1 tick 自愈，与 EMA 收敛同款）。</p>
+ * <p><b>时间轴</b>：{@code tickCounter} 是世界 game time（2026-09-11 换轴，与
+ * 驱动的相位时钟同源；测试可用本地轴），会话间不连续。快照存 (P, φ, d)：φ 是
+ * 周期内偏移、d 距上次上升沿的 tick 数；回填用 φ 反推锚
+ * {@code anchor = now − ((now − φ) mod P)}（见 {@link #restoreInto}），锚是 now
+ * 之前最近的 φ 同余点，首跳 interval 恰为 P。旧版「本地 tick + lastRisingTick =
+ * 新 tickCounter − d」在重进归零下把 φ 锚到错误坐标系、首跳即重锚。回填后首个
+ * 真实跳变会覆盖校准（漂移 ≤1 tick 自愈，与 EMA 收敛同款）。</p>
  *
  * <p><b>只存锁相结果，不存派生量</b>：EMA / 共振窗口 / 派生相位注册表都是从
  * 真实跳变推导的快变化量，落盘只会引入「磁盘账本说谎」面——玩家改造线路后
  * 旧快照 2~3 个周期内被真实跳变覆盖自愈，这正是只存 (P, φ, d) 的理由：
  * 它们是「慢变量」（振荡器物理决定），而快变量让它自然重学。</p>
  *
- * @param tickCounter 快照时的容器本地 tick 计数（回填平移基准，可不存精确值）
+ * @param tickCounter 快照时的相位时钟值（世界 game time；测试可用本地轴）
  * @param edges       边跟踪器快照（edgeKey → 锁相状态）
  */
 public record PhaseSnapshot(
@@ -76,7 +78,7 @@ public record PhaseSnapshot(
         if (t == null) return false;
         int p = t.period();
         if (p < 2) return false;
-        // 负 lastRisingTick 是回填平移的合法状态（restoreInto: base − sinceRise），必须放行——
+        // 负 lastRisingTick 是合法状态（重进后 now 小、锚由 φ 反推可为负），必须放行——
         // 只拒「未来锚」（now 之前不可能发生）。误拒会让回填后的边在首个真实跳变前
         // 被逐 tick 快照降级掉，二次退出即丢相位（2026-09-09 修复）。
         if (t.lastRisingTick() > now) return false;
@@ -106,10 +108,11 @@ public record PhaseSnapshot(
      * 回填快照到新账本（容器首次 tick / 账本重建后调用）。
      *
      * <p><b>2026-09-11 换轴</b>：基准时钟由调用方传入（世界 game time）——与
-     * 退出前 capture 存的是同一坐标系，回填 {@code lastRisingTick = now − sinceRise}
-     * 后 φ 与快照一致；首个真实跳变 interval = (P−d)−(−d) = P 精确续接，φ 不再重锚。
-     * 旧版 base = power.currentTick()（容器本地轴，重进归零）是「修了和没修一样」
-     * 的根因：快照的 φ 是旧坐标系的值，回填到新坐标系，首跳立刻重新锚定。</p>
+     * 退出前 capture 存的是同一坐标系。回填不用 {@code now − sinceRise}（那是旧版
+     * base − d，跨轴下 φ 会平移 (ΔW mod P)），而用 φ 反推锚
+     * {@code anchor = now − floorMod(now−φ, P)}：锚是 now 之前最近的 φ 同余点，
+     * 首个真实跳变 interval 恰为 P，φ 精确续接不再重锚。旧版 base =
+     * power.currentTick()（容器本地轴，重进归零）是「修了和没修一样」的根因。</p>
      *
      * <p>回填后账本<strong>保持 warmup</strong>：warmup 与快照互补——首拍假沿由
      * {@code hasEdgeHistory()} 根修整段拦下，warmup 剩余几 tick 只防「快照未覆盖

@@ -309,13 +309,13 @@ processContext() 每 game tick：
 第11步: interval=4              → periodTicks=4.98+(4-4.98)×0.5=4.49→ period()=4  ✅ 收敛
 ```
 
-**每个中间值都创建一个独立的 `PhaseDomain`**（ChannelState.java L113-L121 按 `event.period()` 分桶），因此单个 `SignalTracker` 就能产生 10 个虚假域。中断时间越长，收敛路径越长，虚假域越多（中断 5000 tick 时收敛需 18 步，从 247502 一路降到 4）。
+**每个中间值都创建一个独立的 `PhaseDomain`**（`ChannelState.java:52` `onPhaseEvent` 按 `event.period()` 分桶），因此单个 `SignalTracker` 就能产生 10 个虚假域。中断时间越长，收敛路径越长，虚假域越多（中断 5000 tick 时收敛需 18 步，从 247502 一路降到 4）。
 
 **BFS 网络遍历放大效应**：`runBfs` 为网络中被充能的每个 `(slot, dir)` 维护独立的 `SignalTracker`。N 个铜块 → 最多 4N 个跟踪器，每个在收敛过程中独立产生自己的虚假域序列 → tooltip 上出现成百上千的周期记录。
 
-**这些虚假域不影响发电**：LivingWaxedCopperFunction.java L597-L617 `accountEnergy` 的跳变门控只选「本 tick 有跳变」的最佳域（`bestActiveDomain`），虚假域的 `jumpTick` 不与当前 tick 对齐，不会被选中入账。
+**这些虚假域不影响发电**：`EnergyAccounting.java:20` `accountEnergy` 的跳变门控只选「本 tick 有跳变」的最佳域（`bestActiveDomain`），虚假域的 `jumpTick` 不与当前 tick 对齐，不会被选中入账。
 
-**自愈机制**：ChannelState.java L190-L220 `tickCleanup` 每 tick 清理过期域：
+**自愈机制**：`ChannelState.java:192` `tickCleanup` 每 tick 清理过期域：
 
 ```java
 long timeout = Math.max(preferredPeriod, d.period) * 2L;
@@ -357,7 +357,7 @@ if (currentTick - d.lastEventTick > timeout) it.remove();
 真正让网络中不同边在 `lastRisingTick`（全局 tick 时钟）上错开、从而产生多个不同
 `offset = lastRisingTick mod period` 的，只有以下两类来源：
 
-1. **中继器的档位延迟**（`ContainerRedstoneData.java:30`、`:585`）——
+1. **中继器的档位延迟**（`RedstonePropagation.java:32` `TICKS_PER_REPEATER_STEP`、`:73` `phase0CountdownDelays`、`:375/382` 计时）——
    唯一真实的跨 tick 延迟。中继器收到输入后置
    `delayTimer = delay() × TICKS_PER_REPEATER_STEP`（每红石刻 = 2 game tick），
    每 tick 在 `phase0CountdownDelays` 倒数，数完前输出边不上升。
@@ -366,7 +366,7 @@ if (currentTick - d.lastEventTick > timeout) it.remove();
 2. **各路输入的固有相位差**——正如 4 路信号「信号间隔 = 0/1/2/3、持续时长 =
    4/3/2/1」，4 路本身就是在全局时钟上错相的周期信号，于不同 tick 上升。
 
-`runBfs`（`LivingWaxedCopperFunction.java:233`）对网络上每条被充能的 (slot,dir) 边
+`runBfs`（`LivingWaxedCopperFunction.java:291`）对网络上每条被充能的 (slot,dir) 边
 独立记 `lastRisingTick`，`SignalTracker.offset()` 取 `lastRisingTick mod period`。
 两类来源叠加（错相输入 ≈ 4 个 offset + 不同中继器数量的路径再分裂出若干错开到达
 tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 乃至更大的多相值。
@@ -430,21 +430,21 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
 
 ### 3.7 网络级共振（不同锈级之间）
 
-块级感应是「铜块采样边信号」，网络级共振是「锈蚟级之间互相感应」——
+块级感应是「铜块采样边信号」，网络级共振是「锈蚀级之间互相感应」——
 **同一套机制抬高一个维度**。这也让 §3.5 的「氧化等级网络隔离」从单纯的消极隔离，
-变成有积极意义的机制：锈蚟级不再只是「互不连通」，而是**参与共振的锈级**。
+变成有积极意义的机制：锈蚀级不再只是「互不连通」，而是**参与共振的锈级**。
 
-#### 锈级单位是「锈蚟级」，不是 BFS 连通块
+#### 锈级单位是「锈蚀级」，不是 BFS 连通块
 
-同一锈蚟级内的多个互不相连的连通块，其出力**直接相加**后作为一个锈级参与共振；
-只有不同锈蚟级之间才谈共振。
+同一锈蚀级内的多个互不相连的连通块，其出力**直接相加**后作为一个锈级参与共振；
+只有不同锈蚀级之间才谈共振。
 
 > ⚠️ 这不只是简化，而是 **`R ≤ 4` 的结构性前提**。若按连通块计锈级，玩家把同一
-> 锈蚟级拆成若干小簇即可刷高 N，退化为曾导致避雷针共振模型被废弃的 N×(N−1) 膨胀。
+> 锈蚀级拆成若干小簇即可刷高 N，退化为曾导致避雷针共振模型被废弃的 N×(N−1) 膨胀。
 
 #### 公式
 
-设容器内有 **N 个「有出力」的锈蚟级**（N = 1~4），各自基础出力为 `Aₖ`：
+设容器内有 **N 个「有出力」的锈蚀级**（N = 1~4），各自基础出力为 `Aₖ`：
 
 ```
 ① 平衡度   s = (Π Aₖ)^(1/N) ÷ (Σ Aₖ / N)     // 几何平均 ÷ 算术平均（AM-GM）
@@ -456,7 +456,7 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
 | 要素 | 说明 |
 |---|---|
 | 平衡度 s | 各锈级出力的接近程度；尺度无关（只关心比例，不关心绝对值） |
-| 锈级数 N | 有出力的锈蚟级数；零出力的级不计入 |
+| 锈级数 N | 有出力的锈蚀级数；零出力的级不计入 |
 | exp = 2 | `PowerMath.RESONANCE_EXPONENT`，**唯一的强度标定参数** |
 
 #### 边界性质（结构性，非靠常数压住）
@@ -464,9 +464,9 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
 | 性质 | 保证 |
 |---|---|
 | 下限 R ≥ 1 | 共振永不「扣发电量」，最差就是不共振 |
-| 孤网 R = 1 | 只建一种锈蚟级拿不到任何加成 |
-| 满共振 R = 4 | 4 个锈蚟级出力全相等，增益 ×16 |
-| 上界 R ≤ 4 | 锈级数被锈蚟级数硬顶死，不可能失控 |
+| 孤网 R = 1 | 只建一种锈蚀级拿不到任何加成 |
+| 满共振 R = 4 | 4 个锈蚀级出力全相等，增益 ×16 |
+| 上界 R ≤ 4 | 锈级数被锈蚀级数硬顶死，不可能失控 |
 | 无回代 | 单遍前馈（见下方铁律），不存在指数发散 |
 
 #### 三条铁律（安全红线）
@@ -474,9 +474,9 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
 1. **共振只读「共振前」的基础值。** 每 tick 只做一次：
    `基础出力 → 更新 EMA → 取增益 → 乘到本 tick 发电量`。
    增益**绝不**回灌基础出力，因此不存在 `A↑ → B↑ → A↑` 的回代环。
-2. **每锈蚟级 EMA 只跟踪基础出力。** `ContainerPowerData.updateOxidationEma()`
+2. **每锈蚀级 EMA 只跟踪基础出力。** `ContainerPowerData.updateOxidationEma()`
    的入参必须是 `baseReByOx`（共振前）。若喂入乘过增益的值即形成回代环。
-3. **EMA 必须截断归零。** 指数衰减数学上达不到 0；不截断则停止发电的锈蚟级会以
+3. **EMA 必须截断归零。** 指数衰减数学上达不到 0；不截断则停止发电的锈蚀级会以
    极小非零值被永久算作活跃锈级，把平衡度永久压死且无法自愈。
    `ContainerPowerData.EMA_EPSILON = 1e-6`（浮点卫生常数，非平衡常数），
    典型量级约 155 tick 归零。
@@ -485,7 +485,7 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
 
 ```
 ① 各发电机照旧算基础 RE（§3.1~§3.6 完全不变）
-   → 按锈蚟级累加：baseRe[k] = Σ 该锈蚟级「所有连通块」内发电机的基础 RE
+   → 按锈蚀级累加：baseRe[k] = Σ 该锈蚀级「所有连通块」内发电机的基础 RE
 
 ② powerData.updateOxidationEma(baseRe)      // 只吃基础值
 ③ gain = powerData.resonanceGain()          // = R^exp，只读 EMA
@@ -504,7 +504,7 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
 
 #### 场景对照（总量 400 的几种分配）
 
-| 各锈蚟级出力 | N | s | R | 增益 | 总发电 |
+| 各锈蚀级出力 | N | s | R | 增益 | 总发电 |
 |---|---|---|---|---|---|
 | [400] | 1 | 1.000 | 1.00 | 1.00 | 400 |
 | [200, 200] | 2 | 1.000 | 2.00 | 4.00 | 1600 |
@@ -537,9 +537,9 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
 | `PowerMath.resonanceFactor` | 共振倍率 R = 1 + (N−1)s |
 | `PowerMath.resonanceGain` | 增益 R^exp |
 | `PowerMath.RESONANCE_EXPONENT` | 强度参数（默认 2.0） |
-| `ContainerPowerData.emaPowerByOxidation` | 4 槽按锈蚟级的基础 EMA |
+| `ContainerPowerData.emaPowerByOxidation` | 4 槽按锈蚀级的基础 EMA |
 | `ContainerPowerData.updateOxidationEma` | EMA 推进 + 归零截断 |
-| `LivingWaxedCopperFunction.accountEnergy` | 按锈蚟级累加基础出力 |
+| `EnergyAccounting.accountEnergy` | 按锈蚀级累加基础出力 |
 | `LivingWaxedCopperFunction.tickContainerData` | tick 末单遍套用增益（v18：逐锈级 `voiceRe[k] = round(baseReByOx[k] × gain)`） |
 | `LivingWaxedCopperFunction.distributeToBulbs` | v18：直存时按 `getOxidationLevel(bulb) == k` 过滤灯堆 |
 | `NetworkResonanceTest` | 网络级共振守卫（含回代安全、上界、EMA 衰减） |
@@ -786,8 +786,8 @@ fail-safe 不崩不刷（详见 oversized-stack-audit.md §2.8），long 内部�
 - 边界外（涂蜡块贴容器边）入边返回 0，与旧版一致——外部世界信号走 `faceInput`，从不写入
   edgeGrid，涂蜡块不感应容器外红石（保持旧行为）；
 - 信号源写边**无条件**（涂蜡槽位天然可采样——源直接写自己的出边朝向涂蜡槽），传播层零改动；
-- 稳态跳过路径：`calculate` 跳过时把 `edgeGrid` 按值同步进 `prevEdgeGrid`（跳过承诺
-  「结果与上 tick 一致」），否则跳过 tick 会把陈旧 prev 误判为新上升沿、压碎周期估计；
+- 边检测每 tick 走完整 5 phase 传播（`ContainerRedstoneData.calculate`，无「稳态跳过」分支）；
+  `prevEdgeGrid` 由 `reset()` 双缓冲交换维护。首拍假沿由 `RedstoneSensor.hasEdgeHistory()` 拦下（见 §6.5）；
 - 发电机按网络组件遍历只读边信号（锚点 BFS + 其余 copyFrom 共享），不写任何信号；
 - 遥测写回节流（量化降脏化）：仪表盘 `LivingWaxedGeneratorData` 写回前，对共振增益 `resonanceGain` / 平衡度 `resonanceBalance` / 域快照 `effDeltaSum` 三个 EMA 类 double 量化到 3 位有效数字（`PowerMath.quantize`）。稳态下这些读数被「钉」在固定值 → `equals` 变 true → 跳过脏写，复用现有 `dirtySlots` 批处理，不另造轮子。针对服务器场景（多发电容器同时被打开 × 多玩家）降低每 tick 同步量。
 - 容器级缓存与红石共享整容器生命周期；回收与停服清理口径见

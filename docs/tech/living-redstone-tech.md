@@ -96,7 +96,7 @@
 | 3 | 火把 = 信号源 + **反相器** + **3 边输出**（排除输入边） | 反相环必须**永不冻结**（振荡守卫，见下） |
 | 4 | 中继器 = **延迟**（一档 2 game tick）+ 单向 + 信号刷新 | — |
 | 5 | 比较器 = 比较 / 减法 + **物品检测** + 边网格回退读取 | 链式依赖需迭代到稳定（≥4 级双向链） |
-| 6 | 红石灯 = **消费者**（`anyOfSlot` 亮 / 灭） | 不参与传播 |
+| 6 | 红石灯 = **消费者**（`anyInputOfSlot` 亮 / 灭） | 不参与传播 |
 | 7 | **与世界红石双向互通** | 容器边界即面边界 |
 | 8 | **活侦测器只观察输出反方向的相邻槽**：普通物品比较稳定 registry ID、精确数量与活化身份；活物品可由各 `LivingItemFunction` 显式公开语义状态；正面越界 = 无目标、不工作 | 局部布线对齐原版「看正面一格」；不扫描整个容器、不比较全部 DataComponent（耐久/名称/未知内部数据默认不触发） |
 | 9 | **侦测采样在红石 Phase 5 结算后统一执行**：全部侦测器先从同一最终边网格捕获，再统一比较；红石元件公开可见配置 + 四向最终出边，排除倒计时/历史字段 | 比较器/粉/切铜输出不能从组件猜；统一采样消除槽位遍历顺序和半结算状态；新受理最早下一拍参与传播 |
@@ -370,13 +370,13 @@ public record LivingButtonData(
 
 ```java
 public record LivingLeverData(
-    boolean active      // 是否激活
+    boolean powered     // 是否开启
 ) implements TooltipProvider {
 
     public static final LivingLeverData DEFAULT = new LivingLeverData(false);
 
-    public LivingLeverData withActive(boolean a) {
-        return new LivingLeverData(a);
+    public LivingLeverData withPowered(boolean p) {
+        return new LivingLeverData(p);
     }
 }
 ```
@@ -403,16 +403,18 @@ public record LivingRepeaterData(
     Pos2D direction,    // 输出方向
     int delay,          // 延迟档位 1-4（红石刻 = 2 game tick）
     boolean powered,    // 是否接收到输入信号
-    int delayTimer      // 剩余延迟刻数（0=就绪，到期输出）
+    int delayTimer,     // 剩余延迟（game tick，0=就绪，到期输出）
+    boolean locked      // 是否被侧向信号锁定（锁定时 Phase 3 跳过）
 ) implements TooltipProvider {
 
     public static final LivingRepeaterData DEFAULT =
-        new LivingRepeaterData(Pos2D.UP, 1, false, 0);
+        new LivingRepeaterData(Pos2D.UP, 1, false, 0, false);
 
     public LivingRepeaterData withDirection(Pos2D dir) { ... }
     public LivingRepeaterData withDelay(int d) { ... }
     public LivingRepeaterData withPowered(boolean p) { ... }
     public LivingRepeaterData withDelayTimer(int t) { ... }
+    public LivingRepeaterData withLocked(boolean l) { ... }
 }
 ```
 
@@ -421,7 +423,8 @@ public record LivingRepeaterData(
 | `direction` | Pos2D | UP | 输出方向，决定信号传播方向 |
 | `delay` | int | 1 | 延迟档位，1-4 红石刻 |
 | `powered` | boolean | false | 输入端是否有信号 |
-| `delayTimer` | int | 0 | 剩余延迟刻数，0 表示就绪，>0 等待中 |
+| `delayTimer` | int | 0 | 剩余延迟（game tick），0 表示就绪，>0 等待中 |
+| `locked` | boolean | false | 侧向锁定，true 时 Phase 3 不刷新输入 |
 
 ### 2.8 LivingComparatorData — 活比较器物品数据
 
@@ -876,7 +879,7 @@ Phase 4: 比较器 → powerConductiveNeighbor(比较器, 15, RIGHT, secondQueue
   if signalStrength != maxSignal || isPowered != (maxSignal > 0) || connections != conn → 更新同步
 
 遍历红石灯：
-  hasSignal = edgeGrid.anyOfSlot(slot)
+  hasSignal = anyInputOfSlot(slot)
   if lit != hasSignal → 更新同步
 ```
 
@@ -1479,9 +1482,9 @@ Phase 1（作为信号源输出）：
 
 Phase 3（重新检测输入）：
   1. locked → 跳过
-  2. hasInput && !powered → powered = true, delayTimer = delay
+  2. hasInput && !powered → powered = true, delayTimer = delay × TICKS_PER_REPEATER_STEP（档位 1-4，每档 2 game tick）
   3. hasInput && powered && delayTimer < 0 → delayTimer = 0（输入恢复，取消关闭）
-  4. !hasInput && powered && delayTimer == 0 → delayTimer = -delay（安排关闭）
+  4. !hasInput && powered && delayTimer == 0 → delayTimer = -delay × TICKS_PER_REPEATER_STEP（安排关闭）
 ```
 
 **关键变化**：中继器不再参与 Phase 2 BFS 传播。它在 Phase 1 作为信号源直接向输出边写入信号，红石粉在 Phase 2 通过 BFS 传播该信号。这简化了中继器的处理逻辑，使其与火把、按钮、拉杆等信号源行为一致。
@@ -1596,12 +1599,7 @@ Phase 1（作为信号源输出，仅抬高）：
   if output > 0 → 向输出方向出边写入 output（仅当更高时，guard: output > 当前）
   if 输出方向邻居是红石粉 → 邻居入队
 
-Phase 3（重新检测输入，Phase 2 粉尘传播后）：
-  output = computeComparatorOutput()
-  powered = (output > 0)
-  // 只更新 powered 状态，不再写边（出边写值见 Phase 4）
-
-Phase 4（充能导电活物品，抬/压都处理）：
+Phase 4（充能导电活物品，抬/压都处理；在 Phase 3 之前执行）：
   output = computeComparatorOutput()
   outDir = edgeIndex(data.direction())
   edgeGrid.set(slot, outDir, output)        // 直接同步本槽出边（可抬可压）
@@ -1610,6 +1608,11 @@ Phase 4（充能导电活物品，抬/压都处理）：
     // 改为只设输入边（oppositeDir(dir)）然后入队让 phase2 算出边。
     // 衰减只在红石粉之间发生，源→粉边界不衰减。
     // 参见 §4 充能规则。
+
+Phase 3（重新检测输入，Phase 2 粉尘传播后）：
+  output = computeComparatorOutput()
+  powered = (output > 0)
+  // 只更新 powered 状态，不再写边（出边写值见 Phase 4）
 ```
 
 > **为什么出边必须在 Phase 4 同步（而非仅 Phase 1 抬高）**：若只在 Phase 1 用 `>` 抬高，比较器关闭（output=0）时出边不会归零，下游粉下一 tick 仍读到高 `maxInput` 而卡死。Phase 4 的 `set(slot, outDir, output)` 既抬高也压低，关闭时出边归零，下游粉经 `maxInput` 自然衰减。旧模型的 Phase 3 `!=` 兜底做同样的事，但在共享边模型下会误压下游粉的 -1 衰减信号，故 v15 改为 Phase 4 直接 set 本槽出边后删除。
@@ -1640,7 +1643,7 @@ for (int sideDir : sideDirs) {
 int output = subtractMode ? max(0, A - B) : (A >= B ? A : 0);
 ```
 
-与中继器一样，比较器在 Phase 1 作为信号源直接写边，不参与 Phase 2 BFS 传播。但 Phase 3 会重新计算并写回边网格，确保依赖 Phase 2 粉尘传播的信号（如后方是红石粉）能正确反映到输出。
+与中继器一样，比较器在 Phase 1 作为信号源直接写边，不参与 Phase 2 BFS 传播。但 Phase 4 会重新计算并写回边网格（Phase 3 只更新 powered），确保依赖 Phase 2 粉尘传播的信号（如后方是红石粉）能正确反映到输出。
 
 > **设计变更（v16）：比较器/中继器链改为「迭代到稳定」**
 > 现象：活比较器首尾相连时，链只能亮若干级、再往后一级彻底无信号（"第 4 个就死"）。

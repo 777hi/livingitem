@@ -945,6 +945,10 @@ ContainerContext 维护一个 Set<Integer> transferredTargetSlots
 
 **货物准入：活物品不作货物（隔离规则，唯一定义点 `SlotInteractions.isEligibleCargo`）**
 
+> 📄 本段是**漏斗域特有**的落地方式（骨粉施肥真值表 / 入口为何收在交互层）。
+> 全项目口径（不变量 + 受约束的域 + 例外语义）见
+> [living-item-invariants §1](../system-design/living-item-invariants.md#1-活物品隔离--活物品不作耗材)。
+
 施肥的语义是「活漏斗用**传输能力**把骨粉送进活耕地」——它属**传输语义**，因此必须受
 漏斗自己的货物规则约束。**活骨粉是活物品 ⇒ 不是合法货物 ⇒ 漏斗不给它施肥**
 （活骨粉的手动用途在 GUI 右键，那里本就要求活化）。

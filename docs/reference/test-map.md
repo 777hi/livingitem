@@ -240,7 +240,7 @@ src/test/java/com/qiqi/li/
 │   │   │   ├── CoilGroupingTest.java  # 线圈形态检测测试（v3 —— 相位事件总线）。
 │   │   │   ├── ContainerEnergyCapabilityTest.java  # 对外能量能力（Capabilities.EnergyStorage.BLOCK）的 存在性 守卫 （§3.6 对外接口，2026-10-31 对齐流体 §10.4）。
 │   │   │   ├── ContainerPowerDataTest.java  # 红电发电状态机测试（v3 —— 相位事件总线）。
-│   │   │   ├── NetworkResonanceTest.java  # 网络级共振测试（§3.7）——不同锈蚟级之间的「和声」。
+│   │   │   ├── NetworkResonanceTest.java  # 网络级共振测试（§3.7）——不同锈蚀级之间的「和声」。
 │   │   │   ├── NetworkTraversalTest.java  # 电力层「按网络组件遍历」重构回归测试（v3 重构：逐发电机 BFS → 按组件 BFS + copyFrom）。
 │   │   │   ├── PhaseDataMigrationChestSplitTest.java  # A6（2026-10-27 定案）：双箱拆半 ⇒ 红电相位不分摊不复制、按新布局重新识别信号。
 │   │   │   ├── PhaseDataMigrationTest.java  # PhaseDataMigration 的守卫（2026-10-21 补 —— 此前该文件零测试，而它的搬运逻辑 比流体更复杂：快照要 PhaseSnapshot#restoreInto 还原进账本，且…

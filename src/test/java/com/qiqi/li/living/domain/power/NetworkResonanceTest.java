@@ -7,10 +7,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * 网络级共振测试（§3.7）——不同锈蚟级之间的「和声」。
+ * 网络级共振测试（§3.7）——不同锈蚀级之间的「和声」。
  *
  * <p>公式：{@code s = GM/AM}，{@code R = 1 + (N−1)×s}，{@code 增益 = R^exp}。
- * 锈级共振单位是<strong>锈蚟级</strong>（不是 BFS 连通块），同锈蚟级的多个连通块
+ * 锈级共振单位是<strong>锈蚀级</strong>（不是 BFS 连通块），同锈蚀级的多个连通块
  * 出力相加——这是 {@code R ≤ 4} 的结构性前提。</p>
  *
  * <p>本类的核心是<strong>安全性</strong>：共振只读「共振前」的基础出力，
@@ -84,13 +84,13 @@ class NetworkResonanceTest {
     @Test
     @DisplayName("零值不计入锈级数 N：2 级发电 + 2 级空 → N = 2")
     void resonance_zerosExcludedFromVoiceCount() {
-        // 与 [100,100] 完全等价（两个空锈蚟级不得拖低平衡度）
+        // 与 [100,100] 完全等价（两个空锈蚀级不得拖低平衡度）
         assertEquals(PowerMath.resonanceFactor(new double[]{100, 100}),
             PowerMath.resonanceFactor(new double[]{100, 100, 0, 0}), LOOSE);
     }
 
     @Test
-    @DisplayName("上界：任意输入恒有 R ≤ 4（锈蚟级数结构性封顶）")
+    @DisplayName("上界：任意输入恒有 R ≤ 4（锈蚀级数结构性封顶）")
     void resonance_upperBound_isFour() {
         double[][] cases = {
             {100, 100, 100, 100},
@@ -108,7 +108,7 @@ class NetworkResonanceTest {
     }
 
     @Test
-    @DisplayName("锈级数超过锈蚟级数时被截断（防御：拆簇刷 N）")
+    @DisplayName("锈级数超过锈蚀级数时被截断（防御：拆簇刷 N）")
     void resonance_voiceCountCappedAtOxidationLevels() {
         // 防御性输入：即便传入 8 个锈级，N 也被截断到 4
         double r = PowerMath.resonanceFactor(new double[]{10, 10, 10, 10, 10, 10, 10, 10});
@@ -151,7 +151,7 @@ class NetworkResonanceTest {
     @DisplayName("回代安全：连续 500 tick 恒定基础出力，增益收敛到 16 而不发散")
     void noFeedbackGainStaysBounded() {
         ContainerPowerData data = new ContainerPowerData();
-        long[] base = {100, 100, 100, 100};   // 每 tick 各锈蚟级基础出力（共振前）
+        long[] base = {100, 100, 100, 100};   // 每 tick 各锈蚀级基础出力（共振前）
         long baseSum = 400;
         double maxGain = 0.0;
 
@@ -194,7 +194,7 @@ class NetworkResonanceTest {
     }
 
     @Test
-    @DisplayName("EMA 衰减：停止发电的锈蚟级会淡出，不再拖低平衡度")
+    @DisplayName("EMA 衰减：停止发电的锈蚀级会淡出，不再拖低平衡度")
     void emaDecaysWhenVoiceStops() {
         ContainerPowerData data = new ContainerPowerData();
         long[] four = {100, 100, 100, 100};
@@ -205,7 +205,7 @@ class NetworkResonanceTest {
         long[] three = {100, 100, 100, 0};
         for (int i = 0; i < 400; i++) data.updateOxidationEma(three);
         double[] ema = data.getEmaPowerByOxidation();
-        assertTrue(ema[3] < 1.0, "停发的锈蚟级 EMA 应衰减到可忽略，实际 " + ema[3]);
+        assertTrue(ema[3] < 1.0, "停发的锈蚀级 EMA 应衰减到可忽略，实际 " + ema[3]);
         assertEquals(3, data.activeOxidationLevels());
         assertEquals(3.0, data.resonanceFactor(), 0.05);
     }
@@ -257,7 +257,7 @@ class NetworkResonanceTest {
             new GeneratorState(), 1, LivingWaxedGeneratorData.FORM_BLOCK, 0, pd);
         assertEquals(1, t.activeLevels());
         assertEquals(1.0, t.resonanceGain(), EPS);
-        // levelPower 始终长度 = 锈蚟级数（4），空锈级为 0
+        // levelPower 始终长度 = 锈蚀级数（4），空锈级为 0
         assertEquals(4, t.levelPowerMilliFe().size());
         // 显示均值口径为毫 FE 定点：2700 RE/t × K=1/16 × 1000 = 168750 mFE
         assertEquals(168750, t.levelPowerMilliFe().get(0));

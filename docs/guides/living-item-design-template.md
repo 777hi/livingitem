@@ -10,8 +10,8 @@
 > **定位**：本表是**设计检查清单**，不是契约。已存在的稳定层正式出处：
 > 槽位数量原语 [api-contract §1.7](../system-design/api-contract.md) ·
 > 组件提交 [§1.8](../system-design/api-contract.md) ·
-> 活物品隔离 [漏斗 tech §6.2.1](../tech/living-hopper-tech.md)（「货物准入」段）。
-> **数据层 per-item 纪律尚无稳定层正文**（正文只在 §1.1-b 与 buffer 提案里），已登记 [TODO「文档系统治理」](../TODO.md)。
+> 活物品隔离 [living-item-invariants §1](../system-design/living-item-invariants.md#1-活物品隔离--活物品不作耗材) ·
+> 数据层 per-item 纪律 [living-item-invariants §2](../system-design/living-item-invariants.md#2-数据层-per-item视觉聚合放渲染期)。
 >
 > **最小集（缺了这三项，设计稿还不能进实现）**：§零（原点五问 + 对应物速查）· §2.2（规则→验证入口）· §2.3（落地同步表）。
 > 其余表在涉及对应内容时查阅；不涉及就跳过。
@@ -107,15 +107,9 @@
 > 判据：**同一个容器里有两个该物品时，这个状态该合并还是该各存各的？**
 > 写不出答案 ⇒ 先别定数据结构（这一步选错**不可逆**，后面全是返工）。
 >
-> **纪律：数据层 per-item，视觉聚合放渲染期。** 副作用按容器键，可视化按物品键；在数据层合并信息 = 不可逆丢失。
-
-| 维度 | 该按什么键 |
-| --- | --- |
-| 可见物（光束/模型/面板） | **物品**（容器 + 槽位） |
-| 副作用（开盖/红石/方块事件） | **容器** |
-| 客户端「最近一次」提示状态 | **避免**（改分区/显式键） |
-
-案例与完整论证：[framework-evolution-plan.md](../buffer/framework-evolution-plan.md) §4。
+> **结论（违反即 bug）**：数据层 per-item、副作用按容器键、视觉聚合放渲染期。
+> 不变量正文与判据表见 [living-item-invariants §2](../system-design/living-item-invariants.md#2-数据层-per-item视觉聚合放渲染期)；
+> 案例与完整论证 [framework-evolution-plan §4](../buffer/framework-evolution-plan.md#4-提案-d数据模型-per-item视觉聚合在渲染期)。
 
 ### 1.2 准入表 —— 每个「槽位」一行
 

@@ -281,8 +281,7 @@ ItemStack (minecraft:cut_copper)
 ItemStack (minecraft:copper_grate)
 ├── IS_LIVING: true
 └── LIVING_GRATE_DATA: LivingGrateData
-    ├─ lastInput: boolean                        ← 上一帧输入
-    └─ output: boolean                           ← 当前输出
+    └─ sumSignal: int                            ← 四边输入信号之和（默认 0）
 
 ItemStack (minecraft:copper_bulb)
 ├── IS_LIVING: true
@@ -448,7 +447,7 @@ for slot in grateSlots:
 **铜灯 (Bulb) — 信号记忆**：
 ```
 for slot in bulbSlots:
-  hasInput = edgeGrid.anyOfSlot(slot)  // 任意边有信号
+  hasInput = anyInputOfSlot(slot)  // 任意输入方向有信号（读邻居出边）
 
   if hasInput && !data.prevInput():     // 上升沿
     if data.recordedSignal() == 0:      // 未记录 → 记录当前输入信号强度
@@ -670,11 +669,12 @@ else if (is(neighbor, BIT_BUTTON | BIT_LEVER | BIT_TORCH
 
 ### 5.3 面信号交互
 
-活铜块参与容器面信号输出。`computeFaceOutput()` 扫描 `edgeGrid` 边界边时，铜块贡献的边信号同样被计入：
+活铜块**不直接参与**容器面信号输出。`computeFaceOutput()` 扫描 `edgeGrid` 四侧边界边时，
+凡是铜槽位（`isCopperSlot`）一律 `continue` 跳过——铜块的红电信号**不跨容器传输**：
 
 ```
-内部铜块信号 → edgeGrid 边界边 → computeFaceOutput → faceOutput[dir]
-→ getBoundarySignal(dir) → Mixin 注入 → 容器方块对外红石信号
+铜信号仅在容器内部传播（铜块 → 铜块 / 充能导体）；
+computeFaceOutput 跳过铜槽位 ⇒ 对外面输出由方向性红石元件（中继器/比较器/火把）负责
 ```
 
 > 活铜块**不读取跨容器信号**（faceInput）。跨容器信号传输仅由方向性活红石元件（中继器/比较器/火把）负责。
@@ -705,7 +705,7 @@ is(slot, BIT_COPPER | BIT_CUT) → true  // 是铜块且是切制铜块（立交
 | 铜灯信号记忆 | ✅ | 上升沿记录/清除信号强度，Phase 3 状态更新 |
 | 红石-铜块互通 | ✅ | canConnect 规则支持跨层注入 |
 | 铜块充能导体 | ✅ | Phase 4 铜块作为强信号源 |
-| 容器面信号输出 | ✅ | 铜块信号参与 faceOutput 计算 |
+| 容器面信号输出 | ❌ 不直接输出 | `computeFaceOutput` 跳过铜槽位（`isCopperSlot continue`），对外由方向性红石元件负责 |
 | 跨容器铜块信号 | ❌ 不实现 | 铜块不读取 faceInput，跨容器传输由方向性红石元件负责 |
 | Tooltip 显示 | ✅ | 类型、频道、方向、状态等 |
 | 涂蜡铜块排除 | ✅ | 涂蜡铜块不适用活铜功能（其电力层见 [living-power-tech.md](living-power-tech.md)） |

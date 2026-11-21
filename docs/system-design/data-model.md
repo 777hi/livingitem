@@ -150,10 +150,12 @@ LivingFurnaceData data = LivingFurnaceData.of(stack)
 
 ### 4.4 活物品隔离
 
-所有组件在处理物品时检查 `LivingItemManager.isLivingItem()`：
-- `ItemTransferComponent`：不传输活物品
-- `FuelConsumeComponent`：不消耗活物品作为燃料
-- `ItemTransformComponent`：不熔炼活物品
+全项目不变量（不传输 / 不熔炼 / 不作燃料 / 不作材料 / 不作瓶子）的唯一定义点
+`SlotInteractions.isEligibleCargo`、受约束的域与例外语义见
+[living-item-invariants §1](living-item-invariants.md#1-活物品隔离--活物品不作耗材)；
+漏斗域的落地方式见 [living-hopper-tech §6.2.1](../tech/living-hopper-tech.md#621-槽位交互分发注册式2026-09-15)。
+（旧版此处列 `ItemTransferComponent` / `FuelConsumeComponent` / `ItemTransformComponent` 三个类，
+均为架构演进前的类、今已不存在 —— 规则本身未变，只是实现入口收拢到上述唯一定义点。）
 
 ### 4.5 服务端权威 + 手动同步
 

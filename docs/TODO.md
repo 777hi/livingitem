@@ -92,11 +92,12 @@
 
 ## 文档系统治理（2026-11-19 登记）
 
-- [ ] **通用纪律的归宿错位** —— 一条纪律若被 ≥2 个域引用、又不属于任一域，就不该住在某个子系统的 tech 或某份指南里。已知两例：
+- [x] ~~**通用纪律的归宿错位**~~ ✅ 已完成（2026-11-21）—— 一条纪律若被 ≥2 个域引用、又不属于任一域，就不该住在某个子系统的 tech 或某份指南里。已知两例：
   ① **隔离规则**（全项目不变量：活物品不作货物 / 燃料 / 材料 / 瓶子，漏斗、酿造、信标、耕地、流体、活塞都受约束）—— 正文住在 [漏斗 tech §6.2.1](tech/living-hopper-tech.md)，唯一定义点 `SlotInteractions.isEligibleCargo`；不去漏斗文档找不到。
   ② **数据层 per-item / 视觉聚合纪律**（选错不可逆）—— 住在 [设计模板 §1.1-b](guides/living-item-design-template.md)，模板是 guides 层，无契约效力。
   **判据**：全局不变量应有独立归宿（decisions / api-contract / reference），子系统 tech 与 guides 只留指针 + 一句结论。
   **处理方式**：先盘点同类还剩几条，再统一决定归宿，不逐条搬（避免搬一条、留一条）。
+  - ✅ **收口（2026-11-21）**：盘点确认同类错位**仅此两例** —— 算术纪律已在 `container-boundary.md` I-C14、图标接缝纪律已在 `icon-system.md`（均在契约层，slot-ops / 模板里只是合格的"结论+指针"），不动。归宿按 `README.md` §1 定在契约层（`decisions` 是索引、`reference` 是快照、均不承载正文；`api-contract` 定位是第三方扩展契约）：新建 [living-item-invariants.md](system-design/living-item-invariants.md) 承载两条正文（不变量+判据+唯一定义点），漏斗 tech §6.2.1 保留域特有骨粉真值表并加指针、设计模板头部与 §1.1-b 改为结论+指针（判据表移入契约层）、glossary 两条出处改指契约层、`data-model` §4.4 顺带修掉三个已不存在的旧类名（规则未变、入口收拢）。AGENTS.md 文档导航已同步；纪律内容未变、仅挪归宿，按 README §4.0 不进 changelog。未改生产代码。
 
 ## 女仆联动（首版及展示用户实测通过，后续与专项核对）
 
@@ -823,26 +824,43 @@
 > A4 飞艇传送（含误诊纠正）已落 [地图传送 §11.2.1](tech/living-map-ender-pearl-tech.md)；
 > A5 停机重启 / A6 拆合重算已实施；A8「双箱只按一个容器提供一份产能」仍是**建议、未实施**。
 
-### B1~B12 文档对齐项（2026-10-27 登记；2026-11-11 B5/B6/B12 已对齐）
+### B1~B12 文档对齐项（2026-10-27 登记；2026-11-21 全部 12 项对齐完毕）
 
 > 完成判据（台账 §7）：**规则明确 → 对应文档唯一现状 → 代码符合该规则 → 验证入口诚实**。
-> 复核时逐条对照代码，不要只凭文档互引。B5 / B6 / B12 在 2026-11-07 实证残留的表述已于
-> 2026-11-11 定向对齐（文档与注释，未改变玩法、未新增实机验收）；其余条目本轮未逐项复核。
+> 复核时逐条对照代码，不要只凭文档互引。B5 / B6 / B12 于 2026-11-11 对齐；
+> 2026-11-21 把剩余 9 项逐条对照当前源码核对，确认 B1 本已对齐、其余 8 项有残留并**全部就地修复**
+> （纯文档 + 源码注释，未改逻辑、未改玩法），明细见本节末。
 
 | # | 待对齐文档 | 要点 |
 |---|---|---|
-| B1 | [红石 §3.2.1/§0](tech/living-redstone-tech.md) | 删除「边界红石灯读取外部信号」承诺（已裁定代码对） |
-| B2 | [红石](tech/living-redstone-tech.md) · [活铜](tech/living-copper-tech.md) | 倒计时单位 / Phase 顺序 / 字段名 / 对外输出范围；火把「暂时熄灭」不承诺未实现检测 |
-| B3 | [TNT](tech/living-tnt-tech.md) · [打火石](tech/living-flint-and-steel-tech.md) · [GUI交互](system-design/gui-interaction-system.md) | GUI 点火取代旧漏斗点火；`getSensor` 端口与注册位置 |
-| B4 | [红电](tech/living-power-tech.md) | 已删的稳态跳过 / 旧行号 / PhaseSnapshot 本地轴说明 |
+| B1 ✅ | [红石 §3.2.1/§0](tech/living-redstone-tech.md) | 删除「边界红石灯读取外部信号」承诺（已裁定代码对）——2026-11-21 复核确认本已对齐 |
+| B2 ✅ | [红石](tech/living-redstone-tech.md) · [活铜](tech/living-copper-tech.md) | 倒计时单位 / Phase 顺序 / 字段名 / 对外输出范围；火把「暂时熄灭」不承诺未实现检测——**2026-11-21 已对齐**：伪代码乘 `TICKS_PER_REPEATER_STEP`、Phase 4/3 顺序复位、字段名与 `locked` 补齐、`anyInputOfSlot`、铜块不参与 faceOutput |
+| B3 ✅ | [TNT](tech/living-tnt-tech.md) · [打火石](tech/living-flint-and-steel-tech.md) · [GUI交互](system-design/gui-interaction-system.md) | GUI 点火取代旧漏斗点火；`getSensor` 端口与注册位置——**2026-11-21 已对齐**：打火石附录取消旧漏斗信号源表述，GUI 规则示例改 `interaction_rules.json` 原文 |
+| B4 ✅ | [红电](tech/living-power-tech.md) | 已删的稳态跳过 / 旧行号 / PhaseSnapshot 本地轴说明——**2026-11-21 已对齐**：删稳态跳过描述、6 处行号/符号修正、源码 `PhaseSnapshot`/`ContainerRedstoneData` 旧轴注释同步 |
 | B5 ✅ | [熔炉](tech/living-furnace-tech.md) · [酿造](tech/living-brewing-stand-tech.md) | ~~不存在的 SlotAccessor 产出示例、默认布局「首次落盘」~~ **2026-11-11 已对齐**：熔炉数量操作为 consume/produce；酿造缺组件默认读值与整 record 保存分开（§6.4） |
 | B6 ✅ | [耕地](tech/living-farmland-tech.md) | ~~cropSeed 是类型记录不是「不消耗」、湿润验证改倒水成源~~ **2026-11-11 已对齐**：类型记录与种植消耗、采后回退、全字段比较、容器流体判湿与 4→3→2→1、JSON/领域注册；人工文件树改源码查询（§1/§2/§3/§5/§10/§12） |
 | B7 ✅ | [水车](tech/living-water-wheel-tech.md) | **2026-11-17 已对齐**：`domain/water` 路径 / 当前槽集合计算与写回 / `KineticOps` 状态机接缝 / 两条渲染态 set-clear 生命周期与 `@WrapOperation` / 桶源退役后的自维持流体时序；旧桶源与 pendingReattach 只留在明确历史事故段 |
-| B8 | [Tooltip](system-design/tooltip-system.md) · [图标](system-design/icon-system.md) | 面板常显与公式条件分开；ThreadLocal 真实 set/clear 生命周期 |
-| B9 | [末影箱路由](tech/living-ender-chest-tech.md) | 复合频道键替代 int 草图；simulate peek 非真实移除；flush 调用点 |
-| B10 | [容器边界 I-C10](system-design/container-boundary.md) · [超大堆叠审计](system-design/oversized-stack-audit.md) | 跨边界清单补容量/有效性/模拟三查询；实体缓存键判据 |
-| B11 | [API契约](system-design/api-contract.md) · AGENTS 模块路由 | 新注册口与 sophisticated / avaritia 路由；不重建人工文件树 |
+| B8 ✅ | [Tooltip](system-design/tooltip-system.md) · [图标](system-design/icon-system.md) | 面板常显与公式条件分开；ThreadLocal 真实 set/clear 生命周期——**2026-11-21 已对齐**：`coilForm` 不再误称翻译键决定者（实际按物品类别判定）；ThreadLocal 本已对齐 |
+| B9 ✅ | [末影箱路由](tech/living-ender-chest-tech.md) | 复合频道键替代 int 草图；simulate peek 非真实移除；flush 调用点——**2026-11-21 已对齐**：§2.2 数据结构/方法签名改 `EnderChannelKey`+`Deque`，flush 调用点统一 `LivingItem.onServerTick`；peek 本已对齐 |
+| B10 ✅ | [容器边界 I-C10](system-design/container-boundary.md) · [超大堆叠审计](system-design/oversized-stack-audit.md) | 跨边界清单补容量/有效性/模拟三查询；实体缓存键判据——**2026-11-21 已对齐**：I-C10 清单补四查询，源码 `ContainerIdentity` 注释改正实体带维度前缀 |
+| B11 ✅ | [API契约](system-design/api-contract.md) · AGENTS 模块路由 | 新注册口与 sophisticated / avaritia 路由；不重建人工文件树——**2026-11-21 已对齐**：§1.2 补 `registerMover`/`ItemFormContainers.register`，AGENTS compat 段补齐 7 个目录；不重建文件树本已对齐 |
 | B12 ✅ | [流体](tech/living-fluid-tech.md) | ~~旧收敛循环 / `flowSpeed`「预留」/ 最近水源距离~~ **2026-11-11 已对齐**：flowSpeed 已消费、晋升按实际层单遍判定、邻格实际 level 供给与目标层到达时间分开；数量原语未做表述清除（§3.3/§3.6及接口注释） |
+
+**2026-11-21 全项核对 + 修复留痕**（逐条对照当前源码，不凭文档互引；全部纯文档 / 注释改动，未改逻辑、未改玩法）：
+
+- **B1**：复核确认本已对齐——§3.2.1「红石灯不读取容器外部信号」与 `inputAt` 边界返回 0 一致，无需改。
+- **B2**：倒计时伪代码补乘 `TICKS_PER_REPEATER_STEP`（代码 L375/382）；§6.5 比较器 Phase 4/3 顺序复位（代码 `ContainerRedstoneData` L491-499 是 phase1→4→3→5）、L1643 改 Phase 4；字段名补 `active`→`powered`、`LivingRepeaterData` 补 `locked`（含 `withLocked`/字段表）、活铜 grate 改 `sumSignal`；红石灯/铜灯 `anyOfSlot`→`anyInputOfSlot`（代码 `RedstonePropagation` L428/655）；copper §5.3/§6.1 改为「铜块不参与 faceOutput」（代码四处 `isCopperSlot continue`）。火把「暂时熄灭」子项本已对齐。
+- **B3**：打火石附录 v2「活漏斗信号源」旧表述改为作废 + 指向 §2.1 现行 GUI 点火；GUI §3 交互规则示例从臆造的 `LivingTntFunction.CONFIG`/`InteractionEntry` 改为 `interaction_rules.json` 原文（D2 全迁，`TntRegistration` 只注册 handler）。
+- **B4**：删除 redstone-power「稳态跳过路径」描述（代码已删、每 tick 完整 5 phase）；旧行号/符号 6 处修正（`ChannelState:52`/`:192`、`accountEnergy`→`EnergyAccounting:20`、`runBfs`→`:291`、中继延迟→`RedstonePropagation:32/73/375`、实施表 `EnergyAccounting.accountEnergy`）；源码 `PhaseSnapshot.java` 旧「本地 tick 轴」Javadoc 改世界 game time + φ 反推锚、`ContainerRedstoneData.java:486`「稳态判定前」改「reset() 前」。
+- **B8**：tooltip `coilForm` 归因改正——形态翻译键由物品类别（`WaxedCopperFamily.isWaxed*`）判定、不读该字段；ThreadLocal set/clear 本已对齐。
+- **B9**：§2.2 数据结构 `Map<Integer>`/`Set<Integer>`/`nextIndex` 改 `EnderChannelKey` + `Deque<entries>`+`Set<RouteKey>`（含 posIndex 维度外层、uuidIndex/entryToChannel）；方法表/示例签名 `int channel`→`EnderChannelKey key`、`insert`→`offer`、`int ch`→`key.count()`；flush 调用点 4 处统一 `LivingItem.onServerTick`（L4 每 tick 一次，代码 `LivingItem.java:415`）。peek 非真实移除本已对齐。一度误删仍存在的 `removeByPositionAndSlot` 行，已复核恢复。
+- **B10**：`container-boundary.md` I-C10 清单补「容量/有效性/模拟查询」一行（代码 `EntityContainerContext` L147-165 已覆写带偏移、源码注释自称漏项）；源码 `ContainerIdentity.java:89-91` Javadoc 改正——实体容器带 blockPosition 快照 ⇒ 缓存键带维度前缀 `dim|entity_<uuid>`。
+- **B11**：`api-contract.md` §1.2 补 `ContainerHandoff.registerMover` / `ItemFormContainers.register`；AGENTS.md 模块地图 compat 段按实际 7 个子目录补齐（create/sophisticated/avaritia/tlm/sable/iris/jade）；「不重建人工文件树」本已对齐。
+
+> 校准留痕：核对员报告的**代码事实准确**，但若干文件路径前缀、以及 `isWaxedXxx`/`anyOfSlot` 等**概括写法不可直接照抄**（前者非真实方法，被 `doc_check` 第 9 项拦截；后者经代码裁决为 `anyInputOfSlot`）。本轮每处改动均先读源码确认再落笔。全项 `python tools/doc_check.py` 通过（0 警告）。
+>
+> **2026-11-21 独立复审 + 术语订正**：逐条对照源码复核全部改动，除下述一项外均通过。
+> **问题与两次判断翻转（留痕）**：B4 收口时顺手把 `EnergyAccounting.accountEnergy` 行的「锈蚟级」改成「锈蚀级」，造成术语混用。首次复审**误判**「锈蚟级」是电力层共振隔离单位的专有术语、与化学概念「锈蚀级」不同，于是回滚并统一为「锈蚟级」，还否决了「全改锈蚀级」的建议。用户追问两者区别后复查词源：**判断再次翻转，最终确认「锈蚟」是错别字**——①「蚟」读 wáng、义为蜘蛛/蜻蜓，"锈蚟"非中文既有词；② 起源提交 `84ed368e`（标题「赋予锈蚀的意义」）引入技术术语时手误写成"锈蚟级"，随后扩散；③ glossary 权威词条只有「锈蚀级/氧化级」（=铜的 4 个氧化等级=共振声部），无「锈蚟」词条，代码英文一律 `oxidation`。⇒ 全库所有出现处「锈蚟」统一改为「锈蚀」（文档 + 源码注释 + 测试类 javadoc + 测试显示名/断言消息），`test-map.md` 由 `gen_test_map.py` 重生成同步；archive 冻结层 0 处、未动（本节留痕为记述本次订正而保留该词，属唯一例外）。两次误判的根因：**只看单处文档自述就断定专有术语，没查词源与 glossary 权威定义**——以后判定「错字 vs 术语」必须先查 glossary + 词源，不能凭出现次数或某篇文档的自洽表述。类名修正 `EnergyAccounting.accountEnergy` 保留。
 
 ## 2026-10-27 审查修复 · 真机复验（2026-10-28 全部闭环）
 

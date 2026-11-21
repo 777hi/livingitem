@@ -100,13 +100,13 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         ContainerEnergyStorage.announcePresence(ctx, powerData,
             ContainerEnergyStorage.hasLivingBulb(entries));
 
-        // 各锈蚟级本 tick 基础出力累加器（共振用，§3.7）。
-        // 锈级共振单位是锈蚟级：同锈蚟级的多个连通块在此自然相加。
+        // 各锈蚀级本 tick 基础出力累加器（共振用，§3.7）。
+        // 锈级共振单位是锈蚀级：同锈蚀级的多个连通块在此自然相加。
         final long[] baseReByOx = new long[PowerMath.OXIDATION_LEVELS];
 
         RedstoneSensor sensor = tick.getSensor(ctx);
         if (sensor == null) {
-            // 仍需推进共振 EMA，否则停止发电的锈蚟级不会衰减
+            // 仍需推进共振 EMA，否则停止发电的锈蚀级不会衰减
             powerData.updateOxidationEma(baseReByOx);
             powerData.endTick();
             return;
@@ -136,7 +136,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             active.put(slot, gen);
         }
         if (active.isEmpty()) {
-            // 仍需推进共振 EMA，否则拆除的锈蚟级会一直被算作活跃锈级
+            // 仍需推进共振 EMA，否则拆除的锈蚀级会一直被算作活跃锈级
             powerData.updateOxidationEma(baseReByOx);
             powerData.endTick();
             return;

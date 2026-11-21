@@ -82,14 +82,14 @@ CarriedUpdatePacket.handle() (客户端)
 
 ## 3. 声明式交互规则
 
-```java
-// LivingTntFunction.CONFIG 中声明两条交互规则：
-new InteractionEntry(Items.TNT, Items.FLINT_AND_STEEL, 1, "ignite")
-//  目标=活TNT, 触发器=活打火石, 右键 → actionId="ignite" → IgniteHandler
+两条点火交互规则声明在 `assets/living_item/interaction_rules.json`（D2 全迁 JSON，由 `InteractionRuleConfig` 加载；`TntRegistration` 只注册 handler）：
 
-new InteractionEntry(Items.FLINT_AND_STEEL, Items.TNT, 1, "ignite_carried")
-//  目标=活打火石, 触发器=活TNT, 右键 → actionId="ignite_carried" → IgniteCarriedHandler
+```json
+{ "id": "tnt_ignite",         "target": "minecraft:tnt",             "trigger": "minecraft:flint_and_steel", "button": "right", "action": "ignite" },
+{ "id": "tnt_ignite_carried", "target": "minecraft:flint_and_steel", "trigger": "minecraft:tnt",             "button": "right", "action": "ignite_carried" }
 ```
+
+`action` `"ignite"` / `"ignite_carried"` 分别派发到 `IgniteHandler` / `IgniteCarriedHandler`。
 
 ---
 

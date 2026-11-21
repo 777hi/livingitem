@@ -170,10 +170,10 @@ public final class PowerMath {
 
     // ── 网络级共振（不同锈级之间，见 living-power-tech.md §3.7）──
     //
-    // 块级感应是「铜块采样边信号」，网络级共振是「锈蚟级之间互相感应」——同一套
-    // 机制抬高一个维度。锈级共振单位是**锈蚟级**（不是 BFS 连通块）：同锈蚟级的多个
+    // 块级感应是「铜块采样边信号」，网络级共振是「锈蚀级之间互相感应」——同一套
+    // 机制抬高一个维度。锈级共振单位是**锈蚀级**（不是 BFS 连通块）：同锈蚀级的多个
     // 连通块出力直接相加。这一点不只是简化，更是 R ≤ OXIDATION_LEVELS 的结构性
-    // 前提——否则把同一锈蚟级拆成多个小簇即可刷 N，退化为 N×(N-1) 膨胀。
+    // 前提——否则把同一锈蚀级拆成多个小簇即可刷 N，退化为 N×(N-1) 膨胀。
 
     /**
      * 共振指数：容器总发电量乘 R 的该次方。
@@ -184,7 +184,7 @@ public final class PowerMath {
      */
     public static final double RESONANCE_EXPONENT = 2.0;
 
-    /** 锈蚟级数（= 活跃锈级上限，也就是 R 的结构性上界） */
+    /** 锈蚀级数（= 活跃锈级上限，也就是 R 的结构性上界） */
     public static final int OXIDATION_LEVELS = 4;
 
     /**
@@ -193,7 +193,7 @@ public final class PowerMath {
      * <p>各锈级出力全部相等时 s = 1；一个独大时 s → 0。尺度无关——只关心各锈级
      * 的比例，不关心绝对值（1000/1000 与 1/1 同样共振）。</p>
      *
-     * @param values 各锈蚟级的出力（只取正值参与；非正值视为该锈级不存在）
+     * @param values 各锈蚀级的出力（只取正值参与；非正值视为该锈级不存在）
      * @return [0, 1]；有效锈级数 ≤ 1 时返回 1（无失衡可言）
      */
     public static double balanceFactor(double[] values) {
@@ -218,11 +218,11 @@ public final class PowerMath {
     /**
      * 共振倍率 {@code R = 1 + (N − 1) × s}。
      *
-     * <p>N = 有出力的锈蚟级数。s=1（各网出力相等）时 R = N；s→0（一个独大）时
+     * <p>N = 有出力的锈蚀级数。s=1（各网出力相等）时 R = N；s→0（一个独大）时
      * R → 1。恒有 {@code R ∈ [1, N] ⊆ [1, OXIDATION_LEVELS]}：下限 1 保证共振
-     * 永远不会「扣发电量」，上界由锈蚟级数结构性封顶，不可能失控。</p>
+     * 永远不会「扣发电量」，上界由锈蚀级数结构性封顶，不可能失控。</p>
      *
-     * @param powerByOxidation 各锈蚟级的出力（长度 ≤ {@link #OXIDATION_LEVELS}）
+     * @param powerByOxidation 各锈蚀级的出力（长度 ≤ {@link #OXIDATION_LEVELS}）
      */
     public static double resonanceFactor(double[] powerByOxidation) {
         if (powerByOxidation == null || powerByOxidation.length == 0) return 1.0;
@@ -231,7 +231,7 @@ public final class PowerMath {
             if (v > 0.0) n++;
         }
         if (n <= 1) return 1.0;
-        // 结构性上界：锈级数不可能超过锈蚟级数
+        // 结构性上界：锈级数不可能超过锈蚀级数
         n = Math.min(n, OXIDATION_LEVELS);
         double s = balanceFactor(powerByOxidation);
         double r = 1.0 + (n - 1) * s;
@@ -241,7 +241,7 @@ public final class PowerMath {
     /**
      * 共振增益 = R^{@link #RESONANCE_EXPONENT}，作用于容器本 tick 的**基础**发电量。
      *
-     * <p>⚠️ 铁律：入参必须是「共振前」的各锈蚟级出力。若喂入乘过增益的值，会形成
+     * <p>⚠️ 铁律：入参必须是「共振前」的各锈蚀级出力。若喂入乘过增益的值，会形成
      * {@code 增益↑ → 出力↑ → 增益↑} 的回代环。调用方
      * {@link ContainerPowerData} 的 EMA 只跟踪基础出力，整条链路为纯前馈。</p>
      */
