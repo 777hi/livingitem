@@ -149,6 +149,7 @@ src/test/java/com/qiqi/li/
 │   │   │   └── LivingBackpackTooltipTest.java  # 活背包 tooltip 的 容器 ID 行 （2026-10-26，用户定）。
 │   │   ├── battle/
 │   │   │   ├── BattleEventFeedTest.java  # ⚠️ 源码无类注释
+│   │   │   ├── BattleMathTest.java  # ⚠️ 源码无类注释
 │   │   │   ├── BattlePlotTest.java  # ⚠️ 源码无类注释
 │   │   │   ├── LivingBattleFunctionTest.java  # ⚠️ 源码无类注释
 │   │   │   └── ReconcilePlanTest.java  # ⚠️ 源码无类注释

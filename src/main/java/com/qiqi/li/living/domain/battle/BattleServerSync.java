@@ -55,22 +55,23 @@ public final class BattleServerSync {
 
     private static List<BattleSnapshotPacket.EnemyState> collectEnemies(ServerLevel arena, BattleArenaData data) {
         List<BattleSnapshotPacket.EnemyState> out = new ArrayList<>();
-        for (Map.Entry<UUID, Integer> entry : data.laneByEnemy().entrySet()) {
-            var entity = arena.getEntity(entry.getKey());
+        for (UUID uuid : data.enemies()) {
+            var entity = arena.getEntity(uuid);
             if (entity == null || !entity.isAlive()) continue;
-            double progress = ArenaPlots.progressOf(entity.getX(), data.plotPos(), data.depth());
             boolean helmet = entity instanceof net.minecraft.world.entity.LivingEntity living
                 && !living.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.HEAD).isEmpty();
             out.add(new BattleSnapshotPacket.EnemyState(
                 entity.getUUID().getMostSignificantBits(), entity.getUUID().getLeastSignificantBits(),
-                entry.getValue(), (float) progress, helmet));
+                (float) ArenaPlots.rowOf(entity.getZ(), data.plotPos(), data.lanes()),
+                (float) ArenaPlots.colOf(entity.getX(), data.plotPos(), data.depth()),
+                helmet));
         }
         return out;
     }
 
     /** 实体已消失（区块卸载 / discard）的敌军出册。 */
     private static void pruneEnemies(ServerLevel arena, BattleArenaData data) {
-        data.laneByEnemy().keySet().removeIf(uuid -> {
+        data.enemies().removeIf(uuid -> {
             var entity = arena.getEntity(uuid);
             return entity == null || !entity.isAlive();
         });

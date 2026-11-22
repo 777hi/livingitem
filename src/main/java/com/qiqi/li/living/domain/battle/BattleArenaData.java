@@ -29,8 +29,8 @@ public final class BattleArenaData {
 
     /** 桥名册：逻辑槽位 → 桥引用（UUID + 物品身份指纹）。桥不落盘，缺了由 reconcile 重建（自愈）。 */
     private final Map<Integer, ReconcilePlan.BridgeRef> bridgeBySlot = new HashMap<>();
-    /** 敌军名册：敌军 UUID → 车道号；敌军不落盘，实体消失时由 flush 侧 prune。 */
-    private final Map<UUID, Integer> laneByEnemy = new HashMap<>();
+    /** 敌军名册：UUID 集合；敌军不落盘，实体消失时由 flush 侧 prune。 */
+    private final java.util.Set<UUID> enemies = new java.util.HashSet<>();
 
     public boolean isEmpty() {
         return battleKey == null;
@@ -56,8 +56,8 @@ public final class BattleArenaData {
         return bridgeBySlot;
     }
 
-    public Map<UUID, Integer> laneByEnemy() {
-        return laneByEnemy;
+    public java.util.Set<UUID> enemies() {
+        return enemies;
     }
 
     /** 建立战局（build 命令）；重复 build = 重摆场地并重置名册。 */
@@ -67,7 +67,7 @@ public final class BattleArenaData {
         this.lanes = lanes;
         this.depth = depth;
         bridgeBySlot.clear();
-        laneByEnemy.clear();
+        enemies.clear();
     }
 
     /** 清局（clear 命令 / 容器键失效）：实体清理由调用方负责。 */
@@ -75,6 +75,6 @@ public final class BattleArenaData {
         battleKey = null;
         plotPos = null;
         bridgeBySlot.clear();
-        laneByEnemy.clear();
+        enemies.clear();
     }
 }

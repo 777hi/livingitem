@@ -13,6 +13,10 @@ public record BattleEvent(Type type, int slot) {
 
     public enum Type {
         /** 敌军啃咬桥（挥臂重演 + 桥红闪） */
-        SWING
+        SWING,
+        /** 棋子被吃光（count=0 物品消失；GUI 长红闪） */
+        PIECE_LOST,
+        /** 战败：敌军越过战败线（MVP 轻惩罚 = 清敌军重置波次；GUI 横幅） */
+        DEFEAT
     }
 }

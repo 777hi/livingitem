@@ -59,21 +59,24 @@ class BattlePlotTest {
     }
 
     @Test
-    void cellCenterFollowsLaneColumnMath() {
+    void cellCenterFollowsRowColumnMath() {
         BlockPos origin = new BlockPos(1000, 220, 2000);
         Vec3 c00 = ArenaPlots.cellCenter(origin, 0, 0);
         assertEquals(origin.getX() + 1.0, c00.x, 1.0E-9);
         assertEquals(origin.getZ() + 0.5, c00.z, 1.0E-9);
         Vec3 c12 = ArenaPlots.cellCenter(origin, 1, 2);
-        assertEquals(origin.getX() + 2 * ArenaPlots.DEPTH_STRIDE + 1.0, c12.x, 1.0E-9);
-        assertEquals(origin.getZ() + ArenaPlots.LANE_STRIDE + 0.5, c12.z, 1.0E-9);
+        assertEquals(origin.getX() + 2 * ArenaPlots.CELL_STRIDE + 1.0, c12.x, 1.0E-9);
+        assertEquals(origin.getZ() + ArenaPlots.CELL_STRIDE + 0.5, c12.z, 1.0E-9);
     }
 
     @Test
-    void progressClampsToUnitRange() {
+    void rowColClampToArenaRange() {
         BlockPos origin = new BlockPos(0, 220, 0);
-        assertEquals(0.0, ArenaPlots.progressOf(-50, origin, 9), 1.0E-9, "第 0 列西侧夹取 0");
-        assertEquals(1.0, ArenaPlots.progressOf(500, origin, 9), 1.0E-9, "东端外夹取 1");
-        assertEquals(0.5, ArenaPlots.progressOf(9.0, origin, 9), 0.15, "中段约 0.5");
+        assertEquals(0.0, ArenaPlots.rowOf(-50, origin, 3), 1.0E-9, "北侧外夹取 0");
+        assertEquals(2.0, ArenaPlots.rowOf(500, origin, 3), 1.0E-9, "南侧外夹取 lanes-1");
+        assertEquals(1.5, ArenaPlots.rowOf(3.0, origin, 3), 1.0E-9, "行带间插值");
+        assertEquals(0.0, ArenaPlots.colOf(-50, origin, 9), 1.0E-9, "西侧外夹取 0");
+        assertEquals(8.0, ArenaPlots.colOf(500, origin, 9), 1.0E-9, "东侧外夹取 depth-1");
+        assertEquals(1.5, ArenaPlots.colOf(3.0, origin, 9), 1.0E-9, "列间插值");
     }
 }

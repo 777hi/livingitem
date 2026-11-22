@@ -1,7 +1,6 @@
 package com.qiqi.li.living.domain.battle;
 
 import java.util.List;
-import java.util.UUID;
 
 import com.qiqi.li.living.domain.battle.entity.BattleZombieEntity;
 import com.qiqi.li.living.domain.battle.entity.BridgeEntity;
@@ -27,44 +26,60 @@ public final class BattleEnemies {
 
     private BattleEnemies() {}
 
-    /** 每 k 只敌军，轮转铺满各车道远端；返回实际生成数。 */
+    /** 每 k 只敌军，沿各行东端（出怪边）轮转生成；返回实际生成数。 */
     public static int spawnWave(ServerLevel arena, BattleArenaData data, int perLane) {
         int spawned = 0;
-        for (int lane = 0; lane < data.lanes(); lane++) {
+        for (int row = 0; row < data.lanes(); row++) {
             for (int k = 0; k < perLane; k++) {
                 BattleZombieEntity zombie = BattleEntities.ZOMBIE.get().create(arena);
                 if (zombie == null) continue;
-                Vec3 cell = ArenaPlots.cellCenter(data.plotPos(), lane, data.depth() - 1);
-                // 车道远端（东端），朝西（面向第 0 列，yaw 90）
+                Vec3 cell = ArenaPlots.cellCenter(data.plotPos(), row, data.depth() - 1);
+                // 出怪边（东端），朝西
                 zombie.moveTo(cell.x + (k % 2), cell.y, cell.z, 90.0F, 0.0F);
                 zombie.setItemSlot(EquipmentSlot.HEAD, new ItemStack(Items.IRON_HELMET));
                 zombie.setDropChance(EquipmentSlot.HEAD, 0.0F);
                 zombie.addTag(TAG_ENEMY);
-                LaneAdvanceGoal.writeLaneParams(zombie, data.plotPos(), lane, data.depth());
+                BattleLaneAI.writeParams(zombie, data.plotPos(), data.lanes(), data.depth());
                 zombie.goalSelector.getAvailableGoals().clear();
                 zombie.targetSelector.getAvailableGoals().clear();
-                zombie.goalSelector.addGoal(0, new LaneAdvanceGoal(zombie));
+                // 两层：无旗标索敌（常驻，全场最近棋子）→ 原版近战（自由逼近，无行军 Goal）
+                zombie.goalSelector.addGoal(0, new BridgeTargetingGoal(zombie));
                 zombie.goalSelector.addGoal(1, new MeleeAttackGoal(zombie, 1.0, true));
                 arena.addFreshEntity(zombie);
-                data.laneByEnemy().put(zombie.getUUID(), lane);
+                data.enemies().add(zombie.getUUID());
                 spawned++;
             }
         }
         return spawned;
     }
 
-    /** 清场：战区 AABB 内的桥（按名册 + 兜底）与 tag 敌军全部 discard；返回清理数。 */
-    public static int clear(ServerLevel arena, BattleArenaData data) {
+    /** 只清敌军（战败重置用）：桥与战局保留。 */
+    public static int clearEnemies(ServerLevel arena, BattleArenaData data) {
         int removed = 0;
-        for (UUID uuid : List.copyOf(data.laneByEnemy().keySet())) {
-            data.laneByEnemy().remove(uuid);
-        }
         var bounds = ArenaPlots.plotBounds(data.plotPos(), data.lanes(), data.depth());
         List<Entity> doomed = new java.util.ArrayList<>();
         for (Entity entity : arena.getEntities().getAll()) {
             if (!bounds.intersects(entity.getBoundingBox())) continue;
-            if (entity instanceof BridgeEntity || entity instanceof BattleZombieEntity
-                || entity.getTags().contains(TAG_ENEMY)) {
+            if (entity instanceof BattleZombieEntity || entity.getTags().contains(TAG_ENEMY)) {
+                doomed.add(entity);
+            }
+        }
+        for (Entity entity : doomed) {
+            entity.discard();
+            removed++;
+        }
+        data.enemies().clear();
+        return removed;
+    }
+
+    /** 清场：战区 AABB 内的桥（按名册 + 兜底）与 tag 敌军全部 discard；返回清理数。 */
+    public static int clear(ServerLevel arena, BattleArenaData data) {
+        int removed = clearEnemies(arena, data);
+        var bounds = ArenaPlots.plotBounds(data.plotPos(), data.lanes(), data.depth());
+        List<Entity> doomed = new java.util.ArrayList<>();
+        for (Entity entity : arena.getEntities().getAll()) {
+            if (!bounds.intersects(entity.getBoundingBox())) continue;
+            if (entity instanceof BridgeEntity) {
                 doomed.add(entity);
             }
         }

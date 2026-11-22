@@ -18,6 +18,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -47,34 +48,48 @@ import org.joml.Quaternionf;
 public final class BattleBoardOverlay {
 
     private static final int SWING_TICKS = 6;
+    private static final int PIECE_LOST_TICKS = 12;
+    private static final int DEFEAT_BANNER_TICKS = 80;
     private static final float ZOMBIE_SCALE = 11.0F;
     /** 车道框线：绿框三边（战败线侧 + 上下沿）、红线出怪边（右端）。 */
     private static final int FRAME_GREEN = 0xFF55AA55;
     private static final int FRAME_RED = 0xFFDD4444;
     private static final int FLASH_COLOR = 0x60FF5555;
     private static final int DOT_COLOR = 0xFFCC2222;
+    private static final int DEFEAT_TEXT_COLOR = 0xFFFF5555;
 
     private static final Map<UUID, BoardEnemy> ZOMBIES = new HashMap<>();
     private static final Map<Integer, Integer> FLASH = new HashMap<>();
     private static boolean degraded = false;
+    private static int bannerTicks = 0;
     private static final ByteBufferBuilder BUFFER_MEMORY = new ByteBufferBuilder(262144);
 
     private BattleBoardOverlay() {}
 
-    // ── 棋盘几何：行 = 车道，行内按列排布（GUI 相对坐标） ────────
+    // ── 棋盘几何：容器槽位网格 1:1 = 战场格（GUI 相对坐标） ────────
 
-    private record Grid(List<Row> rows) {
+    private record Grid(List<Row> rows, int depth) {
         boolean isEmpty() {
             return rows.isEmpty();
         }
 
-        Row row(int lane) {
-            return rows.get(Math.min(Math.max(lane, 0), rows.size() - 1));
+        Row rowAt(int rowIndex) {
+            return rows.get(Math.min(Math.max(rowIndex, 0), rows.size() - 1));
         }
 
-        float enemyX(int lane, float progress) {
-            Row row = row(lane);
-            return row.firstCenterX() + progress * (row.lastCenterX() - row.firstCenterX());
+        /** 列浮点 → x：沿行内格心线性映射（depth−1 段）。 */
+        float enemyX(float col) {
+            Row row = rows.get(0);
+            return row.firstCenterX()
+                + col * (row.lastCenterX() - row.firstCenterX()) / Math.max(1, depth - 1);
+        }
+
+        /** 行浮点 → y：行间线性插值（怪在行带间自由移动）。 */
+        float enemyY(float row) {
+            int lo = Math.min((int) row, rows.size() - 1);
+            int hi = Math.min(lo + 1, rows.size() - 1);
+            float frac = Math.max(0F, Math.min(1F, row - lo));
+            return rows.get(lo).y() + (rows.get(hi).y() - rows.get(lo).y()) * frac;
         }
     }
 
@@ -90,7 +105,7 @@ public final class BattleBoardOverlay {
             if (!slot.isActive()) continue;
             byY.computeIfAbsent(slot.y, k -> new ArrayList<>()).add(new int[] {slot.x, menuIdx});
         }
-        if (byY.isEmpty()) return new Grid(List.of());
+        if (byY.isEmpty()) return new Grid(List.of(), 1);
         List<Row> rows = new ArrayList<>(byY.size());
         for (var entry : byY.entrySet()) {
             List<int[]> cells = entry.getValue();
@@ -99,7 +114,7 @@ public final class BattleBoardOverlay {
             int lastCenterX = cells.get(cells.size() - 1)[0] + 8;
             rows.add(new Row(entry.getKey(), firstCenterX, lastCenterX));
         }
-        return new Grid(rows);
+        return new Grid(rows, Math.max(1, BattleClientCache.depth()));
     }
 
     // ── 渲染 ──────────────────────────────────────────────────
@@ -152,7 +167,16 @@ public final class BattleBoardOverlay {
             } else {
                 drawZombies(mc, grid, left, top, partial);
             }
+            drawDefeatBanner(graphics, mc, top);
         });
+    }
+
+    /** 战败横幅（事件重演：DEFEAT 后短暂显示）。 */
+    private static void drawDefeatBanner(GuiGraphics graphics, Minecraft mc, int top) {
+        if (bannerTicks <= 0) return;
+        Component text = Component.translatable("livingitem.battle.defeat");
+        int x = (graphics.guiWidth() - mc.font.width(text)) / 2;
+        graphics.drawString(mc.font, text, x, top - 24, DEFEAT_TEXT_COLOR);
     }
 
     /** 桥受击红闪（事件重演的容器侧反馈）。 */
@@ -170,9 +194,9 @@ public final class BattleBoardOverlay {
     private static void drawDots(GuiGraphics graphics, Grid grid, int left, int top) {
         for (var entry : BattleClientCache.enemies().entrySet()) {
             BattleClientCache.EnemyPos pos = entry.getValue();
-            int x = Math.round(grid.enemyX(pos.lane(), pos.progress()));
-            Row row = grid.row(pos.lane());
-            graphics.fill(left + x - 2, top + row.y() + 5, left + x + 2, top + row.y() + 11, DOT_COLOR);
+            int x = Math.round(grid.enemyX(pos.col()));
+            int y = Math.round(grid.enemyY(pos.row()));
+            graphics.fill(left + x - 2, top + y + 5, left + x + 2, top + y + 11, DOT_COLOR);
         }
     }
 
@@ -185,8 +209,8 @@ public final class BattleBoardOverlay {
             Lighting.setupForEntityInInventory();
             dispatcher.overrideCameraOrientation(new Quaternionf().rotateY((float) Math.PI));
             for (BoardEnemy enemy : ZOMBIES.values()) {
-                float x = grid.enemyX(enemy.targetLane, enemy.displayProgress());
-                int y = grid.row(enemy.targetLane).y();
+                float x = grid.enemyX(enemy.displayCol());
+                int y = Math.round(grid.enemyY(enemy.displayRow()));
                 PoseStack pose = new PoseStack();
                 pose.translate(left + x, top + y + 16, 0);
                 pose.scale(ZOMBIE_SCALE, ZOMBIE_SCALE, -ZOMBIE_SCALE);
@@ -233,14 +257,23 @@ public final class BattleBoardOverlay {
             clearBoard();
             return;
         }
-        // 事件消费 → 桥红闪 + 最近敌军挥臂（事件只有槽位定位，挥臂者客户端就近认领）
+        // 事件消费 → 桥红闪 / 棋子丢失长闪 / 战败横幅 + 挥臂重演
         for (BattleEvent battleEvent : BattleClientCache.consumeEvents()) {
-            if (battleEvent.type() != BattleEvent.Type.SWING) continue;
-            int menuIdx = BattleClientCache.menuSlotOf(battleEvent.slot());
-            if (menuIdx >= 0) FLASH.put(menuIdx, SWING_TICKS);
-            BoardEnemy nearest = nearestToSlot(menuIdx, screen.getMenu());
-            if (nearest != null) nearest.swingTicks = SWING_TICKS;
+            switch (battleEvent.type()) {
+                case SWING -> {
+                    int menuIdx = BattleClientCache.menuSlotOf(battleEvent.slot());
+                    if (menuIdx >= 0) FLASH.put(menuIdx, SWING_TICKS);
+                    BoardEnemy nearest = nearestToSlot(menuIdx, screen.getMenu());
+                    if (nearest != null) nearest.swingTicks = SWING_TICKS;
+                }
+                case PIECE_LOST -> {
+                    int menuIdx = BattleClientCache.menuSlotOf(battleEvent.slot());
+                    if (menuIdx >= 0) FLASH.put(menuIdx, PIECE_LOST_TICKS);
+                }
+                case DEFEAT -> bannerTicks = DEFEAT_BANNER_TICKS;
+            }
         }
+        if (bannerTicks > 0) bannerTicks--;
         syncEnemies();
         for (BoardEnemy enemy : ZOMBIES.values()) enemy.tick();
         FLASH.replaceAll((key, value) -> value - 1);
@@ -258,6 +291,7 @@ public final class BattleBoardOverlay {
         ZOMBIES.clear();
         FLASH.clear();
         degraded = false;
+        bannerTicks = 0;
     }
 
     /** 快照 → 临时实体：新建 / 目标更新（插值从当前显示位起步，不跨场瞬移）。 */
@@ -268,15 +302,17 @@ public final class BattleBoardOverlay {
             if (enemy == null) {
                 enemy = BoardEnemy.create();
                 if (enemy == null) continue;
-                enemy.lastProgress = pos.progress();
+                enemy.lastRow = pos.row();
+                enemy.lastCol = pos.col();
                 ZOMBIES.put(entry.getKey(), enemy);
-            } else if (pos.lane() != enemy.targetLane
-                    || Math.abs(pos.progress() - enemy.targetProgress) > 1.0E-4F) {
-                enemy.lastProgress = enemy.displayProgress();
+            } else if (Math.abs(pos.row() - enemy.targetRow) > 1.0E-4F
+                    || Math.abs(pos.col() - enemy.targetCol) > 1.0E-4F) {
+                enemy.lastRow = enemy.displayRow();
+                enemy.lastCol = enemy.displayCol();
                 enemy.sinceUpdate = 0;
             }
-            enemy.targetLane = pos.lane();
-            enemy.targetProgress = pos.progress();
+            enemy.targetRow = pos.row();
+            enemy.targetCol = pos.col();
             // 装备重演：快照带什么演什么（spike 只重演头盔）
             if (pos.helmet() != enemy.helmet) {
                 enemy.helmet = pos.helmet();
@@ -297,8 +333,8 @@ public final class BattleBoardOverlay {
         BoardEnemy best = null;
         double bestDist = Double.MAX_VALUE;
         for (BoardEnemy enemy : ZOMBIES.values()) {
-            double dx = grid.enemyX(enemy.targetLane, enemy.displayProgress()) - cx;
-            double dy = grid.row(enemy.targetLane).y() + 8 - cy;
+            double dx = grid.enemyX(enemy.displayCol()) - cx;
+            double dy = grid.enemyY(enemy.displayRow()) + 8 - cy;
             double dist = dx * dx + dy * dy;
             if (dist < bestDist) {
                 bestDist = dist;
@@ -311,9 +347,10 @@ public final class BattleBoardOverlay {
     /** 临时敌军：位置/动画全部本地驱动，不入世界、不运行 AI。 */
     private static final class BoardEnemy {
         final Zombie entity;
-        int targetLane;
-        float targetProgress;
-        float lastProgress;
+        float targetRow;
+        float targetCol;
+        float lastRow;
+        float lastCol;
         int sinceUpdate;
         int swingTicks;
         boolean helmet;
@@ -335,15 +372,21 @@ public final class BattleBoardOverlay {
             return new BoardEnemy(zombie);
         }
 
-        float displayProgress() {
+        float displayCol() {
             float t = Math.min(1.0F, sinceUpdate / 4.0F);
-            return lastProgress + (targetProgress - lastProgress) * t;
+            return lastCol + (targetCol - lastCol) * t;
+        }
+
+        float displayRow() {
+            float t = Math.min(1.0F, sinceUpdate / 4.0F);
+            return lastRow + (targetRow - lastRow) * t;
         }
 
         void tick() {
             sinceUpdate++;
             this.entity.tickCount++;
-            boolean moving = Math.abs(targetProgress - lastProgress) > 1.0E-4F;
+            boolean moving = Math.abs(targetCol - lastCol) > 1.0E-4F
+                || Math.abs(targetRow - lastRow) > 1.0E-4F;
             this.entity.walkAnimation.update(moving ? 0.5F : 0.0F, 0.4F);
             if (swingTicks > 0) {
                 swingTicks--;

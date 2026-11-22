@@ -169,6 +169,7 @@ public class LivingItem {
         com.qiqi.li.living.domain.maid.MaidComponents.REG.register(modEventBus);
         // 战场实体（battle 领域，项目首例实体）：总线同样必须构造阶段挂
         com.qiqi.li.living.domain.battle.BattleEntities.REG.register(modEventBus);
+        com.qiqi.li.living.domain.battle.BattleComponents.REG.register(modEventBus);
         modEventBus.addListener(com.qiqi.li.living.domain.battle.BattleEntities::registerAttributes);
         NeoForge.EVENT_BUS.register(this);
         NeoForge.EVENT_BUS.register(ContainerChunkCache.getInstance());

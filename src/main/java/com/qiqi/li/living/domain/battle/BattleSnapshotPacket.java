@@ -33,11 +33,11 @@ public record BattleSnapshotPacket(int menuId, String containerKey, int lanes, i
     private static final int MAX_EVENTS = 32;
 
     /**
-     * 敌军快照：车道号 + 推进进度（0=第0列 GUI 左，1=东端 GUI 右）+ 头盔标记。
+     * 敌军快照：网格坐标（row=南北行浮点 / col=东西列浮点，各自夹取到场地内）+ 头盔标记。
      * <p>⚠️ 演出不背真相：快照里没有的（装备/药效/骑乘…）GUI 就不演——
      * 想演什么就往快照里加什么字段（spike 只带头盔一项）。</p>
      */
-    public record EnemyState(long uuidMost, long uuidLeast, int lane, float progress, boolean helmet) {}
+    public record EnemyState(long uuidMost, long uuidLeast, float row, float col, boolean helmet) {}
 
     public BattleSnapshotPacket {
         enemies = List.copyOf(enemies);
@@ -59,8 +59,8 @@ public record BattleSnapshotPacket(int menuId, String containerKey, int lanes, i
         for (EnemyState enemy : packet.enemies()) {
             buf.writeLong(enemy.uuidMost());
             buf.writeLong(enemy.uuidLeast());
-            buf.writeVarInt(enemy.lane());
-            buf.writeFloat(enemy.progress());
+            buf.writeFloat(enemy.row());
+            buf.writeFloat(enemy.col());
             buf.writeBoolean(enemy.helmet());
         }
         buf.writeVarInt(packet.menuSlots().size());
@@ -91,10 +91,10 @@ public record BattleSnapshotPacket(int menuId, String containerKey, int lanes, i
         for (int i = 0; i < count; i++) {
             long most = buf.readLong();
             long least = buf.readLong();
-            int lane = buf.readVarInt();
-            float progress = buf.readFloat();
+            float row = buf.readFloat();
+            float col = buf.readFloat();
             boolean helmet = buf.readBoolean();
-            enemies.add(new EnemyState(most, least, lane, progress, helmet));
+            enemies.add(new EnemyState(most, least, row, col, helmet));
         }
         Map<Integer, Integer> menuSlots = new HashMap<>();
         count = readCount(buf, MAX_BRIDGES, "menu slot");

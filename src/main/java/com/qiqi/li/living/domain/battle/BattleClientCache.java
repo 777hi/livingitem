@@ -18,7 +18,7 @@ import com.qiqi.li.living.util.StaticCacheRegistry;
 public final class BattleClientCache {
 
     /** 敌军最新快照位（目标值；显示位置由 Overlay 侧插值逼近）。 */
-    public record EnemyPos(int lane, float progress, boolean helmet) {}
+    public record EnemyPos(float row, float col, boolean helmet) {}
 
     private static int menuId = -1;
     private static int lanes;
@@ -43,7 +43,7 @@ public final class BattleClientCache {
         ENEMIES.clear();
         for (var enemy : packet.enemies()) {
             ENEMIES.put(BattleSnapshotPacket.enemyId(enemy),
-                new EnemyPos(enemy.lane(), enemy.progress(), enemy.helmet()));
+                new EnemyPos(enemy.row(), enemy.col(), enemy.helmet()));
         }
         MENU_SLOTS.clear();
         MENU_SLOTS.putAll(packet.menuSlots());
@@ -52,6 +52,14 @@ public final class BattleClientCache {
 
     public static boolean active(int currentMenuId) {
         return menuId == currentMenuId && !ENEMIES.isEmpty();
+    }
+
+    public static int lanes() {
+        return lanes;
+    }
+
+    public static int depth() {
+        return depth;
     }
 
     public static Map<UUID, EnemyPos> enemies() {

@@ -264,6 +264,7 @@
   "command.livingitem.battle.arena": "§a已传送到战局竞技场观战位§r",
   "command.livingitem.battle.wave": "§a已召唤 %d 只敌军（每车道 %d）§r",
   "command.livingitem.battle.cleared": "§a战局已清（移除 %d 个战场实体）§r",
+  "livingitem.battle.defeat": "防 线 失 守",
   "livingitem.activation.deny_unclaimed": "§c该物品没有对应的活物品功能，活化它只会让它无法被传输/熔炼，因此已阻止§r",
   "livingitem.activation.deny_rule": "§c该物品无法被活化§r",
   "livingitem.activation.verdict.allow": "§a允许§r",

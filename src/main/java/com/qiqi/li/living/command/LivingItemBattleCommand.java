@@ -11,6 +11,7 @@ import com.qiqi.li.living.domain.battle.ArenaPlots;
 import com.qiqi.li.living.domain.battle.BattleArenaData;
 import com.qiqi.li.living.domain.battle.BattleEnemies;
 import com.qiqi.li.living.domain.battle.BattleEventFeed;
+import com.qiqi.li.living.domain.battle.LivingBattleFunction;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
@@ -78,6 +79,7 @@ public class LivingItemBattleCommand {
         BattleArenaData data = container.getOrCreateContainerData(BattleArenaData.KEY);
         data.configure(key, origin, lanes, width);
         BattleEventFeed.clear(key);
+        LivingBattleFunction.sweepDamage(container);   // 战局边界：建局清战损（D-battle-04）
         source.sendSuccess(() -> Component.translatable("command.livingitem.battle.built",
             origin.getX(), origin.getY(), origin.getZ(), lanes, width,
             near ? "（near：透过容器界面可见）" : "（/livingitem battle arena 前往）"), true);
@@ -92,9 +94,9 @@ public class LivingItemBattleCommand {
         BattleArenaData data = container.peekContainerData(BattleArenaData.KEY);
         if (data == null || data.isEmpty()) throw NO_BATTLE.create();
         Vec3 view = new Vec3(
-            data.plotPos().getX() + data.depth() * ArenaPlots.DEPTH_STRIDE / 2.0,
+            data.plotPos().getX() + data.depth() * ArenaPlots.CELL_STRIDE / 2.0,
             data.plotPos().getY() + 8.0,
-            data.plotPos().getZ() + data.lanes() * ArenaPlots.LANE_STRIDE + 6.0);
+            data.plotPos().getZ() + data.lanes() * ArenaPlots.CELL_STRIDE + 6.0);
         player.teleportTo(player.serverLevel(), view.x, view.y, view.z, 180.0F, -15.0F);
         source.sendSuccess(() -> Component.translatable("command.livingitem.battle.arena"), true);
         return 1;
@@ -125,6 +127,7 @@ public class LivingItemBattleCommand {
         int removed = BattleEnemies.clear(arena, data);
         ArenaPlots.clearPlatform(arena, data.plotPos(), data.lanes(), data.depth());
         BattleEventFeed.clear(data.battleKey());
+        LivingBattleFunction.sweepDamage(container);   // 战局边界：清场清战损（D-battle-04）
         data.reset();
         int total = removed;
         source.sendSuccess(() -> Component.translatable(

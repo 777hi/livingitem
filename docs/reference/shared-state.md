@@ -19,6 +19,7 @@
 | 类 | 清理入口（本类文件内可见的事实） | 跨 tick 可变 static 集合 |
 |---|---|---|
 | `BattleClientCache` | 登出 | `ENEMIES` `MENU_SLOTS` |
+| `BattleDamageLedger` | 登记 | `PENDING` |
 | `BattleEventFeed` | 登记 | `FEED` |
 | `BeaconChestHost` | 登记 | `activeLids` `current` `lidLastTick` |
 | `BeaconEntityHostClientCache` | ⚠️ 本类无清理入口 | `CACHE` |

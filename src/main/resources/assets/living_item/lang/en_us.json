@@ -264,6 +264,7 @@
   "command.livingitem.battle.arena": "§aTeleported to the arena spectator spot§r",
   "command.livingitem.battle.wave": "§aSummoned %d invader(s) (%d per lane)§r",
   "command.livingitem.battle.cleared": "§aBattle cleared (%d battlefield entities removed)§r",
+  "livingitem.battle.defeat": "DEFENSE BREACHED",
   "livingitem.activation.deny_unclaimed": "§cThis item has no living-item function behind it; activating it would only make it untransportable/unsmeltable, so it was blocked§r",
   "livingitem.activation.deny_rule": "§cThis item cannot be activated§r",
   "livingitem.activation.verdict.allow": "§aAllowed§r",

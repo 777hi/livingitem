@@ -8,20 +8,19 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * 竞技场定址与平台几何。
+ * 竞技场定址与场地几何（自由围猎口径，D-battle-05）。
  *
- * <p>车道沿容器<b>行</b>（行 = 车道，列 = 纵深），怪从 GUI 右端（世界东端）往左推。
- * 世界观：lane 0 = 北（GUI 顶行），column 0 = 西（GUI 左列 = 战败线），观察者站南侧
- * 面向北观看 —— 左右与 GUI 一致。</p>
+ * <p>场地 = 开阔平台，无车道无隔断；容器槽位网格 1:1 投影为战场格子
+ * （行=南北、列=东西，每格 {@link #CELL_STRIDE}² 见方），敌军全场自由移动，
+ * 索敌只认"最近棋子"。</p>
  *
  * <p>定址：battleKey hash → 负象限对角带 256 格间距网格（生产定案口径）。
- * 平台调试版用可见材质（草地 + 白混凝土隔断），生产换屏障 = 改下面两行常量。</p>
+ * 平台调试版用可见材质（草地 + 外沿石），生产换屏障 = 改下面常量。</p>
  */
 public final class ArenaPlots {
 
-    /** 车道步距 = 车道宽 2 + 隔断 1；纵深步距 = 每格 2。 */
-    public static final int LANE_STRIDE = 3;
-    public static final int DEPTH_STRIDE = 2;
+    /** 战场格步距（x/z 同距；桥 hitbox 宽 1，留活动余量）。 */
+    public static final int CELL_STRIDE = 2;
     /** 平台地面 y（方块层；单位脚站在 y+1）。 */
     public static final int PLOT_Y = 220;
 
@@ -59,43 +58,36 @@ public final class ArenaPlots {
         return BlockPos.containing(center.x + 12, Math.max(center.y + 10, 80), center.z);
     }
 
-    /** 槽位 → 战格中心（lane = 行 = slot/width，col = 列 = slot%width）。 */
-    public static Vec3 cellCenter(BlockPos origin, int lane, int col) {
-        return new Vec3(origin.getX() + col * DEPTH_STRIDE + 1.0, origin.getY() + 1.0,
-            origin.getZ() + lane * LANE_STRIDE + 0.5);
+    /** 槽位 → 战格中心（row = 南北 = slot/width，col = 东西 = slot%width）。 */
+    public static Vec3 cellCenter(BlockPos origin, int row, int col) {
+        return new Vec3(origin.getX() + col * CELL_STRIDE + 1.0, origin.getY() + 1.0,
+            origin.getZ() + row * CELL_STRIDE + 0.5);
     }
 
-    /** 车道条带（推进 Goal 的索敌范围；lane 行宽 2 含隔断余量）。 */
-    public static AABB laneStrip(BlockPos origin, int depth, int lane) {
-        return new AABB(origin.getX() - 2, origin.getY(), origin.getZ() + lane * LANE_STRIDE - 0.5,
-            origin.getX() + depth * DEPTH_STRIDE + 2, origin.getY() + 8,
-            origin.getZ() + lane * LANE_STRIDE + 2.5);
-    }
-
-    /** 战败线锚点（第 0 列西侧一格外；无桥时推进目标）。 */
-    public static Vec3 columnAnchor(BlockPos origin, int lane) {
-        return new Vec3(origin.getX() - 2.5, origin.getY() + 1.0, origin.getZ() + lane * LANE_STRIDE + 0.5);
-    }
-
-    /** 战区 AABB（事件圈定 / 清场扫描）。 */
+    /** 战区 AABB（索敌范围 / 事件圈定 / 清场扫描）。 */
     public static AABB plotBounds(BlockPos origin, int lanes, int depth) {
         return new AABB(origin.getX() - 3, origin.getY(), origin.getZ() - 2,
-            origin.getX() + depth * DEPTH_STRIDE + 3, origin.getY() + 80,
-            origin.getZ() + lanes * LANE_STRIDE + 2);
+            origin.getX() + depth * CELL_STRIDE + 3, origin.getY() + 80,
+            origin.getZ() + lanes * CELL_STRIDE + 2);
     }
 
-    /** 敌军推进进度：0 = 第 0 列（GUI 左），1 = 东端（GUI 右）。 */
-    public static double progressOf(double x, BlockPos origin, int depth) {
-        double p = (x - origin.getX()) / (double) (depth * DEPTH_STRIDE);
-        return Math.max(0.0, Math.min(1.0, p));
+    /** 世界坐标 → 网格坐标（row/col 浮点；夹取到场地范围内）。 */
+    public static double rowOf(double z, BlockPos origin, int lanes) {
+        double r = (z - origin.getZ()) / (double) CELL_STRIDE;
+        return Math.max(0.0, Math.min(lanes - 1.0, r));
+    }
+
+    public static double colOf(double x, BlockPos origin, int depth) {
+        double c = (x - origin.getX()) / (double) CELL_STRIDE;
+        return Math.max(0.0, Math.min(depth - 1.0, c));
     }
 
     /** 战区各区块是否实体 tick（就绪门）：未加载 = 战局暂停。 */
     public static boolean isEntityTicking(ServerLevel level, BlockPos origin, int lanes, int depth) {
         int minX = (origin.getX() - 2) >> 4;
-        int maxX = (origin.getX() + depth * DEPTH_STRIDE + 2) >> 4;
+        int maxX = (origin.getX() + depth * CELL_STRIDE + 2) >> 4;
         int minZ = (origin.getZ() - 2) >> 4;
-        int maxZ = (origin.getZ() + lanes * LANE_STRIDE + 2) >> 4;
+        int maxZ = (origin.getZ() + lanes * CELL_STRIDE + 2) >> 4;
         for (int cx = minX; cx <= maxX; cx++) {
             for (int cz = minZ; cz <= maxZ; cz++) {
                 if (!level.isPositionEntityTicking(new BlockPos(cx << 4, origin.getY(), cz << 4))) {
@@ -107,14 +99,14 @@ public final class ArenaPlots {
     }
 
     /**
-     * 一次性 fill 平台：地面草地 + 车道隔断白混凝土。
+     * 一次性 fill 平台：开阔草地 + 外沿一圈石（出怪红边视觉参照，自由模式下无车道隔断）。
      *
      * <p>⚠️ spike 简化：命令驱动的一次性同步加载（{@code getChunk(FULL, force=true)}，
      * 只覆盖平台几个区块）。生产版按 infrastructure §3.2.2 方案 A 走异步票据，此处不是热路径。</p>
      */
     public static void fillPlatform(ServerLevel level, BlockPos origin, int lanes, int depth) {
-        int widthX = depth * DEPTH_STRIDE;
-        int widthZ = lanes * LANE_STRIDE - 1;
+        int widthX = depth * CELL_STRIDE;
+        int widthZ = lanes * CELL_STRIDE;
         int minX = (origin.getX() - 1) >> 4;
         int maxX = (origin.getX() + widthX + 1) >> 4;
         int minZ = (origin.getZ() - 1) >> 4;
@@ -124,11 +116,11 @@ public final class ArenaPlots {
                 level.getChunkSource().getChunk(cx, cz, ChunkStatus.FULL, true);
             }
         }
-        for (int x = 0; x <= widthX; x++) {
+        for (int x = 0; x < widthX; x++) {
             for (int z = 0; z < widthZ; z++) {
-                boolean divider = (z % LANE_STRIDE) == LANE_STRIDE - 1;
+                boolean border = x == 0 || z == 0 || x == widthX - 1 || z == widthZ - 1;
                 level.setBlock(new BlockPos(origin.getX() + x, origin.getY(), origin.getZ() + z),
-                    divider ? Blocks.WHITE_CONCRETE.defaultBlockState() : Blocks.GRASS_BLOCK.defaultBlockState(),
+                    border ? Blocks.STONE.defaultBlockState() : Blocks.GRASS_BLOCK.defaultBlockState(),
                     3);
             }
         }
@@ -136,17 +128,12 @@ public final class ArenaPlots {
 
     /** 清平台方块（clear 命令；只清自己的足迹，不碰平台外世界）。 */
     public static void clearPlatform(ServerLevel level, BlockPos origin, int lanes, int depth) {
-        int widthX = depth * DEPTH_STRIDE;
-        int widthZ = lanes * LANE_STRIDE - 1;
-        for (int x = 0; x <= widthX; x++) {
+        int widthX = depth * CELL_STRIDE;
+        int widthZ = lanes * CELL_STRIDE;
+        for (int x = 0; x < widthX; x++) {
             for (int z = 0; z < widthZ; z++) {
                 level.removeBlock(new BlockPos(origin.getX() + x, origin.getY(), origin.getZ() + z), false);
             }
         }
-    }
-
-    /** 平台地面层的顶面 y（单位脚位置）。 */
-    public static double floorY(BlockPos origin) {
-        return origin.getY() + 1.0;
     }
 }
