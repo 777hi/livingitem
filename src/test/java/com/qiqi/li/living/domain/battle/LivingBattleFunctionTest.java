@@ -53,7 +53,7 @@ class LivingBattleFunctionTest {
     void containerWithActiveBattleIsHot() {
         Context ctx = newContext();
         ctx.getOrCreateContainerData(BattleArenaData.KEY)
-            .configure("battle_test", new BlockPos(100, 220, 100), 1, 9);
+            .configure("battle_test", new BlockPos(100, 220, 100), 1, 9, 1);
         assertTrue(function.shouldTickWithoutOwnItems(ctx), "有战局 = 持续工作（不进 idle skip）");
     }
 
@@ -61,7 +61,7 @@ class LivingBattleFunctionTest {
     void containerWithClearedBattleIsColdAgain() {
         Context ctx = newContext();
         BattleArenaData data = ctx.getOrCreateContainerData(BattleArenaData.KEY);
-        data.configure("battle_test", new BlockPos(100, 220, 100), 1, 9);
+        data.configure("battle_test", new BlockPos(100, 220, 100), 1, 9, 1);
         data.reset();
         assertFalse(function.shouldTickWithoutOwnItems(ctx), "reset 后 = 静息");
     }

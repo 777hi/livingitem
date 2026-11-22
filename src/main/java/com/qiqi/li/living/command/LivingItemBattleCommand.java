@@ -51,9 +51,6 @@ public class LivingItemBattleCommand {
             Commands.literal("livingitem")
                 .requires(source -> source.hasPermission(2))
                 .then(Commands.literal("battle")
-                    .then(Commands.literal("build")
-                        .executes(ctx -> buildBattle(ctx, false))
-                        .then(Commands.literal("near").executes(ctx -> buildBattle(ctx, true))))
                     .then(Commands.literal("arena").executes(LivingItemBattleCommand::teleportToArena))
                     .then(Commands.literal("wave")
                         .then(Commands.argument("count", IntegerArgumentType.integer(1, 32))
@@ -61,29 +58,6 @@ public class LivingItemBattleCommand {
                     .then(Commands.literal("clear").executes(LivingItemBattleCommand::clearBattle))
                 )
         );
-    }
-
-    /** 建场：视线容器 → 定址 → fill 平台 → 写战局数据（重复 build = 重摆并重置名册）。 */
-    private static int buildBattle(CommandContext<CommandSourceStack> ctx, boolean near)
-            throws CommandSyntaxException {
-        CommandSourceStack source = ctx.getSource();
-        ServerPlayer player = source.getPlayerOrException();
-        TickableContainerContext container = resolveContext(source);
-        if (!(source.getLevel() instanceof ServerLevel arena)) return 0;
-        String key = container.getCacheKey();
-        if (key == null) throw NOT_LOOKING_AT_CONTAINER.create();
-        int width = Math.max(1, container.getWidth());
-        int lanes = (container.getSize() + width - 1) / width;
-        BlockPos origin = near ? ArenaPlots.nearFor(player.position()) : ArenaPlots.plotFor(key);
-        ArenaPlots.fillPlatform(arena, origin, lanes, width);
-        BattleArenaData data = container.getOrCreateContainerData(BattleArenaData.KEY);
-        data.configure(key, origin, lanes, width);
-        BattleEventFeed.clear(key);
-        LivingBattleFunction.sweepDamage(container);   // 战局边界：建局清战损（D-battle-04）
-        source.sendSuccess(() -> Component.translatable("command.livingitem.battle.built",
-            origin.getX(), origin.getY(), origin.getZ(), lanes, width,
-            near ? "（near：透过容器界面可见）" : "（/livingitem battle arena 前往）"), true);
-        return 1;
     }
 
     /** 观战：tp 到战局南侧高空（面向北 = GUI 视角）。 */

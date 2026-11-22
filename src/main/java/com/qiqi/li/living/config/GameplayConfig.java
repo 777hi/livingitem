@@ -32,6 +32,7 @@ public final class GameplayConfig {
     private static final ModConfigSpec.BooleanValue TOOL_AND_WEAPON;
     private static final ModConfigSpec.BooleanValue BEACON;
     private static final ModConfigSpec.BooleanValue PORTAL;
+    private static final ModConfigSpec.BooleanValue NEAR_ARENA_DEBUG;
 
     /** 读路径只看这些字段（见类注释：未加载时保持默认 false）。 */
     private static volatile boolean tnt;
@@ -39,6 +40,7 @@ public final class GameplayConfig {
     private static volatile boolean toolAndWeapon;
     private static volatile boolean beacon;
     private static volatile boolean portal;
+    private static volatile boolean nearArenaDebug;
 
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
@@ -69,6 +71,14 @@ public final class GameplayConfig {
                 "活背包里的活地狱门：开启后借用宿主位置；关闭或宿主无位置时不能点燃，已有门熄灭。",
                 "活地狱门玩法尚未实现，此项仅预留宿主位置配置。")
             .define("portal", false);
+
+        builder.comment(
+                "【大战僵尸调试】活不祥之瓶驱动战场（spike）。")
+            .push("battle");
+
+        NEAR_ARENA_DEBUG = builder.comment(
+                "调试：瓶驱动战场建在容器附近高空（而非定案远场坐标），便于透过容器界面观察。")
+            .define("near_arena_debug", false);
 
         builder.pop();
         SPEC = builder.build();
@@ -103,6 +113,7 @@ public final class GameplayConfig {
         toolAndWeapon = TOOL_AND_WEAPON.get();
         beacon = BEACON.get();
         portal = PORTAL.get();
+        nearArenaDebug = NEAR_ARENA_DEBUG.get();
     }
 
     // ── 读路径（tick 里调用，只读静态字段）──
@@ -125,5 +136,9 @@ public final class GameplayConfig {
 
     public static boolean portalUsesHostAnchor() {
         return portal;
+    }
+
+    public static boolean battleNearDebug() {
+        return nearArenaDebug;
     }
 }

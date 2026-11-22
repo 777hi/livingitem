@@ -97,7 +97,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 | **容器基础设施（6）** | [容器七问总览](docs/system-design/container-overview.md) · [基础设施](docs/system-design/living-item-infrastructure.md) · [多方块容器身份解析](docs/system-design/container-identity.md) · [容器边界口径](docs/system-design/container-boundary.md) · [数据模型](docs/system-design/data-model.md) · [超大堆叠审计](docs/system-design/oversized-stack-audit.md) |
 | **红电 · 电力（2）** | [红电架构演进](docs/buffer/redstone-evolution-roadmap.md) · [红电不变量测试](docs/system-design/power-invariants.md) |
 | **跨域机制（3）** | [GUI交互](docs/system-design/gui-interaction-system.md) · [图标系统](docs/system-design/icon-system.md) · [Tooltip 系统](docs/system-design/tooltip-system.md) |
-| **工程实践（6）** | [单元测试](docs/guides/unit-testing.md) · [活物品设计模板](docs/guides/living-item-design-template.md) · [槽位操作选型](docs/guides/slot-ops.md) · **配置字段**：[活化规则](docs/guides/activation-rules.md) / [交互规则](docs/guides/interaction-rules.md) / [容器兼容](docs/guides/container-compatibility.md) · [分层现状与检查工具](docs/archive/architecture-layering-plan.md) |
+| **工程实践（6）** | [单元测试](docs/guides/unit-testing.md) · [活物品设计模板](docs/guides/living-item-design-template.md) · [槽位操作选型](docs/guides/slot-ops.md) · **配置字段**：[活化规则](docs/guides/activation-rules.md) / [交互规则](docs/guides/interaction-rules.md) / [容器兼容](docs/guides/container-compatibility.md) · [分层口径与检查工具](docs/system-design/living-item-infrastructure.md#12-基础设施分层)（历史诊断见 archive/architecture-layering-plan.md） |
 
 ---
 

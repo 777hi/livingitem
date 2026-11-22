@@ -26,6 +26,10 @@ public final class BattleArenaData {
     /** 车道数（= 容器行数）与纵深格数（= 容器列数）。 */
     private int lanes;
     private int depth;
+    /** 当前波次（读自瓶进度组件，迁移随瓶）。⏳ 波次机（F）落地后推进。 */
+    private int currentWave = 1;
+    /** 平台是否已 fill（就绪门轮询，幂等一次）。 */
+    private boolean platformFilled;
 
     /** 桥名册：逻辑槽位 → 桥引用（UUID + 物品身份指纹）。桥不落盘，缺了由 reconcile 重建（自愈）。 */
     private final Map<Integer, ReconcilePlan.BridgeRef> bridgeBySlot = new HashMap<>();
@@ -52,6 +56,18 @@ public final class BattleArenaData {
         return depth;
     }
 
+    public int currentWave() {
+        return currentWave;
+    }
+
+    public boolean platformFilled() {
+        return platformFilled;
+    }
+
+    public void markFilled() {
+        this.platformFilled = true;
+    }
+
     public Map<Integer, ReconcilePlan.BridgeRef> bridgeBySlot() {
         return bridgeBySlot;
     }
@@ -61,11 +77,13 @@ public final class BattleArenaData {
     }
 
     /** 建立战局（build 命令）；重复 build = 重摆场地并重置名册。 */
-    public void configure(String battleKey, BlockPos plotPos, int lanes, int depth) {
+    public void configure(String battleKey, BlockPos plotPos, int lanes, int depth, int wave) {
         this.battleKey = battleKey;
         this.plotPos = plotPos;
         this.lanes = lanes;
         this.depth = depth;
+        this.currentWave = Math.max(1, wave);
+        this.platformFilled = false;
         bridgeBySlot.clear();
         enemies.clear();
     }

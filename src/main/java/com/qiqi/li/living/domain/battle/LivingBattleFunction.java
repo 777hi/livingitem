@@ -7,6 +7,7 @@ import java.util.Map;
 import com.qiqi.li.living.api.HasContainerData;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.config.GameplayConfig;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
 import com.qiqi.li.living.container.TickContext;
@@ -69,18 +70,87 @@ public class LivingBattleFunction implements LivingItemFunction, HasContainerDat
 
     @Override
     public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, TickContext tick) {
-        BattleArenaData data = tick.data(BattleArenaData.KEY);
-        if (data == null || data.isEmpty()) return;   // 廉价 no-op 门
         if (!(ctx.getLevel() instanceof ServerLevel arena)) return;
+        // ⚠️ 激活边界（D-battle-06 暂定）：仅方块容器驱动战局——
+        // 玩家背包/实体容器/掉落物（getBlockPos == null）= 暂停保进度，不建场不登记
+        // （瓶曾在此类容器建场会让 venue 的容器存活检查恒假 ⇒ sweep 清场 + CME，2026-11-22 实测崩溃）
+        if (ctx.getBlockPos() == null) return;
+        ItemStack bottle = findBottle(ctx);   // 廉价门：容器内有活化瓶才工作
+        BattleArenaData data = tick.data(BattleArenaData.KEY);
+
+        if (bottle == null) {
+            // 瓶消失（被吃光 / 移走 / 取消活化）⇒ 清场（进度随瓶走，账随瓶亡——D-battle-06/07）
+            if (data != null && !data.isEmpty()) {
+                BattleVenues.clear(arena.getServer(), data.battleKey());
+                data.reset();
+                BattleEventFeed.clear(data.battleKey());
+            }
+            return;
+        }
+        if (data == null || data.isEmpty()) {
+            data = initFromBottle(arena, ctx, bottle);   // 瓶驱动建场
+            if (data == null) return;
+        }
         if (!ArenaPlots.isEntityTicking(arena, data.plotPos(), data.lanes(), data.depth())) {
-            return;   // 就绪门：竞技场卸载 = 战局暂停（spike 不做异步拉起）
+            return;   // 就绪门：战区未加载 = 战局暂停（ticket 已拉起，等待即可）
+        }
+        if (!data.platformFilled()) {
+            ArenaPlots.fillPlatform(arena, data.plotPos(), data.lanes(), data.depth());
+            data.markFilled();   // fill 幂等一次（就绪门轮询，无回调——CC/FTB 同款）
         }
         drainDamage(arena, data, ctx);   // 回向：伤害结算（掉层 / 棋子被吃光）
         reconcile(arena, data, ctx);     // 桥随槽位事实重建 + 层数同步
-        checkDefeat(arena, data, ctx);   // 防线全灭 ⇒ 战败（MVP 轻惩罚）
         if (arena.getGameTime() % FLUSH_INTERVAL == 0) {
             BattleServerSync.flush(ctx, data);
         }
+    }
+
+    /**
+     * 瓶驱动建场：进度读瓶（迁移 = 从进度继续）· 建场清零棋子旧战损（D-battle-04
+     * 战局边界）· ticket 拉起 · venue 登记（容器破坏残留兜底，BattleVenues sweep）。
+     */
+    private BattleArenaData initFromBottle(ServerLevel arena, ContainerContext ctx, ItemStack bottle) {
+        String key = ctx.getCacheKey();
+        if (key == null) return null;
+        int width = Math.max(1, ctx.getWidth());
+        int lanes = (ctx.getSize() + width - 1) / width;
+        BlockPos plot = GameplayConfig.battleNearDebug()
+            ? ArenaPlots.nearFor(Vec3.atCenterOf(centerOf(ctx)))
+            : ArenaPlots.plotFor(key);
+        BlockPos owner = ownerPos(ctx);
+        int wave = BattleComponents.BattleProgress.of(bottle).wave();
+
+        ArenaPlots.fillPlatform(arena, plot, lanes, width);
+        BattleArenaData data = ctx.getOrCreateContainerData(BattleArenaData.KEY);
+        data.configure(key, plot, lanes, width, wave);
+        data.markFilled();
+        sweepDamage(ctx);   // 新战局开：棋子旧战损作废（D-battle-04 战局边界）
+        BattleEventFeed.clear(key);
+        BattleTickets.setArena(arena, owner, plot, lanes, width, true);
+        BattleVenues.register(key, arena, plot, owner, lanes, width);
+        return data;
+    }
+
+    private static BlockPos centerOf(ContainerContext ctx) {
+        BlockPos pos = ctx.getBlockPos();
+        return pos != null ? pos : BlockPos.ZERO;
+    }
+
+    private static BlockPos ownerPos(ContainerContext ctx) {
+        var positions = ctx.getAssociatedBlockPositions();
+        return positions != null && !positions.isEmpty()
+            ? positions.get(0) : centerOf(ctx);
+    }
+
+    private static ItemStack findBottle(ContainerContext ctx) {
+        for (int i = 0; i < ctx.getSize(); i++) {
+            ItemStack stack = ctx.getItem(i);
+            if (!stack.isEmpty() && stack.is(net.minecraft.world.item.Items.OMINOUS_BOTTLE)
+                && LivingItemManager.isLivingItem(stack)) {
+                return stack;
+            }
+        }
+        return null;
     }
 
     /**
@@ -131,14 +201,6 @@ public class LivingBattleFunction implements LivingItemFunction, HasContainerDat
     private static void discardBridge(ServerLevel arena, BattleArenaData data, int slot) {
         BridgeEntity bridge = bridgeAt(arena, data, slot);
         if (bridge != null) bridge.discard();
-    }
-
-    /** 战败判定（MVP）：防线全灭（场上仍有敌军而棋子吃光）⇒ 清敌军重置波次（战损清零）+ DEFEAT 事件。 */
-    private static void checkDefeat(ServerLevel arena, BattleArenaData data, ContainerContext ctx) {
-        if (data.enemies().isEmpty() || !data.bridgeBySlot().isEmpty()) return;
-        BattleEnemies.clearEnemies(arena, data);
-        sweepDamage(ctx);
-        BattleEventFeed.offer(data.battleKey(), new BattleEvent(BattleEvent.Type.DEFEAT, -1));
     }
 
     /**

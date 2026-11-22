@@ -21,6 +21,7 @@
 | `BattleClientCache` | 登出 | `ENEMIES` `MENU_SLOTS` |
 | `BattleDamageLedger` | 登记 | `PENDING` |
 | `BattleEventFeed` | 登记 | `FEED` |
+| `BattleVenues` | 登记 | `ACTIVE` |
 | `BeaconChestHost` | 登记 | `activeLids` `current` `lidLastTick` |
 | `BeaconEntityHostClientCache` | ⚠️ 本类无清理入口 | `CACHE` |
 | `BeaconEntityHostSync` | 登记 | `current` |

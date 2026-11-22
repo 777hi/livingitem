@@ -33,6 +33,13 @@ public final class BattleComponents {
             .networkSynchronized(BattleDamage.STREAM_CODEC)
             .build());
 
+    /** 战局进度（当前波次）——随瓶迁移（D-battle-06），取消活化清空（瓶 function owned 集）。 */
+    public static final net.neoforged.neoforge.registries.DeferredHolder<DataComponentType<?>, DataComponentType<BattleProgress>> BATTLE_PROGRESS =
+        REG.register("battle_progress", () -> DataComponentType.<BattleProgress>builder()
+            .persistent(BattleProgress.CODEC)
+            .networkSynchronized(BattleProgress.STREAM_CODEC)
+            .build());
+
     private BattleComponents() {}
 
     /** 当前层已损（0 ~ 单件血量-1）；count 即剩余完整层数（§4.2 血量统一模型）。 */
@@ -53,6 +60,28 @@ public final class BattleComponents {
         public static int of(ItemStack stack) {
             BattleDamage damage = stack.get(BATTLE_DAMAGE.get());
             return damage == null ? 0 : Math.max(0, damage.currentLayerDamage());
+        }
+    }
+
+    /** 战局进度：当前波次（1 起；0 = 未开战）。⏳ 波次机（F）落地后由它推进。 */
+    public record BattleProgress(int wave) {
+        public static final BattleProgress DEFAULT = new BattleProgress(1);
+
+        public static final Codec<BattleProgress> CODEC = RecordCodecBuilder.create(instance ->
+            instance.group(
+                Codec.INT.fieldOf("wave").forGetter(BattleProgress::wave))
+                .apply(instance, BattleProgress::new));
+
+        public static final StreamCodec<FriendlyByteBuf, BattleProgress> STREAM_CODEC =
+            StreamCodec.composite(
+                net.minecraft.network.codec.ByteBufCodecs.VAR_INT, BattleProgress::wave,
+                BattleProgress::new);
+
+        /** 读瓶上的进度；无组件按默认（第 1 波）。 */
+        public static BattleProgress of(ItemStack stack) {
+            BattleProgress progress = stack.get(BATTLE_PROGRESS.get());
+            return progress == null ? DEFAULT
+                : new BattleProgress(Math.max(1, progress.wave()));
         }
     }
 }

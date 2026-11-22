@@ -1,6 +1,7 @@
 package com.qiqi.li.living.domain.battle;
 
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.interaction.InteractionRegistry;
 
 /**
  * 战局领域注册入口（挂点见 {@code LivingItem#commonSetup}）。
@@ -13,6 +14,9 @@ public final class BattleRegistration {
     private BattleRegistration() {}
 
     public static void register() {
+        LivingItemManager.registerFunction(new LivingBottleFunction());
         LivingItemManager.registerFunction(new LivingBattleFunction());
+        InteractionRegistry.registerHandler("battle_pearl_teleport",
+            new BattlePearlTeleportHandler());
     }
 }
