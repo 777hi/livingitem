@@ -169,7 +169,7 @@ MOD版本和玩家配置文件的格式是相同的，可以直接复制内容�
 | 5 | **数据持久化** | `getDataHosts()` + `persist()`：容器级数据存哪、谁写 | 不 tick 就丢、重启就丢 |
 | 6 | **菜单解析** | `ContainerContexts.resolve(player, slot)` → ctx | **tooltip 空、倒汲错格、GUI 设置错位** |
 | 7 | **viewer 匹配** | **唯一入口** `ContainerViewers.of(players, cacheKey, positions)`：按缓存键分派（玩家态⇒主人+末影箱门控 / 物品形态⇒菜单锚点 / 其余⇒位置）。两条数据轨（流体快照、运行时数据）都只调它 | 流体层 / 实时数据不渲染 |
-| 8 | **客户端同步** | 内容变化与容器级数据下发。⚠️ 物品形态**不需要自己发**：它的内容一定在某个被原版同步的槽位里（物品栏 / 打开的菜单），自己的通道 no-op 是对的 | GUI 看到旧状态 |
+| 8 | **客户端同步** | 物品形态分两层：**内容进出**靠原版槽位同步（`syncWorldContainer` 对物品形态 no-op 是对的，内容一定在被同步的槽位里）；**开着 GUI 时的组件级翻转**（水车转向 / 熔炉燃烧态）已由 `syncItemFormSlot`（按容器 UUID 反查 + handler 实例 + 物理槽号直发）实时刷新。外层槽位同步（工具 / 信标渲染）仍 no-op，见 [living-backpack-tech §5](../tech/living-backpack-tech.md) 与 [TODO 6.1](../TODO.md) | GUI 看到旧状态（组件翻转层已修，外层未修） |
 | 9 | **激活与清理** | 怎么变成活容器、取消活化怎么清 | 全都在跑 / 残留孤儿数据 |
 | 10 | **世界语义** | `ContainerAnchor`（`AtBlock`/`AtPlayer`/`AtEntity`/null）回答「容器在世界里**在哪**」，取哪个点由功能自己定；物品形态（活背包）另可**继承宿主锚点** `getHostAnchor()`（谁要用谁显式拿；四个消费方各由一个 `SERVER` 型玩法开关控制，**默认全关** —— 见 [living-backpack-tech.md §5.5](../tech/living-backpack-tech.md)） | 靠位置的逻辑失效（爆炸 / 应力 / 射线 / 信标光束） |
 | 11 | **嵌套** | 容器里有容器：深度上限 + 环检测 | 无限递归 / 卡死 |

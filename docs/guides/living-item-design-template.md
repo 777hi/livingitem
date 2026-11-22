@@ -280,7 +280,7 @@
 | *（示例）§5⑥ 跨容器推* | *未拍板* | *留本稿（或登记 [TODO.md](../TODO.md) 一行 + 指针）* | ⏳ |
 
 **去向判据**（同 [docs/README.md](../README.md) §3）：机制规则 → tech §0 / 机制节；
-跨域约束 / 协议 → system-design；翻转的决策 → decisions.md；未实现部分 → TODO.md。
+跨域约束 / 协议 → system-design；翻转的决策 → 对应 tech 定案节就地留痕（旧 decisions.md 已归档）；未实现部分 → TODO.md。
 全部行 ✅ 后，设计稿本体按 [docs/README.md](../README.md) §1 归档层 + [buffer/README.md](../buffer/README.md)「维护判据」分流：
 结论已全部归位 ⇒ **删**（git 已保完整历史）；仍带不可重推的原始观测（带日期的实测 / 事故记录）⇒ 留 `docs/archive/`。
 

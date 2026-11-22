@@ -174,7 +174,7 @@ ContainerFluidWriteback → ctx.persist(key, value) → ContainerDataSavedData�
 
 ✅ 1 tick 驱动 · ✅ 2 ctx 身份 · ✅ **3 槽位几何**（`Source#columns` 权威列数，10-23 真机验收）·
 ✅ 4 内容读写 · ✅ 5 数据持久化 · ✅ 6 菜单解析 · ✅ 7 viewer 匹配 ·
-✅ **8 客户端同步**（内容层靠原版槽位同步；**组件级实时性不成立** ⇒ 见 [TODO 6.1](../TODO.md)）·
+✅ **8 客户端同步**（内容层靠原版槽位同步；**GUI 开着时的组件级翻转**已由 `syncItemFormSlot` 实时刷新，见 §5.1；**外层槽位**仍归 [TODO 6.1](../TODO.md)）·
 ✅ 9 激活与清理 · ❌ 10 世界语义（**已定不做**：方向传输归活潜影箱）· ✅ 11 嵌套
 
 ---

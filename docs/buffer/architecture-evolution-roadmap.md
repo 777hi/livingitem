@@ -82,12 +82,12 @@
 | # | 原则 | 项目实证 |
 |---|---|---|
 | **P1** | **口径一次定对 > 加守卫。** 每条成本必须回答「买的是什么」：买「我改错时的安全垫」⇒ 不做；买「口径正确 / 不返工」⇒ 可做 | 被否：状态同步「每 N tick 保底覆盖」、写入处「旧值非空则拒写」；被采纳：条目身份用容器键字符串（[用户偏好 2026-10-22/26]） |
-| **P2** | **抽象必须有第二个真实用户**，不许为抽象而抽象 | [framework-evolution-plan §5](framework-evolution-plan.md)；[D-render-01](../decisions.md) 已否 `TargetedBroadcast` 骨架与协议分段 |
+| **P2** | **抽象必须有第二个真实用户**，不许为抽象而抽象 | [framework-evolution-plan §5](framework-evolution-plan.md)；[D-render-01](../archive/decisions.md) 已否 `TargetedBroadcast` 骨架与协议分段 |
 | **P3** | **不建「防我改错」的分支。** 落地的东西必须自身可解释（看代码就知道为什么） | 上下文压缩后临时补丁的动机会消失，只剩代码 |
 | **P4** | **纯重构 = 行为零变化 + 全量测试绿 + 棘轮数字只减不增**；每批一个可独立回滚的提交 | [整改计划 §2/§5](../archive/2026-10-29-全项目审查整改计划.md) |
 | **P5** | **规划文档的快照数字必须带复算命令 + 日期**，否则写成「当时的结论」而非现状 | 本文 §0；`docs/README.md` 铁律 4 |
 | **P6** | **定案先于代码**：先更新对应文档状态，再动代码；改完在 `changelog` 记一行 | `docs/README.md` §4 |
-| **P7** | **验收分三层**：单测 / 门禁 / **真机**；替身不算真机。明确「不做」也要留痕，避免下次重新讨论 | [TODO 5.6](../TODO.md) · [decisions.md](../decisions.md) 翻转留痕 |
+| **P7** | **验收分三层**：单测 / 门禁 / **真机**；替身不算真机。明确「不做」也要留痕，避免下次重新讨论 | [TODO 5.6](../TODO.md) · 「不做」的留痕归对应 tech 定案节（旧 decisions.md 已归档） |
 
 ---
 
@@ -174,16 +174,16 @@
 
 | 不做 | 理由 / 出处 |
 |---|---|
-| 重写 / 分层重画 / 抽独立框架库 | §0 诊断：形状正确、底座健康；[D-core-12](../decisions.md)「复杂度是深的，不是宽的」，正文见 `living-item-infrastructure.md` §1.4 |
+| 重写 / 分层重画 / 抽独立框架库 | §0 诊断：形状正确、底座健康；[D-core-12](../archive/decisions.md)「复杂度是深的，不是宽的」，正文见 `living-item-infrastructure.md` §1.4 |
 | 统一大注册表 `SimpleRegistry<K,V>` 直接套 20+ 注册口 | 形状已分化，先分类（2.1）；半套统一 = 两套口径 |
 | Mixin 业务逻辑契约接口化（§3.1「定稿 P0」） | **前提已消失**：最大 mixin 271 行；原触发条件是「NeoForge 大版本升级时大面积报错」，届时重新评估 |
 | 全库 `package-info.java` Nullness（§3.6） | 现只有 5 个对外包且内容是契约说明；半套约定比没有更糟（项目铁律 6） |
 | gametest（§3.17） | 等出现「只能在真实游戏环境复现」的 bug；不为对齐大模组而做 |
 | power 单位值类型 `MilliFe` / `Re` | 牵动 DataComponent 序列化；`mulDivFloor` 已收窄溢出面，边际收益不足 |
 | 自定义 datapack registry（§3.5）、网络包拆包器（§3.8） | 无真实需求 / 无症状；alpha 结构未定案，早做等于固化 |
-| `TargetedBroadcast<T>` 骨架 / 协议分段 / 状态段每 N tick 保底覆盖 | [D-render-01](../decisions.md) 已否；「比较单位 = 发送单位」后保底是给不存在的风险付钱（P1） |
+| `TargetedBroadcast<T>` 骨架 / 协议分段 / 状态段每 N tick 保底覆盖 | [D-render-01](../archive/decisions.md) 已否；「比较单位 = 发送单位」后保底是给不存在的风险付钱（P1） |
 | 因「写法相似」全库迁移组件写回 | 用户 2026-11-06 明确：按结算证据定向迁移（1.1） |
-| 恢复「容器扫描展开」通用能力 | [D-container-08](../decisions.md) 已定：那是活潜影箱专属逻辑 |
+| 恢复「容器扫描展开」通用能力 | [D-container-08](../archive/decisions.md) 已定：那是活潜影箱专属逻辑 |
 
 ---
 
@@ -219,7 +219,7 @@
 6. 提交信息两段式：`<子系统>：<结论>（<根因>）`
 7. 一个批次 = 一个可独立回滚的提交，不夹带无关重构
 8. **本文状态行同步**：阶段推进后改头部 + `python tools/gen_buffer_index.py`
-9. **本文的「明确不做」如有翻转**，走 [decisions.md](../decisions.md) §4 四步留痕，不直接删行
+9. **本文的「明确不做」如有翻转**，旧行不删、就地标注「已被 X 取代」并把取代理由写进对应 tech 定案节，不直接删行（旧 decisions.md 的 §4 流程已随归档退役）
 
 ---
 
@@ -228,4 +228,4 @@
 - 头部「状态：」行是 [buffer/README.md](README.md) 索引的**单一来源**（`gen_buffer_index.py`）
 - **每批落地时先更新本文的阶段表，再动代码**（P6）
 - 与既有文档冲突时：**契约 / 现状以 `system-design/` 与代码为准**，本文只管「先后与触发」
-- 全部完成或决定放弃 ⇒ 本文移 `docs/archive/`，并在 `decisions.md` 留 supersedes 链
+- 全部完成或决定放弃 ⇒ 本文移 `docs/archive/`；结论与取代理由已在对应 tech 定案节就地留痕（不再往归档的 decisions.md 写）

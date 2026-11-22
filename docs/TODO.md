@@ -2,19 +2,22 @@
 
 > **性质**：随手记的待办池，**不是**规格文档 —— 也是**全项目待定计划的唯一登记处**
 > （2026-10-10 拍板 `D-doc-06`：tech 文档 §0 不再维护「未实现」清单，计划统一到这里）。
-> 已完成项**保留删除线 + 完成日期**（留痕「做过什么、为何算完成」，不整段删）；
+> **完成项处理（2026-11-22 改）**：做完就**从本文删除**，不堆积删除线（待办池只放还没做的）。
+> 删除前按内容分流：① 一般完成 ⇒ 直接删；② 有「状态跃迁」价值 ⇒ 压成一行进
+> `archive/changelog.md`（体例见 `README.md` §4.0）；③ 含**否决 / 教训 / 用户拍板边界**
+> 这种代码推不出的 ⇒ 先归位到对应 tech 定案节 / `decisions.md`，再删本文正文。
+> 判据：删掉它会让谁少看到一处谎言？会 ⇒ 先归位；不会 ⇒ 直接删。
 > 未定案设计稿的**正文**放 `docs/buffer/`，这里只放一行 + 指针。
-> 上次复核：2026-10-10。
 
 ## 目录
 
 - [本轮评估执行队列（2026-11-15 登记）](#本轮评估执行队列2026-11-15-登记)
-- [文档系统治理（2026-11-19 登记）](#文档系统治理2026-11-19-登记)
 - [女仆联动（首版及展示用户实测通过，后续与专项核对）](#女仆联动首版及展示用户实测通过后续与专项核对)
 - [实体宿主行为兼容（2026-11-12 拍板；批次 A/B/A2 已落地，C 批缓办）](#实体宿主行为兼容2026-11-12-拍板批次-aba2-已落地c-批缓办)
 - [审查整改（2026-10-29）](#审查整改2026-10-29)
 - [框架演进（2026-10-18 提案，未定案）](#框架演进2026-10-18-提案未定案)
 - [框架层待办（2026-11-10 按代码实测登记）](#框架层待办2026-11-10-按代码实测登记)
+- [文档系统维护（2026-11-22 登记）](#文档系统维护2026-11-22-登记)
 - [活信标 · 游玩实测（2026-10-18 收尾时挂起）](#活信标--游玩实测2026-10-18-收尾时挂起)
 - [配方书活箱子标签页 · 游玩实测（2026-10-29 重构收尾挂起）](#配方书活箱子标签页--游玩实测2026-10-29-重构收尾挂起)
 - [性能（2026-10-03 盘点）](#性能2026-10-03-盘点)
@@ -26,14 +29,11 @@
 - [活红石 / 活铜（2026-10-10 自 tech §0 迁入，D-doc-06）](#活红石--活铜2026-10-10-自-tech-0-迁入d-doc-06)
 - [物品传输（跨子系统，2026-10-31 记 · 未排期）](#物品传输跨子系统2026-10-31-记--未排期)
 - [容器边界（2026-10-10 记 · 2026-10-18/19 立项并完成主体）](#容器边界2026-10-10-记--2026-10-1819-立项并完成主体)
-- [~~活水车 · Create 接触面收窄（2026-10-19 记）~~ ✅ 已完成（2026-11-17）](#活水车--create-接触面收窄2026-10-19-记--已完成2026-11-17)
 - [活武器（2026-10-10 自 `living-weapon-tech.md` §0/§9 迁入，D-doc-06）](#活武器2026-10-10-自-living-weapon-techmd-09-迁入d-doc-06)
 - [活TNT（2026-10-13 记）](#活tnt2026-10-13-记)
 - [GUI 交互（2026-10-31 自 gui-interaction-redesign.md 收口登记，D-doc-06）](#gui-交互2026-10-31-自-gui-interaction-redesignmd-收口登记d-doc-06)
-- [~~渲染态广播（2026-10-26 记，未定案）~~ ✅ 已收口（2026-11-07）](#渲染态广播2026-10-26-记未定案--已收口2026-11-07)
+- [渲染态广播 · 后续验证（三步已收口，见 D-render-01）](#渲染态广播--后续验证三步已收口见-d-render-01)
 - [2026-10-27 审查后续 · 代码与文档口径对齐](#2026-10-27-审查后续--代码与文档口径对齐)
-  - [B1~B12 文档对齐项（2026-10-27 登记；2026-11-11 B5/B6/B12 已对齐）](#b1b12-文档对齐项2026-10-27-登记2026-11-11-b5b6b12-已对齐)
-- [2026-10-27 审查修复 · 真机复验（2026-10-28 全部闭环）](#2026-10-27-审查修复--真机复验2026-10-28-全部闭环)
 - [活工具 · 系列扩展（2026-10-31 清点登记，D-doc-06）](#活工具--系列扩展2026-10-31-清点登记d-doc-06)
 - [活工具 / 活背包 · 2026-10-27 全项目审查挂起项（P3，未定先后）](#活工具--活背包--2026-10-27-全项目审查挂起项p3未定先后)
 - [未来活物品（2026-10-04 用户提出，功能池）](#未来活物品2026-10-04-用户提出功能池)
@@ -42,18 +42,12 @@
 
 ## 本轮评估执行队列（2026-11-15 登记）
 
-> **性质**：工作层执行队列，不是新规格，也不复制机制正文。状态用 ⏳ 待办 / 🟢 进行中 / ✅ 完成 / ⏸ 暂缓（不占队首）；**每次只从队首取一项**，一个批次做完、全量测试与门禁绿、文档同步后再取下一项；完成项保留删除线 + 日期。
+> **性质**：工作层执行队列，不是新规格，也不复制机制正文。状态用 ⏳ 待办 / 🟢 进行中 / ✅ 完成 / ⏸ 暂缓（不占队首）；**每次只从队首取一项**，一个批次做完、全量测试与门禁绿、文档同步后再取下一项；**完成即按头部三分法从本文删除**（Q1~Q6 已全部完成，仅作历史留痕暂留，见各行）。
 > **当前队首**：暂空，待下轮选择；Q4b 仍暂缓且不占队首（Q4a 已于 2026-11-18 完成）。Q5/Q6 已按 2026-11-17 用户整体反馈结案；涉及代码口径变化的后续批次，完成判据统一包含 `./gradlew test --rerun`、CI 同款门禁和对应 tech / system-design 文档同步。
 
 1. ✅ **Q1 大箱相位文档结案** —— ~~待办~~ ✅ 已结案（2026-11-15）：旧结论「未修」改为 A6 已修 + 指针；稳定层补规则，真机证据沿用 2026-10-28 A6 复验的「红电重新锁相、拆半前相位布局不作数」。
    - 留痕：`PhaseDataMigration.clearPhaseOnChestSplit` / `ContainerDrops.otherChestHalf` / `PhaseDataMigrationChestSplitTest` / `tech/living-power-tech.md` §0 规则 12；archive 与 buffer 的历史描述按规约保留，**未改生产代码**。
    - 实机：既有 A6 真机复验已覆盖双箱拆半后的红电重锁；本轮未另起客户端，「多相电力 + 分两次破坏两半」不再单列为未修 bug，后续出现实际反例再按新 bug 立项。
-
-2. ✅ **Q2 内容签名漏组件变化** —— ~~暂缓（2026-11-15）~~ ✅ 已完成（2026-11-17，按恢复条件「Q3 基线已拿到」重新排期；Q6 修掉可变组件值后障碍④消失）：签名逐槽改混「物品 id + **全部组件**（`ItemStack.hashItemAndComponents`）+ 数量」，并与槽位扫描**同遍**计算（两遍全槽降为一遍）；PerfMetrics 补快照重建/命中计数器（`[Snapshot]` 报告行）。
-   - 留痕：`ContainerLivingItemHandler.mixSlot` / `scanAndGroupLivingItems` 返回 `ScanResult` / `syncContentRevision(ctx, sig)` 重载；回归入口 `ContainerContentSignatureTest`（原版途径换不同内容量活箱子 ⇒ bump + 快照按新容量重建 / count 单独混入 / 等值替换不空转 / 空槽移动检出）；负向验证（签名退回旧公式 ⇒ 仅组件交换守卫红）。
-   - 口径沉淀：`living-item-infrastructure.md` §8.6 双路径口径已改写——签名含全部组件、只在内存比对不得持久化（组件类型索引 identityHashCode 跨会话不稳）、显式 bump 路径保留（当拍生效）。churn 盘点结论：每拍变化的组件（中继器/按钮/TNT 引信）今天就已每拍显式 bump，全量哈希不新增失效；新增成本仅稳态容器的组件哈希计算，由仪表盘观测。
-   - 不做（沿原判据）：不手工白名单、不复用堆叠忽略清单、不改堆叠语义、不新增物品实例 ID；`SnapshotProvider` 组件依赖收窄留 Q4（仅当计数器数据支持）。
-   - 实机：无客户端手势项；`-Pperf` 观测已留痕 `unit-testing.md` Q3 节。当前读数只能报告各窗口的耗时与重建/命中次数，**不能**在无受控 A/B 下归因性能差异，也不能仅凭命中计数判断重建来源；若 Q4 要按来源收窄，须先补 revision 来源分类计数。
 
 3. ✅ **Q3 管道性能基准** —— ~~待办~~ ✅ 已完成（2026-11-15）：新增 `ContainerPipelinePerfTest`（`@Tag("perf")`，默认排除），量完整 `processContext` 管道；**未改 `src/main` 的 tick 逻辑**。
    - 基线（本机 FML / JDK 21.0.11，10k 容器 × 54 槽，每拍中位）：空容器 **9.31 ms**、普通 **11.07 ms**、复杂 **39.63 ms**；每容器每拍 0.93 / 1.11 / 3.96 µs，1k / 5k / 10k 三档线性度好；P90 @10k 为 9.67 / 11.89 / 48.20 ms。
@@ -62,26 +56,6 @@
    - 边界：单测无真实 `Level` / BE / 玩家列表，量不到 L4 外层；依赖 `level.isClientSide` 的领域功能（活漏斗）未纳入，复杂场景只用 `tick` 为空实现的活红石粉。数字只用于同环境前后比较，**不能宣称真机 MSPT**。（快照命中率计数器已随 Q2 补齐，此边界不再是缺口。）
    - 口径（2026-11-15 定）：**性能基准是仪表盘读数，不设 tick 预算阈值、不需要约定数值**；Q4 及后续优化一律按「同环境 / 同口径 / 优化前后对比」判定，真机开销另由专用服务端实测留痕。（2026-11-17 注：Q2 落地后基线已重测，见 `unit-testing.md` Q3 节 2026-11-17/18 读数；2026-11-15 的 9.31 / 11.07 / 39.63 为 **Q2 前历史读数**。）
 
-4. ✅ **Q4a 静息容器跳过后缀** —— ~~暂缓（2026-11-15）~~ ✅ 已完成（2026-11-18）：前提经用户纠正后收窄——三个自维持候选中**只有活流体是无物品时的持续工作**，红石/门面无物品只剩一次性清理。不需要通用活动账本：`ContainerEntry` 加单布尔闩锁 `suffixSettled`（进入完整管道即清零；整拍成功且扫描无活物品、无持续工作 ⇒ 置真），`processContext` 在扫描 + 签名 + `trackLivingSlots` 之后、自维持注入之前判定。
-   - 留痕：`ContainerLivingItemHandler` 快路径与 `ScanResult.hasAnyLivingItem`；`LivingItemFunction#shouldTickWithoutOwnItems` 两阶段语义（null=注册期候选声明，ctx=本拍是否有持续无物品工作；流体答数据非空、红石/门面答 false）；`PerfMetrics` 补 `[IdleSuffix] full/skipped` 仪表盘。
-   - 判据口径：**判「有活物品」用扫描见到的 IS_LIVING，不能用 `grouped.isEmpty()`** —— 活黑曜石等「有标记、无认领」物品不进分组但必须被看见（守卫 `ContainerIdleSuffixTest.unclaimedLivingItem_neverSettles`，负向变异验证：判据退回分组 ⇒ 红）。陈旧 settled 不清会跳过物品离场清理拍（负向变异验证：删清闩锁 ⇒ 红）。
-   - 回归入口：`ContainerIdleSuffixTest`（首拍完整后跳过 / 放活物品唤醒 / 移除后恰好一拍清理 / 流体工作阻止 settling / 异常拍不结算 / 普通货物变化保持静息）+ `ContainerCacheSweepTest` 海绵边沿新语义（清理拍后跳过）。
-   - 完成判据（同环境前后）：2026-11-17 基线（EMPTY 10k 中位 14.72ms / PLAIN 15.37ms / COMPLEX 58.58ms）对 2026-11-18 落地后复测读数见 `unit-testing.md`「管道性能基准（Q3）」；只报告读数，不设阈值、不宣称真机 MSPT。
-   - 不做：Q4b 缓冲复用仍暂缓；不改区块 Set 防御副本、不池化 List/Map、不做按功能条件注入；第三方自维持函数恒 true 只是保守（相关容器永不静息），不新增 API。
-   - Q4a-0 影子分类计数器未实施：落地后 `[IdleSuffix]` 的 skipRate 即真实命中率仪表盘，无需先测占比（占比只决定 ROI，不影响正确性）。
-
-4b. ⏸ **Q4b BE 列表缓冲复用** —— **暂缓，不占队首**（自 2026-11-15 拆分独立验收；Q4a 已完成，本条范围不变）：
-   - 唯一目标：`processChunkContainers` 每 tick 每区块 `new ArrayList<>(chunk.getBlockEntities().values())`（`LivingItem.java`）改为调用期独占的复用缓冲 —— 仍先复制后遍历（区块加载/卸载回调可增删 BE ⇒ 防御快照与 CME 约束不变），用完清引用。
-   - 已核查：`getProcessableChunks`（`ContainerChunkCache.java:314`）返回副本是为防 CME，**不能复用成视图**；`reusableHandlerMap` / `reusableKeySet` 已在复用；`processBlockEntities` 的 `new HashSet` 是另一入口、非主链路。
-   - 回归先补：回调内增删 BE 不影响本轮快照、不出 CME（沿用现有区块夹具 `LivingItemChunkContainerScanTest`）。
-   - 完成判据：同环境同口径，`-Pperf` 外层不可测 ⇒ 需专用量测或实测报告；无读数不立项。不做：早退相关（Q4a 已闭）、Set 视图化、领域 List/Map 池化。
-
-5. ✅ **Q5 创造模式活化** —— ~~代码已接线，待实机验收~~ ✅ 已结案（2026-11-17）：用户反馈本轮既定验收均正常，关闭剩余真机债；未逐项说明的极端与第三方组合不外推为单独证据。
-   - 范围与协议口径已沉淀到 [GUI交互 §6.2](system-design/gui-interaction-system.md#621-生存背包小人框底居中--与射线微调的优先级2026-10-13)，仅 INVENTORY 页小人框底部；服务端 `evaluate/apply` 与生存同源，取消活化活箱子照常掉物并清存储。
-   - 已接线：活按钮创造页显隐/定位、`LivingTagPacket` 光标上传、`CarriedUpdatePacket` 关联结果、创造虚拟光标的槽位交互与活化共享单请求等待保护；普通路径不借入客户端物品，创造借入仅在精确有效玩家菜单的空真实光标上，finally 清空并回传实际结果。
-   - 自动回归入口：`LivingTagPacketTest`、`CreativeActivationSessionTest`、`LivingButtonLayoutTest`；真机验收范围沿用原清单（INVENTORY 页、其它标签页隐藏、按钮优先、拖动/缩放/重开、生存与普通箱、快速连点与等待中操作、活箱子掉物、强制退出）。
-   - 不为创造模式另写活化逻辑、不新增协议种类、不做所有标签页版本。
-
 6. ✅ **Q6 流体组件值不可变化** —— ~~代码已接线，待实机验收~~ ✅ 已结案（2026-11-17）：用户反馈本轮既定验收均正常；未逐项说明的容器变体与操作组合不外推为单独证据。原 `CONTAINER_FLUID_DATA_ITEM` 存可变 `ContainerFluidData`（无 equals/hashCode），违反组件值语义，现已改为不可变值。
    - 已接线（2026-11-16）：组件值改为不可变 record `FluidSourcesSnapshot`（与 `PhaseSnapshot` 同构），条目定义抽成共享 `FluidSourceEntry`（字段名 `slot`/`fluid` 不变 ⇒ NBT 形状零迁移）；组件按口径成对声明 persistent + networkSynchronized；`moveOut` 写 `captureSources()` 快照、`moveIn` 走 `fromSnapshot` 每次建全新运行时对象（创造多次放置互不污染）；`ContainerFluidData.snapshot()` 零调用已删。
    - 自动回归入口：`FluidSourcesSnapshotTest`（真 set 不抛校验异常 / 值判等 / CODEC 形状 / 往返 / 独立性 / 未知 id / 端到端守恒）+ `ContainerDataMigrationTest`；关键守卫已做负向验证。
@@ -89,15 +63,6 @@
    - 不做：不为旧存档引入迁移逻辑；不改 BE/Player 附件；不顺手修 3.3 末尾的 `getFlows()` 注释债。
 
 > **暂缓区（不进当前队列）**：GameTest / 专用服务端与客户端启动烟测、落盘 version 字段与可选依赖上界、玩家上手说明与进度设计。它们属于 1.0 或产品拍板项，等 Q1~Q6 清完再按真实触发条件排期。
-
-## 文档系统治理（2026-11-19 登记）
-
-- [x] ~~**通用纪律的归宿错位**~~ ✅ 已完成（2026-11-21）—— 一条纪律若被 ≥2 个域引用、又不属于任一域，就不该住在某个子系统的 tech 或某份指南里。已知两例：
-  ① **隔离规则**（全项目不变量：活物品不作货物 / 燃料 / 材料 / 瓶子，漏斗、酿造、信标、耕地、流体、活塞都受约束）—— 正文住在 [漏斗 tech §6.2.1](tech/living-hopper-tech.md)，唯一定义点 `SlotInteractions.isEligibleCargo`；不去漏斗文档找不到。
-  ② **数据层 per-item / 视觉聚合纪律**（选错不可逆）—— 住在 [设计模板 §1.1-b](guides/living-item-design-template.md)，模板是 guides 层，无契约效力。
-  **判据**：全局不变量应有独立归宿（decisions / api-contract / reference），子系统 tech 与 guides 只留指针 + 一句结论。
-  **处理方式**：先盘点同类还剩几条，再统一决定归宿，不逐条搬（避免搬一条、留一条）。
-  - ✅ **收口（2026-11-21）**：盘点确认同类错位**仅此两例** —— 算术纪律已在 `container-boundary.md` I-C14、图标接缝纪律已在 `icon-system.md`（均在契约层，slot-ops / 模板里只是合格的"结论+指针"），不动。归宿按 `README.md` §1 定在契约层（`decisions` 是索引、`reference` 是快照、均不承载正文；`api-contract` 定位是第三方扩展契约）：新建 [living-item-invariants.md](system-design/living-item-invariants.md) 承载两条正文（不变量+判据+唯一定义点），漏斗 tech §6.2.1 保留域特有骨粉真值表并加指针、设计模板头部与 §1.1-b 改为结论+指针（判据表移入契约层）、glossary 两条出处改指契约层、`data-model` §4.4 顺带修掉三个已不存在的旧类名（规则未变、入口收拢）。AGENTS.md 文档导航已同步；纪律内容未变、仅挪归宿，按 README §4.0 不进 changelog。未改生产代码。
 
 ## 女仆联动（首版及展示用户实测通过，后续与专项核对）
 
@@ -117,7 +82,7 @@
 
 ## 实体宿主行为兼容（2026-11-12 拍板；批次 A/B/A2 已落地，C 批缓办）
 
-拍板记录与理由见 [decisions.md](decisions.md) D-container-25（自己的位置直接用，借来的位置才要开关）；各子系统口径已归位 [活工具](tech/living-tool-tech.md) §2.3 · [活水车](tech/living-water-wheel-tech.md) §4.5 · [活信标](tech/living-beacon-tech.md) §0 · [活武器](tech/living-weapon-tech.md) §0。
+拍板记录与理由见 [decisions.md](archive/decisions.md) D-container-25（自己的位置直接用，借来的位置才要开关）；各子系统口径已归位 [活工具](tech/living-tool-tech.md) §2.3 · [活水车](tech/living-water-wheel-tech.md) §4.5 · [活信标](tech/living-beacon-tech.md) §0 · [活武器](tech/living-weapon-tech.md) §0。
 1. **A2 批：活信标实体开光** —— ~~buff + 光束 + 联机同步待做~~ ✅ 已实装（2026-11-12：buff 中心 = 实体位置、光束锚点 = 宿主顶面、`BeaconEntityHostSync` 联机通道；三宿主完整）。规则见 [信标 §0](tech/living-beacon-tech.md#0-玩法定义)。
 2. **C 批（缓办，宿主特有）** —— 辅助挖掘的宿主侧语义（女仆瞬时破坏无玩家式加速面；唯一真实缝 = 女仆掉落判定 tool 传 EMPTY 的「正确工具掉落补位」，属 TLM 定制联动）；射线微调 followBody 映射实体头转角；红石世界互通实体化（「移动红石塔」单独立项）。设计稿 §3。
 3. **实体宿主辅助收集展开一层活背包** —— 女仆身上活背包里的无记忆武器 / 工具目前**不参与**补刀与背后环（环与补刀同口径只收直接槽位，2026-11-12 定）；玩家路径是展开一层的（`CarriedLivingItems`）。展开需经 `ItemFormLiveViews` 活视图读内容并验证写回语义（组件提交契约 §1.5⑤ 同族风险），缓办。
@@ -162,8 +127,12 @@
 1. ⏳ **规则 JSON 挂原版 reload 钩子 / 迁 `data/living_item/`**：4 个规则 JSON 仍在 `assets/living_item/`，`data/living_item/` 不存在；`AddReloadListenerEvent` 全库 0 命中，现靠 `commonSetup` 装载 + 4 个命令 reload。触发门见路线图 §4.5；「非标准 JSON 不被原版解析」须实机验证。
 2. ⏳ **落盘结构留 `version` 字段**：4 个配置 JSON 已有；Codec / SavedData（`ContainerFluidData` / `FilterData` / `LearnedLayouts` / `ContainerDataSavedData`）无 version。1.0 前必须在位（路线图 §4.4），alpha 不做旧存档兼容。
 3. ⏳ **`SlotInteractions` 加确定性排序 + 未命中兜底**：当前仍是注册顺序 List、未命中静默返回 false；`LivingItemManager.sortFunctionsByPriority` + `TickOrderTest` 是现成参照。
-4. ✅ **`GameplayConfig` 宿主锚点开关守卫**：~~只测 SPEC + 默认值，缺热重载 / bake 守卫~~ ✅ 已补（2026-11-17）：`GameplayConfigTest` 用真实 `BusBuilder` + FML `LoadedConfig` 内存夹具覆盖 attach 的 Loading/Reloading 两条监听、全部静态缓存刷新、无关 SPEC 不污染、每例恢复全 false；负向验证（删 Reloading 监听 ⇒ 热重载用例红；删 SPEC guard ⇒ 无关配置用例红）。
 5. ⏳ **Q12：分层违规报告是否接进 `doc_check.py`**：CI 现独立跑 `check_layers.py`（`build.yml:56`），`doc_check` 的检查项里没有分层。
+
+## 文档系统维护（2026-11-22 登记）
+
+1. ⏳ **changelog 轮转归档**：`docs/archive/changelog.md` 已 667KB / 89 日期节，是只增不减的流水（README §4「没有归档环节」）。用户定「它可以是文档系统的厕所——AI 写流水不可避免，就指定一个地方」；**触发条件暂不设**（用户 2026-11-22 定，以后再定）。
+   届时做法：满足条件的旧节整体迁 `archive/changelog-<年份>.md`，当前 `changelog.md` 只留最近一段 + 一个「哪天在哪份」的索引页（现有 24 处链接均无锚点、只指整文件名，轮转不会断链，但正文里「见 2026-XX-XX 节」的文字会需要索引兜底）。与 archive 层整洁化（同轮发现：README 自述 33 份/801K 已过期，实际 38 份/1.47MB）是同一议题，可合并处理。
 
 ## 活信标 · 游玩实测（2026-10-18 收尾时挂起）
 
@@ -205,10 +174,6 @@
 
 4. **`scanAndGroupLivingItems` 每容器 `new LinkedHashMap<>()`** —— 同上量级。
 
-5. ✅ **（收益最大）合并两次全槽位遍历** —— ~~`scanAndGroupLivingItems` 与
-   `computeContentSignature` 各遍历一遍全部槽位 ⇒ 合并可**省 50% 扫描**~~
-   **2026-11-17 已随队列 Q2 完成**（签名并入扫描单遍，`ScanResult` 同遍产出）。
-
 6. **配方书标签页每帧扫描玩家背包**（2026-10-03 起）——
    `LivingChestRecipeTab.collectLivingChestItems()`（原 `RecipeBookComponentMixin` 内联）
    在内容网格渲染帧与材料统计路径各扫一遍背包全部槽位。
@@ -221,42 +186,11 @@
 
 ## 活流体（流体侧挂起项 —— 原 idea.md 任务队列 2026-10-08 已蒸馏进 tech/archive，本节为现行台账）
 
-1. ~~**末影箱汲/倒**~~ —— **已完成**（2026-10-05 F-1：`ContainerContexts.resolve` 末影箱分支 +
-   `EnderChestContainerContext` 独立类；同日补 `FluidFlowServerSync` 第三条派发）。
-   🔴 **渲染侧踩过三次泄漏**（① 泄漏到玩家物品栏 ② 一点不渲染 ③ 末影箱的水渲染到别的箱子界面），
-   前两次靠「服务端下发 `RenderTarget` 权威告知容器身份」解决，第三次靠**派发判 viewer**
-   （2026-10-06 修）。⚠️ 同日一度「砍掉末影箱流体兼容」，**当日回退**（误伤了
-   `processEnderChest` 这条 tick 入口 ⇒ 末影箱里全部活物品机制失效）。
-   方案留痕：`docs/archive/changelog.md（2026-10-06 条目）`。
-2. ~~**岩浆/模组流体接入**~~ —— **活熔岩已接入**（2026-10-06，`living-fluid-tech.md` §3.7）：
-   一行行为注册（引擎零改动），产物形态已拍板 —— **流动格遇水 ⇒ 圆石、源格遇水 ⇒ 黑曜石**
-   （原版 `shouldSpreadLiquid`，与「谁撞谁」无关）。仍挂起：① **倒水进岩浆源 ⇒ 黑曜石**
-   （`pour` 处理器路径）② **模组流体接入**（同一行注册，等有具体流体再说）
-   ③ **活熔岩 DOWN 特例（落下的岩浆着地变石头）**、**soul soil + blue ice ⇒ 玄武岩**
-   （原版有此规则，未复刻）④ **反应音效**（2026-10-10 自 fluid §9 迁入）
 3. 满活桶对世界放水（复用 `emptyContents`）**无反馈 UX**（2026-10-10 自 fluid §9 迁入）。
 4. **游戏实测清单** —— 漏斗自动化活锁、多流体同屏渲染、创造模式汲/倒、**黑曜石存活窗口
    （≈1.5s）是否够抽走**。
    （活桶世界侧已定稿零拦截：取/放水为原版原生行为，swap 丢活标记属预期，
    重新活化即可——无需专项测试。）
-5. ~~**慢蔓延**（flowSpeed）~~ —— **已实施**（2026-10-05 时序化，§3.6：目标/实际双层 +
-   派生原版 `getTickDelay`，水 5t / 岩浆 30t）。
-6. ~~**岩浆烧毁物品**~~ —— **已实施**为机制一·焚毁（§3.7，含满组石头系喂养 ⇒ 诞生岩浆源的
-   「新配方」；源格同样焚毁）。
-7. ~~**管道抽取活水源**~~ —— **已实施**（2026-10-06，`living-fluid-tech.md` §10）：新
-   `ContainerFluidHandler`（NeoForge `IFluidHandler`，宽注册全部 BE + 四段让位判定），
-   **整源单位**（请求 ≥1000 才给满并删源）、只出不进；**Create 6 / Mekanism / Pipez 通用**。
-   ⚠️ 已知代价：单次请求 <1000mB 的慢管道抽不到（**明确接受**）。
-   ⚠️ **2026-10-29 用户拍板：随活海绵落地退役**（无海绵时代的探索实现）——流体能力
-   **收口到活海绵物品**（唯一能力面），容器水网不再暴露流体能力，模组管道改经
-   「海绵 → 储罐 → 管道」取水；「整源单位」口径保留（网络源永远整源）。
-   见 [活海绵.md §2.3](tech/living-sponge-tech.md) · fluid tech §10 退役横幅。
-   ✅ **2026-11-02 退役已执行**：`ContainerFluidHandler` 类 / BLOCK 注册 / `ContainerFluidHandlerTest`
-   / 能力存在性边沿机器（§10.4）全部删除；取水链路 = 「海绵 → 储罐 → 管道」（海绵 = 流体弹匣）。
-   🔴 **2026-10-31 勘误**（存档留痕）：「Create 6 通用」当时只核了 API 方言，**没核 Create 的连接判定**
-   —— 宽注册让管道把相邻**管道自身**判成储液，整张网络断在假 tank 上（水完全不流，
-   且任意 BE 长排液接口）。当时改为「**能力存在性 = 派生源非空**」+ 驱动侧边沿失效
-   （fluid tech §10.4）；整源口径与退役计划不变。
 8. **专用流体活物品**（未来方向，用户 2026-10-06 拍板时的原话：「后面直接出专门的流体相关的
    活物品再说，就像活涂蜡铜灯存电一样的逻辑」）—— 需要"细水长流"的自动化时做**专用物品**：
    自带缓冲与规则，范本 = 红电 `ContainerEnergyStorage`（对外一个能力、内部一个池、
@@ -264,10 +198,6 @@
    📄 **设计稿（2026-10-29 立稿，探讨中）**：**活海绵**（流体存储，照抄灯泡存电模型）与
    **活滴水石锥**（流体运输，方向阀）——两个**独立**活物品（相互无搭配依赖），
    见 [living-sponge-tech.md](tech/living-sponge-tech.md) / [活滴水石锥.md](buffer/活滴水石锥.md)。
-9. ~~**推动与细节待梳理清单**（2026-10-30 建）—— 剩余 10 条，逐条拍板后再动代码~~
-   ✅ **2026-10-31 全部清零**：力场模型 4 条 + B5~B8 / C2 / D1 / D2 / E1~E4 已同步
-   fluid tech §3.3 等处；A3 准入边界晋升 fluid tech §0 规则 10；A1 / A2 / C1 移交框架侧
-   （见本节第 10 条与「物品传输」节）。原稿归档 [archive/living-fluid-review.md](archive/living-fluid-review.md)。
 10. **流体推动 ×「本拍已写入槽」的互斥（C1，2026-10-31 记录，暂不实施）** ——
     现状：`TickContext.transferredTargetSlots` 由漏斗 `markTransferred()` 写入，
     **唯一消费者是漏斗自己**（`TransferPipeline` 跳过「本 tick 已被写入过」的来源槽，
@@ -280,32 +210,8 @@
     顺带：`TickContext.occupiedSlots` 全项目**零引用**（死字段，注释却写「防止多个活熔炉
     处理同一输入槽位」），要么删、要么补使用。
     判据：漏斗落料当拍不被水流移动；连续供料时行为需拍板。
-11. ~~**下界倒水成源要不要 ultraWarm parity**~~ —— **已拍板（2026-11-01）：不做，明确接受**
-    （随活海绵 ⑬「存储态不自干」一并定案，用户原话：「在新的语义下，活流体在容器里，
-    不与下界接触」）。语义：**容器内活流体不与世界接触** ⇒ 「下界容器网络里有水」= 接受的
-    新玩法（海绵手提水箱 / 下界机器供水 / 水·岩浆双向贸易因此成立）；原版蒸发只挂在
-    「放进世界」的暴露事件上（桶倒进世界 `BucketItem.emptyContents`、湿海绵方块
-    `onPlace`，均原生自处理）。判据 `FluidType.isVaporizedOnPlacement`（`FluidType.java:815`）
-    仅当将来做「世界侧放置」parity 时才复用，倒水成源路径不查。引擎现状核对：全库
-    `ultraWarm` / `isVaporizedOnPlacement` 零实现（2026-11-01 grep），无存量行为可破坏。
-
 ## 活海绵（2026-11-05 游玩反馈与源码核查 · 修复与验收状态逐项标注）
 
-1. ~~**Create 管道持续抽取一段时间后停住**~~ ✅ **2026-11-06 用户实机复测通过** ——
-   不放活铜灯，仅活海绵使用修复包后抽取恢复正常；+14 回归与全量测试通过。
-   根因、修复前加铜灯对照与修复边界见 [海绵踩坑 §12.1](tech/living-sponge-tech.md)。
-   未追加逐次抽灌能力失效通知，未加 Create Mixin；真实重载/重连的所有场景不由本次验收代替。
-2. ~~**容器 drain 多堆聚合违反请求上限 / 异种不动原则**~~ ✅ **2026-11-06 修复，+7 回归通过** ——
-   每堆只请求剩余量；首个可抽流体模拟选定，异种不扣且不挡后续同种罐；返回实际代表流体。
-   根因与守卫见 [海绵踩坑 §12.2](tech/living-sponge-tech.md)。跨模组效果在实际游玩中观察，不安排专项测试（2026-11-06 用户定）。
-3. ~~**海绵外部抽灌缺少正式槽位写回**~~ ✅ **2026-11-06 首批修复完成（共享22项＋海绵17项回归）** ——
-   原引用/副本读取不再决定是否保存：复制计算，经 `commitItemComponents` 写后回读确认才报账；
-   无精确writer返回0，拒写停止并只报先前提交量，不走抽插、不截断原数量。
-   正式setter内容回调、关联BE标脏及槽同步由共同入口承担；旧接口新增16项回归红。
-   契约与恢复边界见 [api-contract §1.8](system-design/api-contract.md) · [海绵 §12.3](tech/living-sponge-tech.md)。
-   **2026-11-06 用户实机旧新对照通过**：旧版含流体活海绵在抽屉里可被无限汲取和储存，
-   新版无此问题。抽屉不必支持活物品玩法，但不得虚报成功；不因此新增抽屉适配需求。
-   其它场景随实际游玩观察，不安排专项测试。
 4. **其余 getter 活引用修改路径按实际风险评估迁移** —— 海绵自动吸收/GUI汲、
    活箱子内部存取及部分红石/工具等组件更新尚未接入共同提交；需按各域业务结算顺序验证，
    不能用「同步时顺便写回」替代明确提交。铜灯BLOCK外部充放已接入（见红电第4项）；
@@ -333,27 +239,8 @@
 
 1. ⏳ **活避雷针**（Step 13：**供需分配** —— 让雷电给容器充电；排期在阶段四后）
    —— 详见 `living-power-tech.md` §8。
-2. ~~**对外能量能力同款「宽注册 + 恒发实例」**~~ —— ✅ **2026-10-31 已修**（与流体 §10.4 同期）：
-   存在性 = 容器当前真有活涂蜡铜灯（读电力账本通告标志，O(1)）；正边沿在
-   `LivingWaxedCopperFunction#tickContainerData` **所有早退之前**通告（纯电池容器无发电机），
-   负边沿（最后一盏灯被拿走 ⇒ 功能已不分组）由 `ContainerPhaseWriteback` 兜底；客户端恒不发。
-   见 [power tech §4.1](tech/living-power-tech.md) · `ContainerEnergyCapabilityTest`。
-3. ~~**容器取电在超大堆叠下可能交付超过请求量**~~ ✅ **2026-11-06 修复，+10 回归通过** ——
-   容器合计决定整 FE 交付，多堆仍可凑整；按盏 ceil 实扣，差额只损耗不交付；
-   总量不足1FE或不足整FE请求完全不动。请求上限、模拟/执行一致、大额预算与单遍提前停止均有守卫。
-   语义选择与反例见 [power tech §4.2](tech/living-power-tech.md)，跨模组效果在实际游玩中观察，不安排专项测试（2026-11-06 用户定）。
-4. ~~**铜灯BLOCK外部充放未正式写回，副本后端虚报成功**~~ ✅ **2026-11-06 接入共同组件提交（+21回归）** ——
-   用户已实机确认旧版抽屉有类似无限充放；本轮副本规划、确认写回后报账，无writer返回0，不做抽屉专用适配。
-   充电保持比例分配，中断按确认实充向上整FE记账；取电按确认计划份额向下整FE交付，异常碎片损耗WARN。
-   全量1655项零失败，旧路径新增21项回归红；✅ **修后实机已验（2026-11-07 用户实测无问题）**。
-   `EnergyStorage.ITEM`、发电与其它内部tick不在迁移范围。详见 [power tech §4.2](tech/living-power-tech.md)。
-
 ## 活红石 / 活铜（2026-10-10 自 tech §0 迁入，D-doc-06）
 
-1. ~~**活活塞**~~ ✅ **已完成并晋升 tech 文档**（2026-11-05）—— 推 / 拉 / 机械压送 / 传输联动 /
-   图标全平面渲染全部落地，真机验收通过（2026-11-04~05）；专属 LivingIconSpec 已落。
-   现行规约见 [living-piston-tech.md](tech/living-piston-tech.md)；设计历程 =
-   [活活塞-design.md](archive/活活塞-design.md)。框架欠账（I-C12 源侧核验 / 执行顺序契约）见「物品传输」节，非活塞专属。
 2. ⏳ **活门**（P3：开 / 关可视化）—— `living-redstone-tech.md`
 3. ⏳ 铜块物品栏装饰器渲染（纯视觉）—— `living-copper-tech.md`
 4. 🔮 活潜影箱集成（信号穿透边界）—— 设计探讨见 `buffer/活潜影箱实现细节.md`
@@ -421,22 +308,6 @@
    `consume`（熔炉/酿造输入）已接入抽取权限——若拍板「水流也尊重」，只需把 PHYSICAL
    档的抽取分支改对齐 STANDARD。
 
-3. ~~**执行顺序与 API 契约 §1.3 不一致**（2026-11-03 活塞侧复查发现，**既有问题**）~~
-   ✅ **2026-11-06 定案并收口：改契约承认遭遇序，不改代码行为**。§1.3 改为描述真实的两阶段
-   （功能 tick = 槽扫描中首次出现序，同槽内才受 `getTickPriority()` 影响；容器级数据另按
-   `HasContainerData#getPriority()` 排序），同步校正 `runFunctionTicks` / `LivingItemManager` /
-   `LivingItemFunction` 的注释与 `TickOrderTest` 的声明。**不改扫描逻辑、不加排序、不加守卫**。
-   判据：`getTickPriority()` 全库 **0 个生产覆写**，而 `HasContainerData#getPriority()` 有 4 个
-   且带物理因果 ⇒ 为前者做行为变更是给不存在的风险付钱。见
-   [architecture-evolution-roadmap.md](buffer/architecture-evolution-roadmap.md) 阶段 0.2。
-   ⚠️ 与活塞无关（活塞已声明 priority），属容器编排层的既有欠账。
-
-   ✅ **落地顺序三步全收口（2026-11-05）**：①修存量（11-05 存量收口）→ ②原语
-   （`move`/`produce`/`consume`/`transform`——原计划的 `transform(slot, maxUnit, fn)` 因
-   熔炉「消耗输入 + 产物另槽」与酿造「原地替换」签名不同，拆为 consume 与 transform 两原语）
-   → ③ 门禁：`tools/check_stack_ops.py` 棘轮（domain/function 各文件 `setItem(` 现存
-   12 处冻结为 `tools/stack_ops_baseline.txt`，只许减不许增；已挂 pre-commit / CI 第五条）。
-
 ## 容器边界（2026-10-10 记 · 2026-10-18/19 立项并完成主体）
 
 > **契约**：[system-design/container-boundary.md](system-design/container-boundary.md)（不变量 I-C1~I-C14，已生效）
@@ -445,10 +316,6 @@
 >
 > 本条目只留「还没做完的」，不再承载设计正文。
 
-1. ✅ **「白/黑名单」已否**（`D-container-05`）—— 排除 = 放弃兼容且是永久适配债 ⇒ 改为口径收敛。
-2. ✅ **S1~S4 + S3/S3b 全部完成，真机全通过**（2026-10-19）：
-   tooltip 进度行 · 活熔炉图标实时 · 写回不错槽/不复制 · 列数 108/120 正确算 12 ·
-   背包槽位倒汲生效 · 背包 GUI 活流体渲染。
 3. ✅ **S5 已取消（`D-container-08`）** —— 「容器内物品被 tick」是**活潜影箱的专属逻辑**，
    不是框架的通用能力。框架职责收敛为：tick「方块形态容器」+「实体形态容器」+「玩家背包」
    （实体形态 2026-10-21 加入，见 `D-container-10`）。
@@ -742,23 +609,6 @@
    只扫 `mc.player.getInventory()`，扫不到背包内容；只有身边的人看得见（S2C 广播）。
    补自己那条归 TODO 6.1-b。
 
-## ~~活水车 · Create 接触面收窄（2026-10-19 记）~~ ✅ 已完成（2026-11-17）
-
-> 原问题：`StressStateMachine` 名义上可独立测试，实际直接依赖 Create 类型与网络 API，关键生命周期顺序零守卫。
-
-1. ✅ **`KineticOps` 接缝**：端口覆盖服务端/安全判据、生成器刷新、移网与摘接、速度/网络身份、
-   attach、网络容量与负载更新、脏标记/同步及诊断信息；`KineticBlockEntityMixin` 实现 Create 适配，
-   `StressStateMachine` 不再引用 `com.simibubi.create.*`。
-2. ✅ **状态机守卫**：`StressStateMachineTest` 用记录型 `FakeKineticOps` 覆盖首次启用、稳态、反转/清零、
-   读盘宽限与恢复、普通/生成器过期、区块卸载、不安全/非服务端路径及异常隔离；首次启用顺序与刷新标记
-   均做负向变异验证。fake 只守我方命令，不宣称证明真实 Create 网络或 Mixin/NBT 时序。
-3. ✅ **边界保持**：RPM/SU、NBT、白名单与宿主语义不变；不采用反射，理由见
-   [living-water-wheel-tech.md §5.1.1](tech/living-water-wheel-tech.md)。
-
-
-
-
-
 ## 活武器（2026-10-10 自 `living-weapon-tech.md` §0/§9 迁入，D-doc-06）
 
 1. ⏳ **蓄力型**（弓 / 三叉戟）—— **设计已定稿**（免录制方案，2026-09-30），
@@ -800,15 +650,9 @@
 3. ⏳ **E1 增强（可选）**：拖动 + 位置持久化已落地（2026-10-10，存 `config/living_item/button_layout.json`）；
    **吸附 / 碰撞避让 / 显示开关**当轮明确不做，要做再按设计稿 §4.1。
 
-## ~~渲染态广播（2026-10-26 记，未定案）~~ ✅ 已收口（2026-11-07）
+## 渲染态广播 · 后续验证（三步已收口，见 D-render-01）
 
-> 三步（`BroadcastDedup#merge` 去重 / `ToolRenderState` 渲染依赖 / `DimensionScopedCache` 客户端缓存）
-> 已全部落地；定案与被否方案见 [D-render-01](decisions.md) · [渲染态定案](tech/living-tool-tech.md)。
-> 原设计稿按「都不问 ⇒ 删」判据删除（git 保完整历史）。
-
-1. ~~**去重键口径没有单一来源**~~ ✅ **2026-10-26 已收口**：解法是 `ToolRenderState` record
-   （比较单位 = 发送单位），**不是**当初倾向的 `RENDER_STATE` 组件集合。
-2. ⏳ **第 5 个世界可见活物品**出现时验证「不新增包类 / 缓存类」判据；包体实测与
+1. ⏳ **第 5 个世界可见活物品**出现时验证「不新增包类 / 缓存类」判据；包体实测与
    tooltip 通道是否纳入未定。触发门见
    [architecture-evolution-roadmap.md](buffer/architecture-evolution-roadmap.md) 阶段 2.6。
 
@@ -823,68 +667,6 @@
 > 铜的红电信号不直接作世界红石输出，中继器逻辑对齐原版。** 不再将这些列为待选玩法。
 > A4 飞艇传送（含误诊纠正）已落 [地图传送 §11.2.1](tech/living-map-ender-pearl-tech.md)；
 > A5 停机重启 / A6 拆合重算已实施；A8「双箱只按一个容器提供一份产能」仍是**建议、未实施**。
-
-### B1~B12 文档对齐项（2026-10-27 登记；2026-11-21 全部 12 项对齐完毕）
-
-> 完成判据（台账 §7）：**规则明确 → 对应文档唯一现状 → 代码符合该规则 → 验证入口诚实**。
-> 复核时逐条对照代码，不要只凭文档互引。B5 / B6 / B12 于 2026-11-11 对齐；
-> 2026-11-21 把剩余 9 项逐条对照当前源码核对，确认 B1 本已对齐、其余 8 项有残留并**全部就地修复**
-> （纯文档 + 源码注释，未改逻辑、未改玩法），明细见本节末。
-
-| # | 待对齐文档 | 要点 |
-|---|---|---|
-| B1 ✅ | [红石 §3.2.1/§0](tech/living-redstone-tech.md) | 删除「边界红石灯读取外部信号」承诺（已裁定代码对）——2026-11-21 复核确认本已对齐 |
-| B2 ✅ | [红石](tech/living-redstone-tech.md) · [活铜](tech/living-copper-tech.md) | 倒计时单位 / Phase 顺序 / 字段名 / 对外输出范围；火把「暂时熄灭」不承诺未实现检测——**2026-11-21 已对齐**：伪代码乘 `TICKS_PER_REPEATER_STEP`、Phase 4/3 顺序复位、字段名与 `locked` 补齐、`anyInputOfSlot`、铜块不参与 faceOutput |
-| B3 ✅ | [TNT](tech/living-tnt-tech.md) · [打火石](tech/living-flint-and-steel-tech.md) · [GUI交互](system-design/gui-interaction-system.md) | GUI 点火取代旧漏斗点火；`getSensor` 端口与注册位置——**2026-11-21 已对齐**：打火石附录取消旧漏斗信号源表述，GUI 规则示例改 `interaction_rules.json` 原文 |
-| B4 ✅ | [红电](tech/living-power-tech.md) | 已删的稳态跳过 / 旧行号 / PhaseSnapshot 本地轴说明——**2026-11-21 已对齐**：删稳态跳过描述、6 处行号/符号修正、源码 `PhaseSnapshot`/`ContainerRedstoneData` 旧轴注释同步 |
-| B5 ✅ | [熔炉](tech/living-furnace-tech.md) · [酿造](tech/living-brewing-stand-tech.md) | ~~不存在的 SlotAccessor 产出示例、默认布局「首次落盘」~~ **2026-11-11 已对齐**：熔炉数量操作为 consume/produce；酿造缺组件默认读值与整 record 保存分开（§6.4） |
-| B6 ✅ | [耕地](tech/living-farmland-tech.md) | ~~cropSeed 是类型记录不是「不消耗」、湿润验证改倒水成源~~ **2026-11-11 已对齐**：类型记录与种植消耗、采后回退、全字段比较、容器流体判湿与 4→3→2→1、JSON/领域注册；人工文件树改源码查询（§1/§2/§3/§5/§10/§12） |
-| B7 ✅ | [水车](tech/living-water-wheel-tech.md) | **2026-11-17 已对齐**：`domain/water` 路径 / 当前槽集合计算与写回 / `KineticOps` 状态机接缝 / 两条渲染态 set-clear 生命周期与 `@WrapOperation` / 桶源退役后的自维持流体时序；旧桶源与 pendingReattach 只留在明确历史事故段 |
-| B8 ✅ | [Tooltip](system-design/tooltip-system.md) · [图标](system-design/icon-system.md) | 面板常显与公式条件分开；ThreadLocal 真实 set/clear 生命周期——**2026-11-21 已对齐**：`coilForm` 不再误称翻译键决定者（实际按物品类别判定）；ThreadLocal 本已对齐 |
-| B9 ✅ | [末影箱路由](tech/living-ender-chest-tech.md) | 复合频道键替代 int 草图；simulate peek 非真实移除；flush 调用点——**2026-11-21 已对齐**：§2.2 数据结构/方法签名改 `EnderChannelKey`+`Deque`，flush 调用点统一 `LivingItem.onServerTick`；peek 本已对齐 |
-| B10 ✅ | [容器边界 I-C10](system-design/container-boundary.md) · [超大堆叠审计](system-design/oversized-stack-audit.md) | 跨边界清单补容量/有效性/模拟三查询；实体缓存键判据——**2026-11-21 已对齐**：I-C10 清单补四查询，源码 `ContainerIdentity` 注释改正实体带维度前缀 |
-| B11 ✅ | [API契约](system-design/api-contract.md) · AGENTS 模块路由 | 新注册口与 sophisticated / avaritia 路由；不重建人工文件树——**2026-11-21 已对齐**：§1.2 补 `registerMover`/`ItemFormContainers.register`，AGENTS compat 段补齐 7 个目录；不重建文件树本已对齐 |
-| B12 ✅ | [流体](tech/living-fluid-tech.md) | ~~旧收敛循环 / `flowSpeed`「预留」/ 最近水源距离~~ **2026-11-11 已对齐**：flowSpeed 已消费、晋升按实际层单遍判定、邻格实际 level 供给与目标层到达时间分开；数量原语未做表述清除（§3.3/§3.6及接口注释） |
-
-**2026-11-21 全项核对 + 修复留痕**（逐条对照当前源码，不凭文档互引；全部纯文档 / 注释改动，未改逻辑、未改玩法）：
-
-- **B1**：复核确认本已对齐——§3.2.1「红石灯不读取容器外部信号」与 `inputAt` 边界返回 0 一致，无需改。
-- **B2**：倒计时伪代码补乘 `TICKS_PER_REPEATER_STEP`（代码 L375/382）；§6.5 比较器 Phase 4/3 顺序复位（代码 `ContainerRedstoneData` L491-499 是 phase1→4→3→5）、L1643 改 Phase 4；字段名补 `active`→`powered`、`LivingRepeaterData` 补 `locked`（含 `withLocked`/字段表）、活铜 grate 改 `sumSignal`；红石灯/铜灯 `anyOfSlot`→`anyInputOfSlot`（代码 `RedstonePropagation` L428/655）；copper §5.3/§6.1 改为「铜块不参与 faceOutput」（代码四处 `isCopperSlot continue`）。火把「暂时熄灭」子项本已对齐。
-- **B3**：打火石附录 v2「活漏斗信号源」旧表述改为作废 + 指向 §2.1 现行 GUI 点火；GUI §3 交互规则示例从臆造的 `LivingTntFunction.CONFIG`/`InteractionEntry` 改为 `interaction_rules.json` 原文（D2 全迁，`TntRegistration` 只注册 handler）。
-- **B4**：删除 redstone-power「稳态跳过路径」描述（代码已删、每 tick 完整 5 phase）；旧行号/符号 6 处修正（`ChannelState:52`/`:192`、`accountEnergy`→`EnergyAccounting:20`、`runBfs`→`:291`、中继延迟→`RedstonePropagation:32/73/375`、实施表 `EnergyAccounting.accountEnergy`）；源码 `PhaseSnapshot.java` 旧「本地 tick 轴」Javadoc 改世界 game time + φ 反推锚、`ContainerRedstoneData.java:486`「稳态判定前」改「reset() 前」。
-- **B8**：tooltip `coilForm` 归因改正——形态翻译键由物品类别（`WaxedCopperFamily.isWaxed*`）判定、不读该字段；ThreadLocal set/clear 本已对齐。
-- **B9**：§2.2 数据结构 `Map<Integer>`/`Set<Integer>`/`nextIndex` 改 `EnderChannelKey` + `Deque<entries>`+`Set<RouteKey>`（含 posIndex 维度外层、uuidIndex/entryToChannel）；方法表/示例签名 `int channel`→`EnderChannelKey key`、`insert`→`offer`、`int ch`→`key.count()`；flush 调用点 4 处统一 `LivingItem.onServerTick`（L4 每 tick 一次，代码 `LivingItem.java:415`）。peek 非真实移除本已对齐。一度误删仍存在的 `removeByPositionAndSlot` 行，已复核恢复。
-- **B10**：`container-boundary.md` I-C10 清单补「容量/有效性/模拟查询」一行（代码 `EntityContainerContext` L147-165 已覆写带偏移、源码注释自称漏项）；源码 `ContainerIdentity.java:89-91` Javadoc 改正——实体容器带 blockPosition 快照 ⇒ 缓存键带维度前缀 `dim|entity_<uuid>`。
-- **B11**：`api-contract.md` §1.2 补 `ContainerHandoff.registerMover` / `ItemFormContainers.register`；AGENTS.md 模块地图 compat 段按实际 7 个子目录补齐（create/sophisticated/avaritia/tlm/sable/iris/jade）；「不重建人工文件树」本已对齐。
-
-> 校准留痕：核对员报告的**代码事实准确**，但若干文件路径前缀、以及 `isWaxedXxx`/`anyOfSlot` 等**概括写法不可直接照抄**（前者非真实方法，被 `doc_check` 第 9 项拦截；后者经代码裁决为 `anyInputOfSlot`）。本轮每处改动均先读源码确认再落笔。全项 `python tools/doc_check.py` 通过（0 警告）。
->
-> **2026-11-21 独立复审 + 术语订正**：逐条对照源码复核全部改动，除下述一项外均通过。
-> **问题与两次判断翻转（留痕）**：B4 收口时顺手把 `EnergyAccounting.accountEnergy` 行的「锈蚟级」改成「锈蚀级」，造成术语混用。首次复审**误判**「锈蚟级」是电力层共振隔离单位的专有术语、与化学概念「锈蚀级」不同，于是回滚并统一为「锈蚟级」，还否决了「全改锈蚀级」的建议。用户追问两者区别后复查词源：**判断再次翻转，最终确认「锈蚟」是错别字**——①「蚟」读 wáng、义为蜘蛛/蜻蜓，"锈蚟"非中文既有词；② 起源提交 `84ed368e`（标题「赋予锈蚀的意义」）引入技术术语时手误写成"锈蚟级"，随后扩散；③ glossary 权威词条只有「锈蚀级/氧化级」（=铜的 4 个氧化等级=共振声部），无「锈蚟」词条，代码英文一律 `oxidation`。⇒ 全库所有出现处「锈蚟」统一改为「锈蚀」（文档 + 源码注释 + 测试类 javadoc + 测试显示名/断言消息），`test-map.md` 由 `gen_test_map.py` 重生成同步；archive 冻结层 0 处、未动（本节留痕为记述本次订正而保留该词，属唯一例外）。两次误判的根因：**只看单处文档自述就断定专有术语，没查词源与 glossary 权威定义**——以后判定「错字 vs 术语」必须先查 glossary + 词源，不能凭出现次数或某篇文档的自洽表述。类名修正 `EnergyAccounting.accountEnergy` 保留。
-
-## 2026-10-27 审查修复 · 真机复验（2026-10-28 全部闭环）
-
-> 用户 2026-10-28 全面实测（c26b5d0 构建）："全部测试了一遍，都没发现什么问题"；唯坐垫生物随艇于同日另案恢复（见第 4 条）。
-
-1. ✅ **K2 跨维度修复**（2026-10-28 实测通过） —— 多人服（或切维度）：地狱/末地里背包中的活工具应恢复渲染
-   （模型/背后环/记忆射线），辅助挖掘加成正常。
-2. ✅ **末影箱「存放处」定案**（2026-10-28 实测通过） —— 核验无锚点的具体后果：不参与随身工具辅助、
-   不产生宿主工具射线／信标光束，TNT在无爆点时不执行爆炸；活末影箱本体路由照常。
-   **不是整个容器停止 tick**；TNT按“没锚点就不炸”验收，不引入独立待爆玩法。
-   **（2026-10-28 后续修订）** 空锚点引爆失败时改为**熄灭**（`ignited` / `fuseTimer` 归零），
-   撤销原“保持点燃”口径——待爆态会让 TNT 挪到有锚点处不点自爆
-   （口径见 [living-tnt-tech](tech/living-tnt-tech.md) §4.1）。
-   玩家**物品栏**里的背包与信标行为不变（回归确认）。
-3. ✅ **手持活背包挖矿**（2026-10-28 实测通过） —— 手持背包挖方块两端同源、无「破坏又恢复」；
-   背包里的工具耐久正常扣（写回守卫不误伤正常写回）。
-4. ✅ **Sable 飞艇传送（A4）** —— 传送本体已验收 ✓（客户端到位、贴地降落正常）。
-   随艇口径定案：**坐垫生物随艇**（坐垫实体显式平移；站甲板生物 / 空坐椅 / 其它载具不跟）。
-   坐垫恢复按用户决定**不再实测**——按验证层级如实记：静态审查 + 单测/门禁绿，无真机反馈。
-   口径与勘误见 [living-map-ender-pearl-tech](tech/living-map-ender-pearl-tech.md) §11.2.1。本项闭环。
-5. ✅ **红电停机重启（A5）**（2026-10-28 实测通过） —— 振荡器停跳超窗口后恢复：恢复瞬间无产出尖峰、
-   第二个沿起按新周期正常发电；正常运行与正常改频不受影响。
-6. ✅ **双箱拆分重算（A6）**（2026-10-28 实测通过） —— 拆半后余箱物品保留、流体源清空（重新倒水）、
-   红电重新锁相；拆半前调好的相位布局不作数。
 
 ## 活工具 · 系列扩展（2026-10-31 清点登记，D-doc-06）
 

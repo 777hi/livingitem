@@ -58,7 +58,9 @@
 
 > **实现入口**：`living/domain/water/` —— 关键类：`LivingFluidFunction`（自维持驱动）·
 > `ContainerFluidData`（引擎数据：派生源/蔓延/晋升/挤没/转化）· `FluidFlowBehaviors`（行为分档注册表）·
-> `ContainerFluidHandler`（对外 IFluidHandler，管道抽取）· `LivingBucketFunction`（活桶载体）
+> `SpongeItemFluidHandler`（唯一对外 IFluidHandler 能力面，ITEM）/ `SpongeContainerFluidHandler`（BLOCK，海绵垫起的容器级能力，⑭）·
+> `LivingBucketFunction`（活桶载体）。
+> ⚠️ 旧 `ContainerFluidHandler`（管道抽取）已于 2026-11-02 退役删除，能力收口到活海绵；见 §10 开头退役说明。
 
 > **性质**：本节「规则」是**契约**（违反即 bug），不是实现细节 —— 它是本子系统
 > **功能需求的来源**与**行为对错的判据**。⚠️ **只写规则与语义**；数值与操作步骤归实现层。
@@ -176,6 +178,10 @@ tick(ctx)
   └─ 4. 物品推动（advanced 里的流体，**排在反应之后**）
         └─ pushItems  四邻力场方向 + 次分量兜底；目标可为水格或无水格（§3.3）
 ```
+
+> ❌ **否决：用「隐形占位物」让槽位不空**（2026-10-21 定，勿重新提出）——
+> `transformSourceItems` 与 `incinerateFlowItems` 都依赖「**源格 + 物品同格**」（水 + 某物品 → 产物 /
+> 熔岩焚毁），把槽占住会让转化 / 焚毁 / 源诞生全线失效。「派生源与物品同格，供后续机制转化」是刻意设计（代码注释有记）。
 
 **生命周期要点**：数据由 `TickContext` 构造时经 `getFluidData(ctx)` 创建/回填
 （1a-4 回归教训：漏创建 ⇒ 水流整体失效）；驱动是**自维持**的

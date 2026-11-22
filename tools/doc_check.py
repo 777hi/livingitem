@@ -10,7 +10,7 @@ Verifies the invariants declared in docs/README.md §7 ("改完必查"):
   3. Test tree         - test-map.md 生成区由 tools/gen_test_map.py 从 src/test 扫描生成，
                          逐字一致（2026-11-18 起；取代手维护名录）
   5. Entry size        - AGENTS.md stays under the entry budget (soft warning)
-  6. Decisions         - decisions.md 的 supersedes 链双向一致
+  6. Decisions         - 已退役（2026-11-22）：decisions.md 归档，supersedes 校验退出
   7. Java symbols      - docs 提到的 Living*.java / *Mixin.java 必须存在
   8. Commands          - docs 引用的 /livingitem 子命令必须已注册
   9. Method refs       - docs 里 ClassName.method(...) 的方法必须存在于源码
@@ -342,45 +342,10 @@ def check_java_symbols():
 
 
 def check_decisions():
-    """决策索引：取代关系必须双向一致（A 说取代 B ⇒ B 必须说被 A 取代）。
-    这是让「翻转留痕」不依赖人记性的唯一办法。"""
-    p = os.path.join(ROOT, "docs", "decisions.md")
-    if not os.path.exists(p):
-        print("6. 决策取代关系    : SKIP（无 docs/decisions.md）")
-        return
-
-    rows = {}
-    for line in read(p).split("\n"):
-        if not line.startswith("| D-"):
-            continue
-        # 表格里的 \| 是 markdown 转义竖线，不是列分隔符。
-        f = [c.strip() for c in re.split(r"(?<!\\)\|", line.strip().strip("|"))]
-        if len(f) < 7:
-            continue
-        rows[f[0]] = (f[5], f[6])          # id -> (状态, 取代关系)
-
-    def has_id(text, did):
-        return re.search(r"(?<![\w-])" + re.escape(did) + r"(?![\w-])", text) is not None
-
-    bad = []
-    for did, (status, rel) in rows.items():
-        for m in re.finditer(r"→\s*(D-[\w-]+)", rel):
-            other = m.group(1)
-            if other not in rows:
-                bad.append(f"{did} 指向不存在的 {other}")
-            elif not has_id(rows[other][1], did):
-                bad.append(f"{did} → {other}，但 {other} 未反向标注 ← {did}")
-        if status == "已被取代" and "→" not in rel:
-            bad.append(f"{did} 状态「已被取代」但没写 → 接替者")
-        if status == "生效" and "→" in rel:
-            bad.append(f"{did} 状态「生效」却写了 → 接替者（应改状态）")
-
-    if bad:
-        for b in bad:
-            failures.append("[决策] " + b)
-        print(f"6. 决策取代关系    : FAIL（{len(bad)} 处）")
-    else:
-        print(f"6. 决策取代关系    : OK（{len(rows)} 条决策）")
+    """第 6 项已于 2026-11-22 退役：决策索引 decisions.md 归档到 docs/archive/，
+    supersedes 链校验随之退出（现行口径由 tech §0 / system-design 自检）。
+    保留此函数只为输出编号 6 的退役说明，不静默消失。"""
+    print("6. 决策取代关系    : 退役（decisions.md 已归档，2026-11-22）")
 
 
 def check_commands():

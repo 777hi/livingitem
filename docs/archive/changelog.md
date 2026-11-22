@@ -15,6 +15,11 @@
 
 ---
 
+## 2026-11-22
+
+- 📄 **待办池完成即删 + 决策索引退役**（文档系统"排泄"能力） —— TODO.md 从"完成项保留删除线"改为**完成即删三分法**（一般完成直接删 / 状态跃迁进本文一行 / 否决教训归 tech 定案节再删），正文 1002→781 行；不可重推的否决/教训先归位（女仆两项否决→maid §2.2、隐形占位物→fluid、第三方注入→D-container-30、核查教训→D-doc-12）。`docs/decisions.md` 归档到 `docs/archive/decisions.md`、退出冷启动路径：现行口径归 tech §0 / system-design，旧结论嵌在各 tech 修订留痕，doc_check 第 6 项 supersedes 校验随之退役；活跃层 13 处链接与 AGENTS/README 路由同步改指归档/领域文档。→ [README §1/§4/§7](../README.md) · `archive/decisions.md`。
+- 📝 **3 处活跃层误导订正** —— fluid §0 引用已删除的 `ContainerFluidHandler`（改指 `SpongeItemFluidHandler` 等）、container-compatibility 把已修的组件同步 no-op 写成规范（改分层精确表述）、slot-ops 的 transform no-op 指针 §1.8→§1.7。
+
 ## 2026-11-21
 
 - 🐛 **容器发现：重扫延后到 BE 权威再判定（「走远回来箱子停 tick」根因修复）** —— 玩家反馈走远回来后箱子里的活物品全出问题（活耕地水消失 / 种子不输出 / 红电停发）。根因在原版时序：磁盘加载的区块在「FULL 未 ticking」期间 BE 全在 `pendingBlockEntities`，批量晋升只发生在 `ChunkMap.prepareTickingChunk → postProcessGeneration()`（tickingChunkFuture 链内，无事件）；旧重扫在该窗口扫描 ⇒ 把刚重载的容器区块误判「无容器」并移出发现缓存 ⇒ 升 ticking 后无人再发现 ⇒ 箱子静默停 tick。修复：`flushPendingRescans` 对「可见但未 ticking」的请求与 null 同语义移到队尾（`isPositionTicking` ⇒ tickingChunkFuture 完成 ⇒ BE 已晋升，与处理路径同一判据）；主循环处理路径本来就经该过滤不动。代价：永不 ready 的请求滞留轮转（卸载时撤销）。守卫：`ContainerChunkCacheChunkLoadTest` 两用例改判据 + `LivingItemChunkContainerScanTest` 新增 stale 条目 / pending 窗口 / 升 ticking 补发现全链路用例（负向变异：删 ready 门 ⇒ 红）。→ [基础设施 §延后重扫队列](../system-design/living-item-infrastructure.md)。
@@ -44,6 +49,7 @@
 ## 2026-11-17
 
 - ✅ **Q5/Q6 既定实机验收结案** —— 用户反馈本轮几个验收均正常：创造模式活化与流体不可变组件值的剩余真机债按既定范围关闭；未逐项说明的第三方、极端与组合场景不外推为单独证据。→ [TODO Q5/Q6](../TODO.md#本轮评估执行队列2026-11-15-登记)。
+- ✅ **Q2 内容签名并入扫描单遍** —— 签名含全部组件 + 数量，与扫描合一；快照按新容量重建。→ [基础设施 §8.6](../system-design/living-item-infrastructure.md) · `ContainerContentSignatureTest`。
 
 - 🐛 **客户端假流体 / 能源能力退役，Jade 取数改走官方扩展** —— 零罐 / 零容量对象仍是非 `null` 能力，会让 Create 滑轮等只判存在性的客户端误分类；两域客户端 provider 现统一返回 `null`，Jade 以纯请求扩展继续复用默认服务端取数与显示，服务端真实能力、让位和边沿通告不变；✅ 用户对本轮目标场景实测反馈正常，未逐项说明的第三方组合不外推为已验收。→ [活海绵 §4.3 / §12.4](../tech/living-sponge-tech.md#43-jade-取数与能力分离流体--能源) · [红电 §4.1](../tech/living-power-tech.md#41-对外能量能力的存在性--真有活铜灯2026-10-31)。
 
@@ -52,6 +58,9 @@
 - **GUI 叠加层层级收口与实机复测（D-render-02）** —— 流体、门面及容器内地图/HUD/种植提示/作物大图/活塞伸缩统一经 `GuiOverlays` 管理层级，取代绝对 Z=400；用户本轮实测反馈“基本都正常了”。记录为本轮整体复测基本正常，不外推为所有界面、资源包重载及极端组合逐项验收。→ [活流体 §7](../tech/living-fluid-tech.md#7-渲染与同步)。
 
 - **活地狱门实机验收** —— 用户复测“实测都正常，暂时没发现什么其它问题”，核心功能、创造模式玩家背包门面显示及活黑曜石平面图标均确认正常；不扩大为极端与第三方组合逐项验收。→ [活地狱门 §5](../tech/living-nether-portal-tech.md#5-游戏内验收与未验证事项)。
+
+- **Q1 大箱相位「未修」结案** —— 旧结论「拆半后相位未重算」作废：A6 已修 + 规则 12 落定；多相电力与分两次破坏两半不再单列未修 bug，后续出现实际反例再按新 bug 立项。→ [红电 §0 规则 12](../tech/living-power-tech.md)。
+- **Q3 管道性能基准落地** —— `@Tag perf` 基准入测试树，仪表盘读数不设阈值（只观测不门禁）。→ [unit-testing Q3 节](../guides/unit-testing.md)。
 
 ## 2026-11-14
 

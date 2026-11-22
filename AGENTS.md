@@ -286,8 +286,9 @@ viewer 驱动 / 框架扫描 / 框架判定才回到 `LivingItemFunction`）。
 
 **冷启动默认路径（可按任务偏离）**
 
-默认从本文件 → `docs/glossary.md` → 目标子系统 `docs/tech/living-*-tech.md` §0 建立心智模型；
-改代码前在 `docs/decisions.md` 按领域确认口径未被取代（要改文档，先读 `docs/README.md` §1）。
+默认从本文件 → `docs/glossary.md` → 目标子系统 `docs/tech/living-*-tech.md` §0 建立心智模型
+（§0 规则表即当前口径；要改文档，先读 `docs/README.md` §1）。
+旧决策索引已归档 `docs/archive/decisions.md`，仅在查"当时为什么这么定"时才 grep，不作为改代码前置步骤。
 
 ⚠️ **别沿路径硬推**：任务跨多个子系统、要改玩法规则、文档与代码看着不一致、
 或需要知道「为什么否决过某方案」时，改走 `AGENTS.md` 子系统索引 / `docs/README.md` §3.1。
@@ -297,12 +298,12 @@ viewer 驱动 / 框架扫描 / 框架判定才回到 `LivingItemFunction`）。
 [docs/README.md](docs/README.md)（**改文档前先读**）。
 
 **该读哪一篇**：见上方「子系统索引」（每个子系统一行，直链到对应文档）。
-两个有分类需求的层入口：[archive/README.md](docs/archive/README.md)（33 份按用途分组）· [buffer/README.md](docs/buffer/README.md)（状态索引）。其余常用入口：
+两个有分类需求的层入口：[archive/README.md](docs/archive/README.md)（按用途分组）· [buffer/README.md](docs/buffer/README.md)（状态索引）。其余常用入口：
 
 | 想做的事 | 读它 |
 |---|---|
 | **看不懂某个名词**（活物品 / 锈级 / 相位域 / 跳变 / 口径…） | [glossary.md](docs/glossary.md)（**术语表，先扫这一页**） |
-| **查「为什么这么定」/ 某口径是否已被取代** | [decisions.md](docs/decisions.md)（决策索引 + 翻转留痕） |
+| **查「为什么这么定」/ 某口径是否已被取代** | 目标子系统的 `tech/*` 定案记录 / §0（现行口径）；历史决策索引见 [archive/decisions.md](docs/archive/decisions.md)（已归档、不维护） |
 | 改文档 / 归档 / 校验 | [docs/README.md](docs/README.md) + `python tools/doc_check.py` |
 | **设计新活物品 / 写设计稿** | [living-item-design-template.md](docs/guides/living-item-design-template.md) —— **最小集 3 项**（玩法原点五问 / 规则→验证入口 / 落地同步表；缺了还不能进实现）+ **按需检查表**（生命周期 / 准入 / 交互 / 反馈 / 容器能力 / 槽位操作 / 爆炸半径 / 原版对齐）；按需表按功能实际涉及面自选 |
 | **写槽位数量操作 / 更新槽内组件 / 对外报资源量** | [slot-ops.md](docs/guides/slot-ops.md)（数量原语与组件提交选型）—— 契约见 [api-contract §1.7/§1.8](docs/system-design/api-contract.md)；设计前过 [模板 §1.4/§2.2](docs/guides/living-item-design-template.md) 的报账与宿主写回检查 |

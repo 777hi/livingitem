@@ -41,7 +41,7 @@
 | [living-button-container-info.md](../archive/living-button-container-info.md) | 已实施，现状已沉淀 | [system-design/gui-interaction-system.md](../system-design/gui-interaction-system.md) §6.2.2 |
 | [living-fluid-review.md](../archive/living-fluid-review.md) | 问题池条目全部清零（2026-10-31） | [tech/living-fluid-tech.md](../tech/living-fluid-tech.md) §3.3 / §0 规则 10 · [TODO 活流体 §9-10](../TODO.md) |
 | [container-layout-resolution.md](../archive/container-layout-resolution.md) | 自动学落地为 Tier 1.5；收编部分维持暂缓（2026-10-31） | [TODO §5](../TODO.md) · [infrastructure §6.2](../system-design/living-item-infrastructure.md) |
-| [活观测者-design.md](../archive/活观测者-design.md) | 旧「整容器内容签名」方案已被 D-redstone-01 取代（2026-11-11） | [tech/living-redstone-tech.md](../tech/living-redstone-tech.md) §0 规则 8-10 · [decisions D-redstone-01](../decisions.md) |
+| [活观测者-design.md](../archive/活观测者-design.md) | 旧「整容器内容签名」方案已被 D-redstone-01 取代（2026-11-11） | [tech/living-redstone-tech.md](../tech/living-redstone-tech.md) §0 规则 8-10 · [decisions D-redstone-01](../archive/decisions.md) |
 | [2026-10-27-全项目审查报告.md](../archive/2026-10-27-全项目审查报告.md) | 原始审查台账，待拍板 10 项全处置 / 缺口已移交（2026-11-19 归档） | [TODO 审查后续](../TODO.md) · 各 `tech` / `decisions.md` |
 | [2026-10-29-全项目审查整改计划.md](../archive/2026-10-29-全项目审查整改计划.md) | 批次 0~6 完成；尾巴已移交 roadmap 1.3 + TODO 性能节（2026-11-19 归档） | [roadmap 阶段 1.3](architecture-evolution-roadmap.md) · [TODO 性能节](../TODO.md) |
 | [2026-10-29-测试域梳理.md](../archive/2026-10-29-测试域梳理.md) | 行动全完成；L1~L5 分层与 known-gap 已入 unit-testing（2026-11-19 归档） | [guides/unit-testing.md](../guides/unit-testing.md) |
@@ -57,7 +57,7 @@
 > ⭐ **总判据（2026-11-07 定）**：这份内容，读者找它时问的是「**哪天**」还是「**为什么**」？
 >
 > - 问「**哪天**」⇒ `archive/`：时间线 / 带日期的原始观测（真机验收、审查台账、事故现场记录）。
-> - 问「**为什么**」⇒ 稳定层：`decisions.md`（决策与否决留痕）/ `tech` 定案记录 / `system-design` 契约。
+> - 问「**为什么**」⇒ 稳定层：`tech` 定案记录 / `system-design` 契约（现行口径都在这里）；`archive/decisions.md` 已归档、仅供查历史决策。
 > - **都不问** ⇒ **删**：可重推的复述、已兑现的落地步骤、清单型内容。
 >
 > ⚠️ **「怕丢历史」不是归档的理由**：`git mv` 与 `rm` 在 git 里留痕等价
@@ -73,9 +73,9 @@
 | 文件处于… | 动作 |
 |---|---|
 | 未定案、还在讨论 | 留 buffer；头部状态行按文末「状态行口径」只写文档性质 |
-| **已定案** | 结论搬稳定层（`tech/` / `system-design/` / `decisions.md`），本文件按总判据分流 |
+| **已定案** | 结论搬稳定层（`tech/` / `system-design/`），本文件按总判据分流（否决理由写进对应 tech 定案节，**不再新建集中决策索引**） |
 | **已实施** | 结论已在稳定层 ⇒ 原件**删**；仅「带日期的原始观测」留 `archive/`。同步改**活跃层**所有指针（第 1 项会兜底） |
-| 被别的文档取代 | 头部写「已被 X 取代」+ 链接；取代理由提炼进 `decisions.md` 后删原件 |
+| 被别的文档取代 | 头部写「已被 X 取代」+ 链接；取代理由写进对应 tech 定案节后删原件（旧 `decisions.md` 已归档，不往里写） |
 
 ## 状态行口径（2026-11-08 定）
 

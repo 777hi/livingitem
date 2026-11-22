@@ -9,9 +9,9 @@
 |---|---|
 | 四机制 / 源生命周期 / 守恒律 / 跨容器口径（物品过境、水不过境） | `docs/tech/living-fluid-tech.md` §4 |
 | 桶 = 载体、零私有状态（含教训「别给原版已有状态系统的东西再发明一层私有状态」） | 同上 §5 |
-| 转化无独立节拍（延迟会与漏斗节拍互锁） | 同上 §6 / `docs/decisions.md` D-fluid-03 |
-| 桶源取消（源只有一种 = 容器资产） | `docs/decisions.md` D-fluid-01 |
-| **明确不做**：水流跨容器蔓延（渲染割裂 + 需求已被桶/漏斗/活塞覆盖） | `docs/decisions.md` D-fluid-11 |
+| 转化无独立节拍（延迟会与漏斗节拍互锁） | 同上 §6 / `docs/archive/decisions.md`（历史）D-fluid-03 |
+| 桶源取消（源只有一种 = 容器资产） | `docs/archive/decisions.md`（历史）D-fluid-01 |
+| **明确不做**：水流跨容器蔓延（渲染割裂 + 需求已被桶/漏斗/活塞覆盖） | `docs/archive/decisions.md`（历史）D-fluid-11 |
 | 探讨过程、任务队列 F1~F5、批次修正（流水账） | `docs/archive/changelog.md` |
 | **活酿造台设计草稿（2026-10-10）** | ✅ 已实现 ⇒ 现状 `docs/tech/living-brewing-stand-tech.md`；设计论证归档 `docs/archive/living-brewing-stand-design.md`（配套交互改进 → `docs/buffer/gui-interaction-redesign.md`） |
 
@@ -22,6 +22,6 @@
 1. 这里只放**探讨中、未定案**的内容 —— 定案后**从此处清除**，沉淀到上表对应落点。
 2. ⚠️ **不要把已定案内容留在这里当现状读** —— `docs/README.md` 铁律 0：
    「未实现的设计稿写成现状口吻」是最典型的误导，而本文件不在 `doc_check` 校验范围内。
-3. 定案口径的**留痕**走 `docs/decisions.md`（一句话 + 指针 + supersedes 链，机械校验），
+3. 定案口径的**留痕**就地写进对应 tech 的定案节 / §0 规则表（旧决策索引已归档、不再写），
    **不要**另开一份过程文档 —— 每批一份文档会让 archive 变成垃圾桶。
 4. **内容变长 / 有结构时**（不再是随手记），升格到 `docs/buffer/` 立独立设计稿，本文件恢复为空。

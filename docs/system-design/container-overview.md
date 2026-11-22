@@ -332,7 +332,7 @@ vs 全进规则表」的分叉上直接说「原点」，收编重构不做。
 | 列数收编的完整论证 + 两轮审查闭环 | [archive/container-layout-resolution.md](../archive/container-layout-resolution.md)（2026-10-31 归档） |
 | 活潜影箱（嵌套容器，独立立项） | [buffer/活潜影箱实现细节.md](../buffer/活潜影箱实现细节.md) |
 | S1~S9 的验收判据与真机基线清单 | [archive/container-compat-stages.md](../archive/container-compat-stages.md) |
-| 每个决策的为什么 | [decisions.md](../decisions.md) `D-container-01..17` |
+| 每个决策的为什么 | 本文件与各 tech 定案节（现行）；历史决策 ID `D-container-01..17` 见 [archive/decisions.md](../archive/decisions.md) |
 
 ---
 

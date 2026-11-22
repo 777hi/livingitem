@@ -514,7 +514,7 @@ fake.setItemInHand(InteractionHand.MAIN_HAND, held);
 **主人显示（tooltip「赋灵者」行）**：绑定 UUID 是**数据**（`LIVING_TOOL_OWNER`），
 玩家名是**显示缓存**（`LIVING_TOOL_OWNER_NAME`，活化时记名、回放遇到在线主人时刷新）。
 tooltip 统一走 `OwnerNameResolver#displayName`：实时解析 → 显示缓存 → 短 UUID ——
-与活末影箱（`EnderChannelData.boundPlayerName`）同口径，决策见 `decisions.md` D-core-06。
+与活末影箱（`EnderChannelData.boundPlayerName`）同口径（历史决策 ID `D-core-06` 见已归档的 `archive/decisions.md`）。
 
 ### 5.5 模拟完整操作（`L36`）
 
