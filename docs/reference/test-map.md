@@ -147,6 +147,11 @@ src/test/java/com/qiqi/li/
 │   │   │   ├── LivingBackpackFunctionTest.java  # LivingBackpackFunction 的守卫（2026-10-22）。
 │   │   │   ├── LivingBackpackTickTest.java  # ⚠️ 源码无类注释
 │   │   │   └── LivingBackpackTooltipTest.java  # 活背包 tooltip 的 容器 ID 行 （2026-10-26，用户定）。
+│   │   ├── battle/
+│   │   │   ├── BattleEventFeedTest.java  # ⚠️ 源码无类注释
+│   │   │   ├── BattlePlotTest.java  # ⚠️ 源码无类注释
+│   │   │   ├── LivingBattleFunctionTest.java  # ⚠️ 源码无类注释
+│   │   │   └── ReconcilePlanTest.java  # ⚠️ 源码无类注释
 │   │   ├── beacon/
 │   │   │   ├── BeaconChestHostTest.java  # BeaconChestHost 测试 —— 2026-10-18 「同容器多枚信标每枚一条光束」的回归守卫。
 │   │   │   ├── BeaconColumnSlotsTest.java  # 下方 9 列槽位解析（纯槽位数学）测试 —— 与 BeaconPyramidTest（柱高判定）互补。

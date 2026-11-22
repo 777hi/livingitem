@@ -36,6 +36,7 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
+import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.client.event.ModelEvent;
 import net.neoforged.neoforge.client.event.RegisterItemDecorationsEvent;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
@@ -122,6 +123,17 @@ public class LivingItemClient {
         event.register(BeaconTooltipComponent.class, LivingBeaconTooltipRenderer::new);
     }
 
+    /** 战场实体渲染器（项目首例实体 renderer）：桥画物品模型皮；战场僵尸复用原版 ZombieRenderer。 */
+    @SubscribeEvent
+    static void onRegisterRenderers(EntityRenderersEvent.RegisterRenderers event) {
+        event.registerEntityRenderer(
+            com.qiqi.li.living.domain.battle.BattleEntities.BRIDGE.get(),
+            com.qiqi.li.client.render.battle.BridgeEntityRenderer::new);
+        event.registerEntityRenderer(
+            com.qiqi.li.living.domain.battle.BattleEntities.ZOMBIE.get(),
+            net.minecraft.client.renderer.entity.ZombieRenderer::new);
+    }
+
     /**
      * 活涂蜡发电机的仪器面板：追加到所有 tooltip 末尾（不再依赖 F3+H）。
      *
@@ -186,6 +198,7 @@ public class LivingItemClient {
         com.qiqi.li.living.domain.beacon.BeaconHostClientCache.clear();
         com.qiqi.li.living.domain.beacon.BeaconPlayerHostClientCache.clear();
         com.qiqi.li.living.domain.beacon.BeaconEntityHostClientCache.clear();
+        com.qiqi.li.living.domain.battle.BattleClientCache.clear();
     }
 
     /**

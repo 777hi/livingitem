@@ -3,9 +3,9 @@
 # 指令清单（导航）
 
 > 📄 **本文只做导航**：回答「有哪些指令、各自负责什么、完整用法去哪看」。
-> **命令名与语法以代码为准** —— 三个命令类：`LivingItemContainerCommand` /
-> `LivingItemActivationCommand` / `ContainerMonitorCommand`，各挂各的子树
-> （由 `doc_check` 第 8 项校验本文引用是否真实存在）。
+> **命令名与语法以代码为准** —— 命令类：`LivingItemContainerCommand` /
+> `LivingItemActivationCommand` / `LivingItemBattleCommand` / `ContainerMonitorCommand`，
+> 各挂各的子树（由 `doc_check` 第 8 项校验本文引用是否真实存在）。
 >
 > 2026-09-27 整理：`/living_monitor` 已迁入 `/livingitem debug`，**对外只保留一个命令根**。
 
@@ -22,6 +22,11 @@
 │   ├── deny   <目标> [via]        # 禁止
 │   ├── allow  <目标> [via]        # 放行
 │   └── remove <目标>              # 删除规则
+├── battle                         # 大战僵尸 spike（战场验证，见 buffer 设计稿）
+│   ├── build [near]               # 对准容器建场（near = 建在玩家旁便于观察）
+│   ├── arena                      # 传送到战局观战位
+│   ├── wave  <count>              # 每车道召唤 count 只敌军
+│   └── clear                      # 清场（实体 + 平台 + 战局数据）
 └── debug                          # 开发者排障
     ├── monitor on|off|status
     ├── dump_inventory
@@ -35,6 +40,7 @@
 | `activation` | 控制哪些物品可被活化（禁玩家自己活化、放行任务奖励等途径） | [`buffer/activation-rule-design.md`](../guides/activation-rules.md) |
 | `interaction` | 重载 / 查看活物品 GUI 交互规则（规则本体在 `config/living_item/interaction_rules.json`，只写差异；增删改直接编辑文件） | [`buffer/interaction-rule-design.md`](../guides/interaction-rules.md) |
 | `transforms` | 重载 / 查看流体转化表（源格物品转化，条目本体在 `config/living_item/fluid_transforms.json`，只写差异；增删改直接编辑文件） | [`tech/../tech/living-fluid-tech.md`](../tech/../tech/living-fluid-tech.md) |
+| `battle` | 大战僵尸 spike 的战场验证（build/arena/wave/clear；spike 阶段用命令替代瓶驱动器） | [`buffer/活物品大战僵尸.md`](../buffer/活物品大战僵尸.md) |
 | `debug` | 容器监控开关、背包转储、准心容器单点体检、区块缓存统计（排障工具） | [`guides/container-monitor.md`](../guides/container-monitor.md) |
 
 ## activation 的「目标」语法（三种颗粒度）

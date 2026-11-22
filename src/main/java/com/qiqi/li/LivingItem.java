@@ -167,6 +167,9 @@ public class LivingItem {
         com.qiqi.li.living.domain.tools.ToolComponents.REG.register(modEventBus);
         com.qiqi.li.living.domain.beacon.BeaconComponents.REG.register(modEventBus);
         com.qiqi.li.living.domain.maid.MaidComponents.REG.register(modEventBus);
+        // 战场实体（battle 领域，项目首例实体）：总线同样必须构造阶段挂
+        com.qiqi.li.living.domain.battle.BattleEntities.REG.register(modEventBus);
+        modEventBus.addListener(com.qiqi.li.living.domain.battle.BattleEntities::registerAttributes);
         NeoForge.EVENT_BUS.register(this);
         NeoForge.EVENT_BUS.register(ContainerChunkCache.getInstance());
         NeoForge.EVENT_BUS.register(LivingToolRecorder.class);
@@ -308,6 +311,7 @@ public class LivingItem {
         BeaconRegistration.register();    // 活信标（Phase 1：仅功能骨架，光束为纯客户端渲染）
         com.qiqi.li.living.domain.backpack.BackpackRegistration.register();   // 活背包（物品形态容器内部 tick）
         com.qiqi.li.living.domain.maid.MaidRegistration.register();
+        com.qiqi.li.living.domain.battle.BattleRegistration.register();
         // 注：原 RuntimeRegistration 已删（2026-10-12）—— 它只为「登记 runtime 包缓存清理」而存在，
         // 改由缓存类自己登记后即变空；且 runtime 是 L2 机制层，本就不该有「域注册入口」。
 
@@ -734,6 +738,10 @@ public class LivingItem {
         registrar.playToClient(com.qiqi.li.living.domain.portal.PortalSnapshotPacket.TYPE,
             com.qiqi.li.living.domain.portal.PortalSnapshotPacket.STREAM_CODEC,
             com.qiqi.li.living.domain.portal.PortalSnapshotPacket::handle);
+        // 大战僵尸 spike：战局快照 + 事件流（实体位置/事件由 BattleServerSync 每 4 tick 下发）
+        registrar.playToClient(com.qiqi.li.living.domain.battle.BattleSnapshotPacket.TYPE,
+            com.qiqi.li.living.domain.battle.BattleSnapshotPacket.STREAM_CODEC,
+            com.qiqi.li.living.domain.battle.BattleSnapshotPacket::handle);
         // 活工具（K2）：近处方块容器里的活工具清单（位置 + ItemStack），
         // 供客户端渲染记忆射线与（未来的）悬浮模型 —— 不开 GUI 时客户端拿不到箱子内容
         registrar.playToClient(LivingToolHostPacket.TYPE, LivingToolHostPacket.STREAM_CODEC, LivingToolHostPacket::handle);

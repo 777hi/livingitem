@@ -37,6 +37,7 @@
 | 类（按所在包分桶，**不代表线程**） | `@SubscribeEvent` 处理器（事件类型） |
 |---|---|
 | ▸ **服务端 / 领域包** | |
+| `BattleEventHandler` | `onIncomingDamage`(`LivingIncomingDamageEvent`) |
 | `ContainerChunkCache` | `onBlockBreak`(`BreakEvent`) `onBlockPlace`(`EntityPlaceEvent`) `onChunkLoad`(`Load`) `onChunkUnload`(`Unload`) |
 | `ContainerDataMigration` | `onBlockDrops`(`BlockDropsEvent`) `onBlockPlace`(`EntityPlaceEvent`) |
 | `ContainerMonitorCommand` | `onRegisterCommands`(`RegisterCommandsEvent`) |
@@ -44,6 +45,7 @@
 | `ItemFrameMapTeleportHandler` | `onEntityInteractSpecific`(`EntityInteractSpecific`) |
 | `LivingItem` | `onChunkLoad`(`Load`) `onChunkUnload`(`Unload`) `onContainerOpen`(`Open`) `onServerStarting`(`ServerStartingEvent`) `onServerStopped`(`ServerStoppedEvent`) `onServerTick`(`Pre`) |
 | `LivingItemActivationCommand` | `onRegisterCommands`(`RegisterCommandsEvent`) |
+| `LivingItemBattleCommand` | `onRegisterCommands`(`RegisterCommandsEvent`) |
 | `LivingItemContainerCommand` | `onRegisterCommands`(`RegisterCommandsEvent`) |
 | `LivingItemInteractionCommand` | `onRegisterCommands`(`RegisterCommandsEvent`) |
 | `LivingItemTransformCommand` | `onRegisterCommands`(`RegisterCommandsEvent`) |
@@ -56,18 +58,19 @@
 | `PortalDataMigration` | `onBlockDrops`(`BlockDropsEvent`) `onBlockPlace`(`EntityPlaceEvent`) |
 | `PortalServerSync` | `onClose`(`Close`) `onOpen`(`Open`) |
 | ▸ **客户端包 `com/qiqi/li/client/`（客户端侧，不在服务器 tick 线程）** | |
+| `BattleBoardOverlay` | `onBackground`(`Background`) `onClientTick`(`Post`) `onClosing`(`Closing`) `onForeground`(`Foreground`) |
 | `ContainerFluidOverlaySubscriber` | `onRenderForeground`(`Foreground`) |
 | `ContainerPortalOverlay` | `onClosing`(`Closing`) `onForeground`(`Foreground`) |
 | `CreativeActivationClientSetup` | `onClientSetup`(`FMLClientSetupEvent`) |
 | `CreativeActivationRequests` | `onClosing`(`Closing`) `onLogout`(`LoggingOut`) |
 | `FluidClientCacheCleanup` | `onLoggingOut`(`LoggingOut`) |
 | `LivingContainerOverlaySubscriber` | `onRenderForeground`(`Foreground`) |
-| `LivingItemClient` | `onClientLogin`(`LoggingIn`) `onClientSetup`(`FMLClientSetupEvent`) `onGatherTooltipComponents`(`GatherComponents`) `onModifyBakingResult`(`ModifyBakingResult`) `onRegisterAdditionalModels`(`RegisterAdditional`) `onRegisterItemDecorations`(`RegisterItemDecorationsEvent`) `onRegisterTooltipComponentFactories`(`RegisterClientTooltipComponentFactoriesEvent`) `onRenderLevelStage`(`RenderLevelStageEvent`) |
+| `LivingItemClient` | `onClientLogin`(`LoggingIn`) `onClientSetup`(`FMLClientSetupEvent`) `onGatherTooltipComponents`(`GatherComponents`) `onModifyBakingResult`(`ModifyBakingResult`) `onRegisterAdditionalModels`(`RegisterAdditional`) `onRegisterItemDecorations`(`RegisterItemDecorationsEvent`) `onRegisterRenderers`(`RegisterRenderers`) `onRegisterTooltipComponentFactories`(`RegisterClientTooltipComponentFactoriesEvent`) `onRenderLevelStage`(`RenderLevelStageEvent`) |
 | `LivingItemInputHandler` | `onCharTyped`(`Pre`) `onClientLoggingOut`(`LoggingOut`) `onKeyPressed`(`Pre`) `onLeftClickEmpty`(`LeftClickEmpty`) `onLevelTick`(`Post`) `onMouseDragged`(`Pre`) `onScreenClosing`(`Closing`) |
 | `LivingItemTooltip` | `onItemTooltip`(`ItemTooltipEvent`) |
 | `LivingSoulSlabSlotPreview` | `onClientSetup`(`FMLClientSetupEvent`) `onRegisterReloadListeners`(`RegisterClientReloadListenersEvent`) |
 
-**共 70 个处理器**。本名单不含线程判断 —— 想知道某个处理器在哪个线程、能不能碰共享状态，看上方三条硬规则与 §2 的例外清单；名单里查不到的约束就是**没写过的约束**，不等于「无约束」。
+**共 77 个处理器**。本名单不含线程判断 —— 想知道某个处理器在哪个线程、能不能碰共享状态，看上方三条硬规则与 §2 的例外清单；名单里查不到的约束就是**没写过的约束**，不等于「无约束」。
 <!-- rosters:end -->
 
 ---

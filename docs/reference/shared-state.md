@@ -18,6 +18,8 @@
 <!-- rosters:begin（本区由 tools/gen_rosters.py 从源码扫描生成；名单变化 = 改代码后重跑本脚本，勿手改本区） -->
 | 类 | 清理入口（本类文件内可见的事实） | 跨 tick 可变 static 集合 |
 |---|---|---|
+| `BattleClientCache` | 登出 | `ENEMIES` `MENU_SLOTS` |
+| `BattleEventFeed` | 登记 | `FEED` |
 | `BeaconChestHost` | 登记 | `activeLids` `current` `lidLastTick` |
 | `BeaconEntityHostClientCache` | ⚠️ 本类无清理入口 | `CACHE` |
 | `BeaconEntityHostSync` | 登记 | `current` |
