@@ -14,6 +14,7 @@
 
 - [1. 活物品隔离 —— 活物品不作耗材](#1-活物品隔离--活物品不作耗材)
 - [2. 数据层 per-item，视觉聚合放渲染期](#2-数据层-per-item视觉聚合放渲染期)
+- [3. 跨维度同步 —— flush 逐维度，状态必须按维度隔离](#3-跨维度同步--flush-逐维度状态必须按维度隔离)
 
 ---
 
@@ -57,3 +58,39 @@
 **域特有论证**：信标多枚合并踩坑与重构、流体 `chestLikeTarget` 串台，见
 [buffer/framework-evolution-plan §4](../buffer/framework-evolution-plan.md#4-提案-d数据模型-per-item视觉聚合在渲染期)；
 设计填表入口见 [living-item-design-template §1.1-b](../guides/living-item-design-template.md#11-b-状态粒度--每个容器级可见物问一句per-item-还是-per-container)。
+
+## 3. 跨维度同步 —— flush 逐维度，状态必须按维度隔离
+
+**不变量（违反即 bug）**：任何 `flush(ServerLevel)` 由 `LivingItem.onServerTick` 的维度循环
+**逐维度**调用的同步器，跨 tick 状态必须同时满足下列四条。少一条，在 ≥2 个维度时就会出现
+「先 flush 的维度抽走别的维度的登记」或「拿 A 维度的状态在 B 维度里按坐标执行动作」。
+
+**四问（设计 / 改同步器前逐条答，答不出就不写状态表）**：
+
+1. `flush` 是逐维度还是全服一次？
+2. 跨 tick 状态的键含维度、表按维度分桶，或 `flush` 时按宿主实时过滤吗？
+3. `flush` 里会 `clear` / `remove` 全服表吗？（只允许动本维度那一桶）
+4. 状态动作（`blockEvent` / 音效 / 方块写）会落到别的维度吗？（按坐标发送前先 `hasChunkAt`）
+
+**三种合法形态**：
+
+- **全局登记表 + 条目自带维度 + `beginTick()` 清**：登记条目带 `ResourceLocation dimension`，
+  `flush` 只读本维度条目、绝不抽干全表；`beginTick` 必须在玩家循环之前调用。代表
+  `LivingToolHostSync`。
+- **全局登记表 + `flush` 实时按本维度过滤 + `beginTick()` 清**：条目不带维度，`flush` 读全表，
+  按宿主所在维度现查过滤（玩家 `owner.level() == level`，实体 `level.getEntity(...)`）；
+  `beginTick` 同样在玩家循环之前调用。代表 `BeaconPlayerHostSync` / `BeaconEntityHostSync`。
+- **跨 tick 动作状态按维度分桶**：用 `living/util/PerLevelCache`（服务端同时持有所有维度，
+  只提供按维度访问）。⚠️ 客户端的 `DimensionScopedCache` 是「单一当前维度 + 整表替换」，
+  语义不同，**不可**拿来当服务端容器。
+
+**发包去重**：走 `BroadcastDedup.merge`，`online` 必须是**全服**玩家（用本维度玩家会误删
+其它维度的记录 ⇒ 每 tick 重发）。去重表可以全服一张，但它属于「发包去重」，不属于本节的
+「跨 tick 动作状态」。
+
+**守卫**：`BeaconChestHostDimensionTest` / `LivingToolHostSyncDimensionTest` /
+`BeaconPlayerHostSyncTest` 都用两个 `ServerLevel` 替身 + 共用坐标驱动两个维度；新增或改
+逐维度同步器必须补同型用例（写法见 [unit-testing「跨维度同步测试」](../guides/unit-testing.md)）。
+
+**事故记录**：K2（活工具宿主，2026-10-27）、信标玩家 / 实体宿主（2026-10-18）、
+信标箱子开盖表（2026-11）都踩过这条；最后一次的直接修法是三张表迁到 `PerLevelCache`。

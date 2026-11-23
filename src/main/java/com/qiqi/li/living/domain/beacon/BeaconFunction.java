@@ -138,8 +138,8 @@ public class BeaconFunction implements LivingItemFunction {
                             slot, context.getSize(), context.getWidth(), context::getItem);
                         // 每枚信标一条宿主（2026-10-18 用户定「同容器多枚每枚一条」）：
                         // 键 = 容器 + 槽位 ⇒ 各自的等级 / 玻璃色 / 光束互不覆盖
-                        BeaconChestHost.report(context.getCacheKey(), slot, beamPos, lidPositions,
-                            pyramidLevel, glassColors);
+                        BeaconChestHost.report(level.dimension().location(), context.getCacheKey(),
+                            slot, beamPos, lidPositions, pyramidLevel, glassColors);
                     }
                 } else if (anchor instanceof ContainerAnchor.AtPlayer at) {
                     // 玩家宿主：联机广播

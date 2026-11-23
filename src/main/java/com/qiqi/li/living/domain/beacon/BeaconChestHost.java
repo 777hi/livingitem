@@ -12,6 +12,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import com.qiqi.li.living.util.BroadcastDedup;
+import com.qiqi.li.living.util.PerLevelCache;
 import com.qiqi.li.living.util.StaticCacheRegistry;
 
 import net.minecraft.core.BlockPos;
@@ -73,14 +74,23 @@ public final class BeaconChestHost {
                 List<Integer> glassColors) {
     }
 
-    /** 本 tick 登记的宿主（每枚信标一条，由 {@code BeaconFunction#tick} 填入，flush 取走清空）。 */
-    private static final Map<String, Host> current = new LinkedHashMap<>();
+    /**
+     * 本 tick 登记的宿主，<b>按维度分桶</b>（每枚信标一条，由 {@code BeaconFunction#tick} 填入，
+     * flush 只取走本维度那一桶）。
+     *
+     * <p>⚠️ 跨维度铁律：{@code flush(level)} 是<b>逐维度</b>调用的（{@code LivingItem.onServerTick}
+     * 的维度循环）⇒ 登记 / 开盖 / 节流三张表都必须按维度隔离。用全服一张表会出两种错：
+     * ① A 维度 flush 取走 B 维度的登记 ⇒ B 的光束/开盖丢失；
+     * ② 拿 B 维度的盖子状态在 A 维度里按坐标发 {@code blockEvent} ⇒ 同坐标误伤 +
+     * 强制加载对方维度区块。2026-11 审查：本类漏出过这条铁律（开盖表当时是全服一张）。</p>
+     */
+    private static final PerLevelCache<String, Host> current = new PerLevelCache<>();
 
-    /** 每个容器上次开盖时刻（按容器节流——一箱多枚信标共享一份开盖状态）。 */
-    private static final Map<String, Long> lidLastTick = new HashMap<>();
+    /** 每个容器上次开盖时刻，按维度分桶（按容器节流——一箱多枚信标共享一份开盖状态）。 */
+    private static final PerLevelCache<String, Long> lidLastTick = new PerLevelCache<>();
 
-    /** 上次 flush 时开着盖的容器 → 盖位置（关盖检测：整箱再无信标才关）。 */
-    private static final Map<String, List<BlockPos>> activeLids = new LinkedHashMap<>();
+    /** 上次 flush 时开着盖的容器 → 盖位置，按维度分桶（关盖检测：整箱再无信标才关）。 */
+    private static final PerLevelCache<String, List<BlockPos>> activeLids = new PerLevelCache<>();
 
     /** 每个玩家上次发出的条目（内容去重）。 */
     private static Map<UUID, List<BeaconHostPacket.Entry>> lastSent = new HashMap<>();
@@ -106,6 +116,8 @@ public final class BeaconChestHost {
     /**
      * 登记一枚信标宿主（由 {@link BeaconFunction#tick} 每 tick 对每个已激活信标调用）。
      *
+     * @param dimension    宿主维度（分桶键；必须与 {@code flush} 的维度同源，
+     *                     否则条目会永远等不到自己的 flush）
      * @param cacheKey     容器缓存键（带维度前缀，见 {@code ContainerIdentity.getCacheKey}）
      * @param slot         信标在容器里的槽位（区分同容器的多枚信标）
      * @param hostPos      活信标所在半箱位置（光束起点；大箱取含信标的那半）
@@ -113,14 +125,15 @@ public final class BeaconChestHost {
      * @param level        激活等级（tick 已保证 ≥ 1 才登记）
      * @param glassColors  信标同列向上的容器玻璃色序列（自下而上；空 = 无）
      */
-    public static void report(String cacheKey, int slot, BlockPos hostPos, List<BlockPos> lidPositions,
-                              int level, List<Integer> glassColors) {
-        if (cacheKey == null || slot < 0 || hostPos == null || lidPositions == null
+    public static void report(ResourceLocation dimension, String cacheKey, int slot, BlockPos hostPos,
+                              List<BlockPos> lidPositions, int level, List<Integer> glassColors) {
+        if (dimension == null || cacheKey == null || slot < 0 || hostPos == null || lidPositions == null
                 || lidPositions.isEmpty()) {
             return;
         }
-        current.put(hostKey(cacheKey, slot), new Host(cacheKey, hostPos.immutable(),
-            List.copyOf(lidPositions), level, List.copyOf(glassColors)));
+        current.bucket(dimension)
+            .put(hostKey(cacheKey, slot), new Host(cacheKey, hostPos.immutable(),
+                List.copyOf(lidPositions), level, List.copyOf(glassColors)));
     }
 
     /**
@@ -139,49 +152,58 @@ public final class BeaconChestHost {
     }
 
     /**
-     * 每 tick 末尾调用（在所有容器处理完之后）：关盖（整箱再无信标）/ 开盖重发（20 tick）
-     * + S2C 定向同步（每枚信标一条）。
+     * 每 tick <b>每个维度调用一次</b>（在该维度所有容器处理完之后）：取走本维度登记 →
+     * 关盖（整箱再无信标）/ 开盖重发（20 tick）+ S2C 定向同步（每枚信标一条）。
+     *
+     * <p>⚠️ 只读写<b>本维度那一桶</b>状态（{@code current} / {@code activeLids} /
+     * {@code lidLastTick} 均按维度分桶）：其它维度的登记与盖子状态留到它们自己的 flush。
+     * 旧实现三张表全服一张，A 维度 flush 会在 A 里按 B 的坐标发关盖事件，并把 B 的开盖节流清掉
+     * ⇒ B 每 tick 重发开盖（2026-11 修）。</p>
      */
     public static void flush(ServerLevel level) {
         if (level == null || level.isClientSide) {
             return;
         }
         long gameTime = level.getGameTime();
+        ResourceLocation dimension = level.dimension().location();
+
+        // ⓪ 本维度本 tick 的登记（取走即清；其它维度那一桶原样留着）
+        Map<String, Host> hosts = current.take(dimension);
+        Map<String, List<BlockPos>> previousLids = activeLids.peek(dimension);
+        Map<String, Long> lidTicks = lidLastTick.bucket(dimension);
 
         // ① 本 tick 有信标的容器 → 盖位置（同箱多枚信标共享一份；值相同，取先登记的即可）
         Map<String, List<BlockPos>> liveLids = new LinkedHashMap<>();
-        for (Host h : current.values()) {
+        for (Host h : hosts.values()) {
             liveLids.putIfAbsent(h.containerKey(), h.lidPositions());
         }
 
         // ② 关盖：上次开着、本 tick 整箱再无信标（信标取走 / 箱子卸载）
         //    ⚠️ 按容器判：取走一枚 ≠ 关盖，只要还有信标在登记就不关
-        for (Map.Entry<String, List<BlockPos>> e : activeLids.entrySet()) {
+        for (Map.Entry<String, List<BlockPos>> e : previousLids.entrySet()) {
             if (!liveLids.containsKey(e.getKey())) {
                 for (BlockPos pos : e.getValue()) {
                     sendLid(level, pos, false);
                 }
-                lidLastTick.remove(e.getKey());   // 清节流 ⇒ 下次开盖立即发
+                lidTicks.remove(e.getKey());   // 清节流 ⇒ 下次开盖立即发
             }
         }
 
         // ③ 开盖：本 tick 有信标的容器（新容器立即开；已在开的每 20 tick 重发，按容器节流）
         for (Map.Entry<String, List<BlockPos>> e : liveLids.entrySet()) {
-            long last = lidLastTick.getOrDefault(e.getKey(), NEVER);
+            long last = lidTicks.getOrDefault(e.getKey(), NEVER);
             if (last == NEVER || gameTime - last >= LID_RESEND_TICKS) {
                 for (BlockPos pos : e.getValue()) {
                     sendLid(level, pos, true);
                 }
-                lidLastTick.put(e.getKey(), gameTime);
+                lidTicks.put(e.getKey(), gameTime);
             }
         }
-        activeLids.clear();
-        activeLids.putAll(liveLids);
+        activeLids.replace(dimension, liveLids);
+        lidLastTick.dropIfEmpty(dimension);   // 不留空桶（维度长期无信标时不积残留）
 
         // ④ S2C：每枚信标一条（同箱多枚 = 同位置多条、颜色各自不同；全同的去重）
-        List<BeaconHostPacket.Entry> all = assembleEntries(current.values());
-        current.clear();
-        ResourceLocation dimension = level.dimension().location();
+        List<BeaconHostPacket.Entry> all = assembleEntries(hosts.values());
         Map<UUID, List<BeaconHostPacket.Entry>> next = new HashMap<>();
         // 全服在线玩家（⚠️ 不是本维度的：merge 用它淘汰离线记录，用本维度会误删其它维度玩家）
         List<ServerPlayer> players = level.getServer().getPlayerList().getPlayers();
@@ -216,8 +238,16 @@ public final class BeaconChestHost {
         lastSent.clear();
     }
 
-    /** 开/关盖 —— block 在发送时现取（箱子可能已被破坏，取到空气则事件自然落空）。 */
+    /**
+     * 开/关盖 —— block 在发送时现取（箱子可能已被破坏，取到空气则事件自然落空）。
+     *
+     * <p>⚠️ 区块未加载时直接跳过：{@code getBlockState} 在未加载区块上会<b>同步加载/生成</b>
+     * 该坐标的区块（主线程），而没有人能看到盖子 ⇒ 既无意义又会把别的维度区块拉起来。</p>
+     */
     private static void sendLid(ServerLevel level, BlockPos pos, boolean open) {
+        if (!level.hasChunkAt(pos)) {
+            return;
+        }
         BlockState state = level.getBlockState(pos);
         level.blockEvent(pos, state.getBlock(), 1, open ? 1 : 0);
     }

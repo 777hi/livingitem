@@ -111,6 +111,24 @@
 > 不变量正文与判据表见 [living-item-invariants §2](../system-design/living-item-invariants.md#2-数据层-per-item视觉聚合放渲染期)；
 > 案例与完整论证 [framework-evolution-plan §4](../buffer/framework-evolution-plan.md#4-提案-d数据模型-per-item视觉聚合在渲染期)。
 
+#### 1.1-c 跨维度同步 —— 有 `flush(ServerLevel)` 时必答
+
+> 判据：**这个状态会在两个维度同时存在吗？`flush` 是逐维度调用还是全服一次？**
+> 答不出 ⇒ 先别写 static 表（同型的串维事故已发生三次）。
+
+| # | 问 | 答错的后果 |
+|---|---|---|
+| ① | `flush` 是逐维度还是全服一次？ | 全服一次的表被逐维度抽干，后 flush 的维度恒空 |
+| ② | 状态表的键含维度、表按维度分桶，或 `flush` 时按宿主实时过滤吗？ | A 维度 flush 吃掉 B 维度的登记 / 用 B 的状态在 A 里执行动作 |
+| ③ | `flush` 里会 `clear` / `remove` 全服表吗？ | 节流、上次已发等记录被别的维度清掉 ⇒ 每 tick 重发 |
+| ④ | 状态动作会落到别的维度吗？ | 按坐标发 `blockEvent` 会误伤同坐标方块，还会强制加载对方区块 |
+
+**结论**：跨 tick 动作状态用 [`PerLevelCache`](../../src/main/java/com/qiqi/li/living/util/PerLevelCache.java)
+（服务端所有维度同时持有），或全局登记表 + `beginTick()` 清 + `flush` 时按宿主维度实时过滤
+（玩家 / 实体宿主）；客户端的 `DimensionScopedCache` 是单一当前维度，不可复用。
+完整四问与三种合法形态见 [living-item-invariants §3](../system-design/living-item-invariants.md)；
+测试写法见 [unit-testing「跨维度同步测试」](unit-testing.md#跨维度同步测试)。
+
 ### 1.2 准入表 —— 每个「槽位」一行
 
 > 判据：**什么东西绝对不能进这个槽？进去了会怎样？**

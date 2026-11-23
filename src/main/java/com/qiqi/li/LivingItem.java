@@ -372,12 +372,12 @@ public class LivingItem {
             processEntityContainers(level);
             // K2：必须在容器处理【之后】flush，才能收齐本 tick 的登记
             LivingToolHostSync.flush(level);
-        // 活信标：箱子宿主开盖（20 tick 重发）+ 近处位置同步（K2 同款模式）
-        com.qiqi.li.living.domain.beacon.BeaconChestHost.flush(level);
-        // 活信标：玩家宿主联机广播（UUID + 等级，照 LivingToolPlayerSync 模式）
-        com.qiqi.li.living.domain.beacon.BeaconPlayerHostSync.flush(level);
-        // 活信标：实体宿主联机广播（实体 UUID + 等级，D-container-25）
-        com.qiqi.li.living.domain.beacon.BeaconEntityHostSync.flush(level);
+            // 活信标：箱子宿主开盖（20 tick 重发）+ 近处位置同步（K2 同款模式）
+            com.qiqi.li.living.domain.beacon.BeaconChestHost.flush(level);
+            // 活信标：玩家宿主联机广播（UUID + 等级，照 LivingToolPlayerSync 模式）
+            com.qiqi.li.living.domain.beacon.BeaconPlayerHostSync.flush(level);
+            // 活信标：实体宿主联机广播（实体 UUID + 等级，D-container-25）
+            com.qiqi.li.living.domain.beacon.BeaconEntityHostSync.flush(level);
             // 联机可见性（最小版）：把各玩家背包里的无记忆活工具广播给附近客户端
             com.qiqi.li.living.domain.tools.LivingToolPlayerSync.flush(level);
         }

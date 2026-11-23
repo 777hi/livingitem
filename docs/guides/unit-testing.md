@@ -19,6 +19,7 @@
   - [2. jvmArgs 必须用 `+=` 追加](#2-jvmargs-必须用--追加)
   - [3. 客户端 Mixin 必须声明在 `client` 数组](#3-客户端-mixin-必须声明在-client-数组)
 - [测试替身](#测试替身)
+- [跨维度同步测试](#跨维度同步测试)
 - [驱动容器级 tick](#驱动容器级-tick)
 - [现有测试](#现有测试)
   - [被锁定的反直觉行为](#被锁定的反直觉行为)
@@ -124,6 +125,38 @@ private static ItemStack living(Item item, int count) {
     return stack;
 }
 ```
+
+---
+
+## 跨维度同步测试
+
+任何由 `LivingItem.onServerTick` 的维度循环逐维度调用 `flush(ServerLevel)` 的同步器，
+都必须有一条「两个维度同时存在」的用例。只用一个维度测不出跨维串台（K2、信标玩家 / 实体、
+信标箱子三次事故都是这样漏过的）。
+
+两条硬要求：
+
+1. **两个 `ServerLevel` 替身**（`overworld` / `nether`），分别用各自的 `getGameTime()`；
+2. **两个维度用同一个坐标** —— 跨维误伤只在同坐标时才看得见。
+
+最小驱动序列：
+
+```java
+sync.beginTick();          // 有 beginTick 的同步器；必须在两次 flush 之前
+sync.flush(overworld);
+sync.flush(nether);
+```
+
+至少断言三件事：
+
+- **登记不被抽走**：两维都 `report` 后先 flush overworld，nether 的条目仍应在本维 flush 时发出；
+- **节流不被重置**：overworld 在 t=1000 首次开盖，插一次 `flush(nether)`，t=1010 再 flush
+  overworld 不应重发，t=1020 才重发；
+- **动作不落错维度**：`verify(nether, never()).blockEvent(eq(SHARED_POS), any(), anyInt(), anyInt())`
+  （按实际动作替换 `blockEvent`）。
+
+现成样板：`LivingToolHostSyncDimensionTest`、`BeaconPlayerHostSyncTest`、
+`BeaconEntityHostSyncTest`、`BeaconChestHostDimensionTest`（都用 Mockito 替身 + 共享坐标）。
 
 ---
 

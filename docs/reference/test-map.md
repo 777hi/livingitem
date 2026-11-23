@@ -154,6 +154,7 @@ src/test/java/com/qiqi/li/
 │   │   │   ├── LivingBattleFunctionTest.java  # ⚠️ 源码无类注释
 │   │   │   └── ReconcilePlanTest.java  # ⚠️ 源码无类注释
 │   │   ├── beacon/
+│   │   │   ├── BeaconChestHostDimensionTest.java  # BeaconChestHost 的 跨维度隔离 回归（2026-11 审查修复）。
 │   │   │   ├── BeaconChestHostTest.java  # BeaconChestHost 测试 —— 2026-10-18 「同容器多枚信标每枚一条光束」的回归守卫。
 │   │   │   ├── BeaconColumnSlotsTest.java  # 下方 9 列槽位解析（纯槽位数学）测试 —— 与 BeaconPyramidTest（柱高判定）互补。
 │   │   │   ├── BeaconConfigTest.java  # BeaconConfig 组件读写与编解码测试。
@@ -336,7 +337,8 @@ src/test/java/com/qiqi/li/
 │   └── util/
 │       ├── BroadcastDedupTest.java  # 定向广播去重表的跨维度合并不变量（2026-10-23 定，2026-10-26 抽成共享工具）。
 │       ├── FailureThrottleTest.java  # ⚠️ 源码无类注释
-│       └── PerItemLedgerTest.java  # PerItemLedger 均分记账内核 —— 灯泡 / 海绵两域共享的算术契约 （设计稿 活海绵 §3.1；灯泡行为不变由 RoundTripConservationIT 全量回归守）。
+│       ├── PerItemLedgerTest.java  # PerItemLedger 均分记账内核 —— 灯泡 / 海绵两域共享的算术契约 （设计稿 活海绵 §3.1；灯泡行为不变由 RoundTripConservationIT 全量回归守）。
+│       └── PerLevelCacheTest.java  # PerLevelCache 的维度隔离契约：读写都只能按维度，永不出现全服单表语义。
 ├── network/
 │   ├── ContainerMenuInfoPacketTest.java  # ⚠️ 源码无类注释
 │   ├── GuiInteractionDispatchTest.java  # 真实服务端分发与桶源账本；世界门面维护在静态边界隔离。

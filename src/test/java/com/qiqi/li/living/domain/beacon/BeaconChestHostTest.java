@@ -51,6 +51,8 @@ class BeaconChestHostTest {
         when(level.isClientSide()).thenReturn(false);
         when(level.getGameTime()).thenAnswer(inv -> gameTime);
         when(level.getBlockState(any())).thenReturn(mock(BlockState.class));
+        // 开/关盖只对已加载区块发（sendLid 的早退守卫，2026-11）
+        when(level.hasChunkAt(org.mockito.ArgumentMatchers.any(BlockPos.class))).thenReturn(true);
         when(level.dimension()).thenReturn(Level.OVERWORLD);
         MinecraftServer server = mock(MinecraftServer.class);
         PlayerList playerList = mock(PlayerList.class);
@@ -89,7 +91,7 @@ class BeaconChestHostTest {
     // ── 开盖：按容器，不按信标 ────────────────────────────────
 
     private void report(int slot, List<Integer> colors) {
-        BeaconChestHost.report(KEY, slot, CHEST, List.of(CHEST), 2, colors);
+        BeaconChestHost.report(Level.OVERWORLD.location(), KEY, slot, CHEST, List.of(CHEST), 2, colors);
     }
 
     @Test
