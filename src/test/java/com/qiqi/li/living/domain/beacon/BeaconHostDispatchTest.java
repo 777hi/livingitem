@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.util.UUID;
 
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.Test;
 
 import com.qiqi.li.living.config.GameplayConfig;
 import com.qiqi.li.living.container.ContainerAnchor;
+import com.qiqi.li.living.container.EnderChestContainerContext;
 import com.qiqi.li.living.container.EntityContainerContext;
 import com.qiqi.li.living.container.ItemFormContainerContext;
 import com.qiqi.li.living.container.SimpleContainerContext;
@@ -25,7 +27,9 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.items.ItemStackHandler;
 
 /**
@@ -80,6 +84,17 @@ class BeaconHostDispatchTest {
 
     private ItemFormContainerContext itemForm(ContainerAnchor hostAnchor) {
         return new ItemFormContainerContext(handler, UUID.randomUUID(), null, 9, hostAnchor);
+    }
+
+    private static EnderChestContainerContext enderChest(Player player, Level level) {
+        try {
+            Constructor<EnderChestContainerContext> ctor = EnderChestContainerContext.class.getDeclaredConstructor(
+                IItemHandler.class, Player.class, Level.class);
+            ctor.setAccessible(true);
+            return ctor.newInstance(new ItemStackHandler(27), player, level);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("无法构造 EnderChestContainerContext", e);
+        }
     }
 
     @Test
@@ -156,5 +171,23 @@ class BeaconHostDispatchTest {
 
         assertEquals(new ContainerAnchor.AtPlayer(player),
             BeaconFunction.effectiveAnchor(new SimpleContainerContext(handler, inventory)));
+    }
+
+    @Test
+    @DisplayName("末影箱内容无锚点 ⇒ 信标不开光（D-container-18；开关开也不借 owner）")
+    void enderChestContent_noHostEvenWithSwitchOn() {
+        setBeaconHostAnchor(true);
+        Player player = mock(Player.class);
+        UUID uuid = UUID.randomUUID();
+        when(player.getUUID()).thenReturn(uuid);
+        when(player.getStringUUID()).thenReturn(uuid.toString());
+        ServerLevel level = mock(ServerLevel.class);
+        EnderChestContainerContext ctx = enderChest(player, level);
+
+        assertEquals(player, ctx.getOwnerPlayer(), "owner 只用于落盘/路由，不是锚点");
+        assertNull(BeaconFunction.effectiveAnchor(ctx),
+            "末影箱内容 = 存放处；开关只借 getHostAnchor，非物品形态恒 null");
+        assertNull(BeaconFunction.resolveHostPosition(ctx, level),
+            "无宿主位置 ⇒ 不开光、不施 buff");
     }
 }

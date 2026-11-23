@@ -1297,7 +1297,8 @@ v11 及之前 `clear()` / `removeChannel()` 全项目零调用者，缓存只增
 
 **末影箱内容 = 存放处中的货物，不算随身；依赖锚点的功能按下表受限，不代表全部停止 tick。**
 
-`EnderChestContainerContext#getAnchor()` 显式覆写为 `null`（回归：`EnderChestContextTest`）。
+`EnderChestContainerContext#getAnchor()` 显式覆写为 `null`（回归：`EnderChestContextTest`；
+信标分派另由 `BeaconHostDispatchTest#enderChestContent_noHostEvenWithSwitchOn` 守住）。
 在此之前它**从未拍板过**：默认实现经 `getOwnerPlayer()` 退化成 `AtPlayer`，
 喂给了四个功能 —— 2026-10-27 全项目审查时发现其中两个是 bug 温床：
 

@@ -176,15 +176,12 @@ public class BeaconFunction implements LivingItemFunction {
      *       ⚠️ <b>末影箱方块压根到不了这条判定</b>：它不暴露 {@code ItemHandler.BLOCK} 能力面
      *       ⇒ 世界容器扫描（{@code processContainerAt}）发现不了它 ⇒ 其内容由
      *       {@code processEnderChest} 按<b>玩家锚定容器</b> tick（{@code EnderChestContainerContext}，
-     *       键 {@code player_<uuid>_ender_chest}，positions 空）⇒ {@code getBlockPos()} 为 null
-     *       ⇒ 走下面那条玩家路径（2026-10-18 用户提问「末影箱的发光逻辑」后实证更正：
-     *       旧注释说它「锚在方块上被排除」是错的，真实机制是走玩家宿主）。</li>
-     *   <li><b>非方块容器</b>：玩家背包 / <b>末影箱</b>等玩家锚定容器取主人位置
-     *       （⇒ 末影箱里的信标 = 玩家宿主：光束从头颅顶面射出、buff 跟人走、联机广播，
-     *       与放背包里完全一样；末影箱方块本身不 tick / 不开盖 / 不发光）；
-     *       <b>实体容器</b>（船 / 矿车 / 生物背包 / 掉落物）取实体位置
-     *       （2026-11-12 D-container-25，原「无主人 ⇒ null」保守默认翻转：buff 中心 =
-     *       实体位置，光束锚点在渲染侧取宿主顶面）。</li>
+     *       键 {@code player_<uuid>_ender_chest}，positions 空）；但 {@code getAnchor()} 显式为
+     *       {@code null}（2026-10-27 D-container-18「存放处」）⇒ 末影箱里的信标无宿主位置、
+     *       不开光，与船 / 掉落物同口径。</li>
+     *   <li><b>非方块容器</b>：玩家背包取主人位置；<b>实体容器</b>（船 / 矿车 / 生物背包 /
+     *       掉落物）取实体位置（2026-11-12 D-container-25，原「无主人 ⇒ null」保守默认翻转：
+     *       buff 中心 = 实体位置，光束锚点在渲染侧取宿主顶面）。</li>
      * </ul>
      */
     /**
@@ -239,11 +236,11 @@ public class BeaconFunction implements LivingItemFunction {
      * 与设计稿旧结论一致）、潜影盒 ❌（自有动画）。⇒ 未来任何实现该协议的第三方容器
      * <b>自动纳入，零维护</b>。</p>
      *
-     * <p>⚠️ <b>末影箱不在本判据的射程内</b>（2026-10-18 实证更正）：它虽是 {@code LidBlockEntity}，
+     * <p>⚠️ <b>末影箱不在本判据的射程内</b>：它虽是 {@code LidBlockEntity}，
      * 但其容器上下文 {@code getBlockPos()} 恒为 null（末影箱方块无 {@code ItemHandler.BLOCK}
-     * 能力面，内容由 {@code processEnderChest} 按玩家锚定容器 tick）⇒ 永远走不到这里，
-     * 末影箱里的信标走<b>玩家宿主</b>（见 {@link #resolveHostPosition}）。故<b>不需要</b>为
-     * 排除末影箱加任何特判。</p>
+     * 能力面，内容由 {@code processEnderChest} 按玩家锚定容器 tick），且
+     * {@code EnderChestContainerContext#getAnchor()} 为 null（D-container-18「存放处」）
+     * ⇒ 永远走不到这里，里面的信标也不开光。故<b>不需要</b>为排除末影箱加任何特判。</p>
      */
     static boolean isLiddedChest(BlockEntity be) {
         return be instanceof LidBlockEntity;
