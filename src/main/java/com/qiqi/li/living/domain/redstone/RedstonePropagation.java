@@ -283,10 +283,10 @@ class RedstonePropagation {
                 ItemStack stack = context.getItem(current);
                 if (stack.isEmpty()) continue;
 
-                int maxInput = maxInputOfSlot(current);
-                if (maxInput <= 1) continue;
+                int power = dustPower(current);
+                if (power <= 0) continue;
 
-                int output = Math.min(maxInput - 1, getSignalCap(stack.getCount()));
+                int output = Math.min(power, getSignalCap(stack.getCount()));
 
                 for (int dir = 0; dir < 4; dir++) {
                     int neighbor = ContainerContext.resolveNeighbor(current, dir, size, width);
@@ -391,9 +391,9 @@ class RedstonePropagation {
 
             LivingComparatorData data = LivingComparatorData.of(stack);
             int output = computeComparatorOutput(slot, data);
-            boolean newPowered = output > 0;
-            if (data.powered() != newPowered) {
-                LivingComparatorData.set(stack, data.withPowered(newPowered));
+            // 存实际输出强度（tooltip 显示的就是它；powered 为 output > 0 的派生值）
+            if (data.output() != output) {
+                LivingComparatorData.set(stack, data.withOutput(output));
                 context.syncSlotToClients(slot, stack);
             }
         }
@@ -464,10 +464,10 @@ class RedstonePropagation {
 
             LivingRedstoneData data = LivingRedstoneData.of(stack);
             byte conn = data.connections();
-            int maxInput = maxInputOfSlot(slot);
-            if (maxInput <= 1) continue;
+            int power = dustPower(slot);
+            if (power <= 0) continue;
 
-            int output = Math.min(maxInput - 1, getSignalCap(stack.getCount()));
+            int output = Math.min(power, getSignalCap(stack.getCount()));
             for (int dir = 0; dir < 4; dir++) {
                 if ((conn & (1 << dir)) == 0) continue;
                 powerConductiveNeighbor(slot, output, dir, secondQueue);
@@ -537,8 +537,7 @@ class RedstonePropagation {
                 if (stack.isEmpty()) continue;
                 LivingRepeaterData data = LivingRepeaterData.of(stack);
 
-                int output = (data.powered() && data.delayTimer() <= 0)
-                    ? getSignalCap(stack.getCount()) : 0;
+                int output = data.outputSignal(getSignalCap(stack.getCount()));
                 int outDir = edgeIndex(data.direction());
                 int prev = edgeGrid.get(slot, outDir);
                 if (prev != output) {
@@ -636,7 +635,8 @@ class RedstonePropagation {
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
 
-            int maxSignal = maxInputOfSlot(slot);
+            // 自身强度（受自身堆叠上限约束）：与写出去的边值同源，显示与实际发射一致
+            int maxSignal = Math.min(dustPower(slot), getSignalCap(stack.getCount()));
             byte conn = computeDustConnections(slot);
             LivingRedstoneData data = LivingRedstoneData.of(stack);
             if (data.signalStrength() != maxSignal || data.isPowered() != (maxSignal > 0)
@@ -858,6 +858,36 @@ class RedstonePropagation {
     // ═══════════════════════════════════════════════════════════════
     // 网格/输入查询
     // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * 红石粉自身强度：{@code max(非粉邻居出边, 粉邻居出边 - 1)}。
+     *
+     * <p>⚠️ 衰减只发生在「粉 → 粉」这一跳（对齐原版 {@code RedStoneWireBlock#calculateTargetStrength}：
+     * 非粉邻居取信号原值、相邻粉取 POWER 后减 1）。因此粉的出边写的是<b>自身强度</b>，不再预减一格；
+     * 下游二极管 / 灯 / 方块 / 铜块读到满值。</p>
+     */
+    private int dustPower(int slot) {
+        return dustPower(edgeGrid, slotMask, slot, size, width);
+    }
+
+    private static int dustPower(ContainerRedstoneData.EdgeGrid edgeGrid, int[] slotMask,
+            int slot, int size, int width) {
+        int nonDustMax = 0;
+        int dustMax = 0;
+        for (int dir = 0; dir < 4; dir++) {
+            int neighbor = ContainerContext.resolveNeighbor(slot, dir, size, width);
+            if (neighbor < 0) continue;
+            int edge = edgeGrid.get(neighbor, oppositeDir(dir));
+            boolean neighborIsDust = neighbor < slotMask.length
+                && (slotMask[neighbor] & ContainerRedstoneData.BIT_DUST) != 0;
+            if (neighborIsDust) {
+                dustMax = Math.max(dustMax, edge);
+            } else {
+                nonDustMax = Math.max(nonDustMax, edge);
+            }
+        }
+        return Math.max(nonDustMax, dustMax > 0 ? dustMax - 1 : 0);
+    }
 
     private int inputAt(int slot, int dir) {
         int neighbor = ContainerContext.resolveNeighbor(slot, dir, size, width);

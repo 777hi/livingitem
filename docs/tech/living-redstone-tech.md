@@ -92,7 +92,7 @@
 | # | 规则 | 为什么 / 后果 |
 |---|---|---|
 | 1 | **边信号模型**：边归**发出方**所有（v15 起） | 读某方向输入 = 读**邻居的对应出边**；旧「共享边」模型已废 |
-| 2 | 红石粉**衰减 1**；信号上限随**堆叠数** | 1 个为 15，其余为堆叠数的平方 |
+| 2 | 红石粉**自身强度** = `max(非粉入边, 粉入边 - 1)` —— 衰减只在**粉→粉**这一跳；信号上限随**堆叠数** | 对齐原版 `calculateTargetStrength`（非粉邻居不减）；粉对外一律按**自身强度**输出，1 强度的粉必须能驱动中继器 / 比较器 / 灯 |
 | 3 | 火把 = 信号源 + **反相器** + **3 边输出**（排除输入边） | 反相环必须**永不冻结**（振荡守卫，见下） |
 | 4 | 中继器 = **延迟**（一档 2 game tick）+ 单向 + 信号刷新 | — |
 | 5 | 比较器 = 比较 / 减法 + **物品检测** + 边网格回退读取 | 链式依赖需迭代到稳定（≥4 级双向链） |
@@ -114,7 +114,7 @@
 | 规则 / 能力 | 守卫 |
 |---|---|
 | 1 边模型 · 7 跨层查询 | `ContainerRedstoneDataTest`（跨层信号查询：读邻居出边而非自身） |
-| 2 堆叠数 · 衰减 | `ContainerRedstoneDataTest`（信号上限 / 距离随堆叠增长） |
+| 2 堆叠数 · 衰减 · 粉自身强度 | `ContainerRedstoneDataTest`（信号上限 / 距离随堆叠增长；**强度 1 的粉驱动中继器 / 比较器 / 灯**；比较器读满强度粉输出 15；边界粉仍按到达值对外） |
 | 3 反相环不冻结 | `ContainerRedstoneDataTest`（**火把反相环：lit 逐 tick 翻转、振荡永不冻结** —— 状态演化回归守卫） |
 | 4 中继器延迟 | `ContainerRedstoneDataTest`（一档 2 game tick 后才输出） |
 | 5 比较器链 | `ContainerRedstoneDataTest`（比较器链 ≥4 级双向全亮） |
@@ -138,8 +138,8 @@
 │                                                                  │
 │  ┌──────────────────┐    写边       ┌──────────────────┐        │
 │  │ 活红石火把（点亮） │ ──────────→  │ 活红石粉（介质）  │        │
-│  │ cap = 信号上限    │  set(slot,   │ 读4边max → 衰减1  │        │
-│  │ 排除输入边(3边出) │   RIGHT, 15) │ 写4边 → 邻居入队  │        │
+│  │ cap = 信号上限    │  set(slot,   │ 读4边 → 自身强度   │        │
+│  │ 排除输入边(3边出) │   RIGHT, 15) │ (对粉 -1) 写4边入队 │        │
 │  └──────────────────┘              └────────┬─────────┘        │
 │                                            │ BFS 传播           │
 │                                            ▼                    │
@@ -317,9 +317,11 @@ public class ContainerRedstoneData {
 ```
 inputAt(slot, dir):
   neighbor = resolveSlot(slot, dir)
-  if neighbor < 0 → return faceInput[dir]        // 边界外转外部注入
+  if neighbor < 0 → return 0                     // 容器外不参与 BFS（外部信号只走 faceInput → 定向元件）
   return edgeGrid.get(neighbor, oppositeDir(dir)) // 邻居朝本槽方向的出边
 ```
+
+**出边的值 = 发出方的自身发射强度**（所有元件同一口径）：火把 / 中继器 / 比较器 / 红石块 / 侦测器写自己的 `cap`；红石粉写**自身强度** `max(非粉入边, 粉入边 - 1)` —— 「粉 → 粉」的 -1 在**粉算自己强度时**做，不预先扣在自己的出边上。因此二极管 / 灯 / 铜块 / 导电方块读粉的边就拿到满强度（强度 1 的粉也能驱动元件）。
 
 **共享边 vs 每槽出边（v15 变更要点）**：
 
@@ -415,6 +417,8 @@ public record LivingRepeaterData(
     public LivingRepeaterData withPowered(boolean p) { ... }
     public LivingRepeaterData withDelayTimer(int t) { ... }
     public LivingRepeaterData withLocked(boolean l) { ... }
+
+    public int outputSignal(int cap) { ... }   // 对外输出强度：有输入且延迟走完才为 cap
 }
 ```
 
@@ -426,21 +430,26 @@ public record LivingRepeaterData(
 | `delayTimer` | int | 0 | 剩余延迟（game tick），0 表示就绪，>0 等待中 |
 | `locked` | boolean | false | 侧向锁定，true 时 Phase 3 不刷新输入 |
 
+> 对外输出强度只有两档：`outputSignal(cap)` = `powered && delayTimer <= 0 ? cap : 0`。Phase 4 写边与
+> tooltip「输出信号」共用它（同源，两处各自推导会出现「提示说亮了、实际没输出」）。
+
 ### 2.8 LivingComparatorData — 活比较器物品数据
 
 ```java
 public record LivingComparatorData(
     Pos2D direction,        // 输出方向
     boolean subtractMode,   // true=减法模式，false=比较模式
-    boolean powered         // 是否接收到输入信号
+    int output              // 对外输出强度（0 = 无输出；每 tick 由 Phase 3 重算写回）
 ) implements TooltipProvider {
 
     public static final LivingComparatorData DEFAULT =
-        new LivingComparatorData(Pos2D.UP, false, false);
+        new LivingComparatorData(Pos2D.UP, false, 0);
 
     public LivingComparatorData withDirection(Pos2D dir) { ... }
     public LivingComparatorData withSubtractMode(boolean sm) { ... }
-    public LivingComparatorData withPowered(boolean p) { ... }
+    public LivingComparatorData withOutput(int value) { ... }
+
+    public boolean powered() { ... }   // 派生访问器：output > 0
 }
 ```
 
@@ -448,7 +457,10 @@ public record LivingComparatorData(
 |------|------|--------|------|
 | `direction` | Pos2D | UP | 输出方向 |
 | `subtractMode` | boolean | false | 比较模式（false）/ 减法模式（true） |
-| `powered` | boolean | false | 输入端是否有信号 |
+| `output` | int | 0 | 对外输出强度（比较 / 减法结果），0 = 无输出 |
+
+> `powered()` 是派生访问器（`output > 0`），不再单独存储 —— 只关心有/无的调用方（图标、锁定判定）语义不变。
+> 编码用 `optionalFieldOf("output", 0)`：旧存档里的 `powered` 字段被忽略，下一 tick 按实际重算。
 
 ### 2.8.1 LivingObserverData — 活侦测器物品数据（2026-11-11 v2 收窄）
 
@@ -504,7 +516,7 @@ ItemStack (minecraft:comparator)
 └── LIVING_COMPARATOR_DATA: LivingComparatorData
     ├─ direction: Pos2D                          ← 输出方向
     ├─ subtractMode: boolean                     ← 比较/减法模式
-    └─ powered: boolean                          ← 是否有输入信号
+    └─ output: int                               ← 对外输出强度（0 = 无输出）
 
 ItemStack (minecraft:observer)
 ├── IS_LIVING: true
@@ -662,11 +674,12 @@ while queue not empty:
   current = queue.poll()
   if 不是红石粉 → continue
 
-  maxInput = edgeGrid.maxOfSlot(current)  // 仅 4 条内部边取最大值（faceInput 不再参与）
+  # 自身强度：非粉邻居取边值原样、粉邻居取边值 -1（对齐原版 calculateTargetStrength）
+  power = max(非粉 4 向入边 max, 粉邻居 4 向入边 max - 1)
 
-  if maxInput <= 1 → continue
+  if power <= 0 → continue
 
-  output = min(maxInput - 1, getSignalCap(自身堆叠数))
+  output = min(power, getSignalCap(自身堆叠数))   // 出边写自身强度，不预减
 
   for 4 方向 dir：
     neighbor = resolveSlot(current, dir)
@@ -674,6 +687,7 @@ while queue not empty:
     if output > edgeGrid.get(current, dir)：
       edgeGrid.set(current, dir, output)    // 始终写边（无论邻居是什么）
       if neighbor 是红石粉 → 邻居入队       // 仅红石粉入队继续传播
+    # 邻居粉下一拍按「粉入边 - 1」再减 1
 ```
 
 > **设计变更（v12）**：Phase 2 中 `maxInput` 不再纳入 `faceInput`。外部信号仅通过 `getEffectiveInput()` 影响定向元件的输入检测（中继器/比较器/边界火把反相），不参与红石粉 BFS 传播。这从根本上打破了容器输出信号 → 外部世界 → 外部信号重新注入 → 内部传播的反馈回路。
@@ -702,7 +716,7 @@ while queue not empty:
 
 遍历比较器：
   output = computeComparatorOutput()
-  powered = (output > 0)
+  if output != data.output() → 写回组件并同步（组件里的 output 即实际对外强度，tooltip 显示同源）
   // v15：比较器出边的写值已移至 Phase 4（powerConductiveNeighbor 前直接 set，
   // 可抬可压），此处不再用 Phase 3 的 != 兜底——旧共享边模型下该兜底会误压
   // 下游粉的 -1 衰减信号。详见 §3.2.1.1 与 §6.5。
@@ -716,11 +730,11 @@ phase4PowerConductors(torchSlots, buttonSlots, leverSlots,
 
   secondQueue = 空队列
 
-  # 红石粉：按 connections 方向输出，衰减后信号
+  # 红石粉：按 connections 方向输出自身强度（不预减，粉算强度时才做粉→粉衰减）
   for dustSlots：
-    maxInput = edgeGrid.maxOfSlot(slot)
-    if maxInput <= 1 → continue
-    output = min(maxInput - 1, getSignalCap(count))
+    power = max(非粉入边 max, 粉邻居入边 max - 1)
+    if power <= 0 → continue
+    output = min(power, getSignalCap(count))
     conn = LivingRedstoneData.of(stack).connections()
     for 4 方向 dir：
       if conn 中 dir 无连接 → continue
@@ -818,13 +832,13 @@ private static boolean isConductiveBlock(ItemStack stack) {
 
 **充能规则**：
 - 普通导电方块（原版 `isRedstoneConductor` 为 true 的活物品）：信号写入该方块的**全部 4 条边**，不衰减，模拟方块被强充能后向四周输出
-- **红石粉不是导电方块**：不充能其全部 4 条边。仅设粉朝向源的那条边（输入边，`oppositeDir(dir)`），然后入队让 phase2Propagation 重新处理。phase2 中因 `output <= 输入边` 而跳过输入边，但出边会被正确设为衰减值，下游粉读到正确的衰减信号
+- **红石粉不是导电方块**：不充能其全部 4 条边。仅设粉朝向源的那条边（输入边，`oppositeDir(dir)`），然后入队让 phase2Propagation 重新处理。phase2 中因 `output <= 输入边` 而跳过输入边，出边写为**粉自身强度**；下游粉按「粉入边 - 1」读到正确的衰减信号
 - **雕纹铜块（二极管）与切制铜块（立交桥）不是导电方块**：仅设输入边，不入队。方向性由 phase4 铜块处理决定。设置全部 4 条边会破坏方向性——雕纹铜块只应从输入方向接收信号，切制铜块的水平/垂直通道应分离
 - **活铜格栅（加法器）与活铜灯（信号记忆）不是导线**：直接跳过强充能。它们有独立的功能逻辑（格栅的加法器求和、铜灯的信号记录），不应被强充能穿透
 
 | 信号源 | 输出方向 | 信号值 |
 |--------|---------|--------|
-| 红石粉 | connections 方向 | min(maxInput-1, cap) |
+| 红石粉 | connections 方向 | min(粉自身强度, cap)，自身强度 = max(非粉入边, 粉入边 - 1) |
 | 火把 | 除输入方向外 3 方向 | cap |
 | 按钮/拉杆 | 4 方向 | cap |
 | 红石块 | 4 方向 | cap |
@@ -837,29 +851,29 @@ private static boolean isConductiveBlock(ItemStack stack) {
 ```
 [火把(15)] [红石粉A] [活箱子] [红石粉B]
               conn:      ──充能──→  conn:
-              LEFT+RIGHT  所有边=14  LEFT+RIGHT
+              LEFT+RIGHT  所有边=15  LEFT+RIGHT
 
-Phase 1: 火把 → 边缘[火把, UP]=15
-Phase 2: BFS: 红石粉A 读取 15 → 输出 14 → 边缘[A, RIGHT]=14
-Phase 4: 红石粉A 的 RIGHT 有连接 → 邻居是活箱子（导体）→ 活箱子 所有边=14
+Phase 1: 火把 → 边缘[火把, RIGHT]=15
+Phase 2: BFS: 红石粉A 读取 15 → 自身强度 15（非粉邻居不减）→ 边缘[A, RIGHT]=15
+Phase 4: 红石粉A 的 RIGHT 有连接 → 邻居是活箱子（导体）→ 活箱子 所有边=15
          → 活箱子 RIGHT 邻接红石粉B → 红石粉B 入 secondQueue
-         第二波 BFS: 红石粉B 读取 14 → 输出 13 → 继续传播
+         第二波 BFS: 红石粉B 读取 15（方块强充能不衰减）→ 自身强度 15 → 出边 15
 Phase 5: 更新显示
 
 [比较器(15)] [红石粉A] [红石粉B]
-               输入边=15  出边=14
+               输入边=15  出边=15（粉B 自身 14）
 
 Phase 1: 比较器 → 边缘[比较器, RIGHT]=15
-Phase 2: BFS: 红石粉A 读取 15 → 输出 14 → 边缘[A, RIGHT]=14
+Phase 2: BFS: 红石粉A 读取 15 → 自身强度 15 → 边缘[A, RIGHT]=15
 Phase 4: 比较器 → powerConductiveNeighbor(比较器, 15, RIGHT, secondQueue):
          邻居 = 红石粉A → 只设输入边(LEFT)=15 → 红石粉A 入 secondQueue
          第二波 BFS: 红石粉A 重新处理：
-           maxInput = max(15, 14, ...) = 15
-           output = 14
-           LEFT(15) ≥ 14 → 跳过（不覆盖输入边）
-           RIGHT(14) < 14 → 不覆盖（相等）
-           → 红石粉A 出边: LEFT=15, RIGHT=14, ...
-           → 红石粉B 读取 14 → 输出 13
+           power = max(15, ...) = 15
+           output = 15
+           LEFT(15) ≥ 15 → 跳过（不覆盖输入边）
+           RIGHT(15) < 15 → 不覆盖（相等）
+           → 红石粉A 出边: LEFT=15, RIGHT=15, ...
+           → 红石粉B 读到 15 → 自身强度 14
          结果: 比较器→粉A(15)→粉B(14) ✅ 衰减从粉→粉开始
 ```
 
@@ -874,7 +888,7 @@ Phase 4: 比较器 → powerConductiveNeighbor(比较器, 15, RIGHT, secondQueue
   if isLit != newLit → 更新同步
 
 遍历红石粉：
-  maxSignal = edgeGrid.maxOfSlot(slot)
+  maxSignal = min(粉自身强度, getSignalCap(count))   // = 出边值
   conn = computeDustConnections(slot, ...)  // 计算连接状态
   if signalStrength != maxSignal || isPowered != (maxSignal > 0) || connections != conn → 更新同步
 
@@ -1016,6 +1030,12 @@ computeFaceOutput(width, height):
   仅包含内部信号（edgeGrid 不存储外部信号），
   避免外部信号被误输出导致反馈循环。
 ```
+
+> **边界粉的口径转换**：粉的出边存**自身强度**，而世界侧把容器当**方块**读
+> （原版 `getBestNeighborSignal` 对非粉方块不减 1）。所以边界槽是粉时，`computeFaceOutput`
+> 补回「粉 → 粉」的那次 -1（**出边值 - 1**），让容器边界等价于一格粉、
+> 与世界粉链衰减一致；其余元件（火把 / 中继器 / 红石块…）按自身强度直接对外。
+> 代价：世界侧紧贴容器的**比较器**读粉边界仍会少 1（世界侧读的是方块信号，无法区分粉与其它方块）。
 
 **输出路径**：
 
@@ -1309,22 +1329,24 @@ Phase 1：火把写自己的 RIGHT 出边 = 15
           粉A 入队
 
 Phase 2 BFS：
-  粉A：maxInput = 15（来自火把出边，经 inputAt 读入）
-       output = min(15-1, 15) = 14
-       写 RIGHT 出边 = 14，粉B 经 inputAt(LEFT) 读到 14
+  粉A：自身强度 = max(非粉入边 15, 粉入边 - 1) = 15   // 火把是非粉邻居，不减 1
+       output = min(15, 15) = 15
+       写 4 边 = 15，粉B 经 inputAt(LEFT) 读到 15
        粉B 入队
-  粉B：maxInput = 14
-       output = min(14-1, 15) = 13
-       写 RIGHT 出边 = 13，粉C 经 inputAt(LEFT) 读到 13
+  粉B：自身强度 = 粉A 的边 15 - 1 = 14              // 粉→粉才减 1
+       output = 14
+       写 4 边 = 14，粉C 经 inputAt(LEFT) 读到 14
        粉C 入队
-  粉C：maxInput = 13
-       output = 12
-       写 RIGHT 边 = 12
+  粉C：自身强度 = 14 - 1 = 13
+       output = 13
+       写 4 边 = 13
        邻居为空，不继续
 
-最终结果（每条红石粉读 4 边 max）：
+最终结果（每格自身强度 / 出边，两者恒等）：
   [火把] [粉A] [粉B] [粉C] [  ] [  ] [  ] [  ] [  ]
-   15    14    13    12    0    0    0    0    0
+   15     15    14    13    0    0    0    0    0
+  （中继器 / 比较器 / 灯 / 导电方块读到的是这条边值，强度 1 的粉对外仍为 1；
+    容器边界另有「到达值」转换，见 §3.2.1）
 ```
 
 **关键**：信号值存储在出边上，粉A 经 `inputAt(LEFT)` 直接读火把的出边拿到 15，不需要通过邻居槽位索引再查一次数组。
@@ -1611,8 +1633,8 @@ Phase 4（充能导电活物品，抬/压都处理；在 Phase 3 之前执行）
 
 Phase 3（重新检测输入，Phase 2 粉尘传播后）：
   output = computeComparatorOutput()
-  powered = (output > 0)
-  // 只更新 powered 状态，不再写边（出边写值见 Phase 4）
+  if output != data.output() → 写回组件（tooltip 显示同源）
+  // 只更新组件里的输出强度，不再写边（出边写值见 Phase 4）
 ```
 
 > **为什么出边必须在 Phase 4 同步（而非仅 Phase 1 抬高）**：若只在 Phase 1 用 `>` 抬高，比较器关闭（output=0）时出边不会归零，下游粉下一 tick 仍读到高 `maxInput` 而卡死。Phase 4 的 `set(slot, outDir, output)` 既抬高也压低，关闭时出边归零，下游粉经 `maxInput` 自然衰减。旧模型的 Phase 3 `!=` 兜底做同样的事，但在共享边模型下会误压下游粉的 -1 衰减信号，故 v15 改为 Phase 4 直接 set 本槽出边后删除。
@@ -1643,12 +1665,12 @@ for (int sideDir : sideDirs) {
 int output = subtractMode ? max(0, A - B) : (A >= B ? A : 0);
 ```
 
-与中继器一样，比较器在 Phase 1 作为信号源直接写边，不参与 Phase 2 BFS 传播。但 Phase 4 会重新计算并写回边网格（Phase 3 只更新 powered），确保依赖 Phase 2 粉尘传播的信号（如后方是红石粉）能正确反映到输出。
+与中继器一样，比较器在 Phase 1 作为信号源直接写边，不参与 Phase 2 BFS 传播。但 Phase 4 会重新计算并写回边网格（Phase 3 只把输出强度写回组件），确保依赖 Phase 2 粉尘传播的信号（如后方是红石粉）能正确反映到输出。
 
 > **设计变更（v16）：比较器/中继器链改为「迭代到稳定」**
 > 现象：活比较器首尾相连时，链只能亮若干级、再往后一级彻底无信号（"第 4 个就死"）。
 > 根因：元件输出依赖上游元件出边，但 `powerConductiveNeighbor` 对元件位直接 return（不把下游元件入队），链式传播只能靠 Phase 4 内 `for (slot : comparatorSlots/repeaterSlots)` 单遍遍历顺序推进；而这两组槽位是 `HashSet`（哈希桶序，与几何方向无关），于是链的推进长度 = 桶序碰巧与几何吻合的长度，且 `reset()` 每 tick 清零使断链永不自愈。
-> 修复：Phase 4 的元件计算外包一层 `for (iter = 0; iter < size+2; iter++)` 迭代到稳定——每遍对中继器/比较器算 `output` 并与上一 tick 的 `edgeGrid.get` 比较，仅变化才 `set` 并置 `changed`、变化则 `powerConductiveNeighbor` 把下游入队；无变化即 `break`。稳态无依赖变化时一轮即停（零额外开销），链式依赖逐轮收敛自愈。中继器 `output` 内联为 `(powered && delayTimer<=0) ? getSignalCap(count) : 0`，不再依赖调用点 `delayTimer<=0` 检查。回归测试：`ContainerRedstoneDataTest.bugA_comparatorChain_forward_allLit` / `bugA_comparatorChain_reverse_allLit`（≥4 级双向链全亮）。
+> 修复：Phase 4 的元件计算外包一层 `for (iter = 0; iter < size+2; iter++)` 迭代到稳定——每遍对中继器/比较器算 `output` 并与上一 tick 的 `edgeGrid.get` 比较，仅变化才 `set` 并置 `changed`、变化则 `powerConductiveNeighbor` 把下游入队；无变化即 `break`。稳态无依赖变化时一轮即停（零额外开销），链式依赖逐轮收敛自愈。中继器 `output` 取 `data.outputSignal(getSignalCap(count))`（有输入且延迟走完才输出上限，否则 0），不再依赖调用点 `delayTimer<=0` 检查。回归测试：`ContainerRedstoneDataTest.bugA_comparatorChain_forward_allLit` / `bugA_comparatorChain_reverse_allLit`（≥4 级双向链全亮）。
 
 ---
 
@@ -1682,13 +1704,16 @@ int output = subtractMode ? max(0, A - B) : (A >= B ? A : 0);
 ### 7.4 传播上限
 
 ```
-每格红石粉接收的信号上限 = getSignalCap(该红石粉的堆叠数)
+粉自身强度 = max(非粉邻居出边 max, 粉邻居出边 max - 1)
+出边       = min(粉自身强度, getSignalCap(自身堆叠数))
 
-newSignal = min(邻居信号 - 1, getSignalCap(自身堆叠数))
+减 1 只发生在「粉 → 粉」这一跳（对齐原版 calculateTargetStrength）；
+非粉邻居（火把 / 中继器 / 比较器 / 红石块 / 侦测器 / 导电方块 / 铜块）不减 1。
 ```
 
 - 堆叠 1 的红石粉最多传递 15 强度信号 → 与原版一致
 - 堆叠 4 的红石粉最多传递 16 强度信号
+- tooltip 显示 = 粉自身强度（同样受 cap 约束），与出边一致；只有粉→粉才少 1
 
 ### 7.5 传播距离
 

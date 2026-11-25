@@ -78,13 +78,9 @@ public class LivingComparatorFunction implements LivingItemFunction, HasDirectio
             .append(Component.translatable("tooltip.livingitem.comparator.mode." + (data.subtractMode() ? "subtract" : "compare")))
             .withStyle(ChatFormatting.GRAY));
 
-        if (data.powered()) {
-            tooltipAdder.accept(Component.translatable("tooltip.livingitem.comparator.powered")
-                .withStyle(ChatFormatting.RED, ChatFormatting.BOLD));
-        } else {
-            tooltipAdder.accept(Component.translatable("tooltip.livingitem.comparator.unpowered")
-                .withStyle(ChatFormatting.DARK_GRAY));
-        }
+        tooltipAdder.accept(Component.translatable("tooltip.livingitem.comparator.output")
+            .append(Component.literal(": " + data.output()))
+            .withStyle(data.output() > 0 ? ChatFormatting.RED : ChatFormatting.DARK_GRAY));
 
         tooltipAdder.accept(Component.translatable("tooltip.livingitem.comparator.max_signal")
             .append(Component.literal(": " + signalCap))

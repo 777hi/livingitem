@@ -66,7 +66,7 @@
 
 | # | 规则 | 为什么 / 后果 |
 |---|---|---|
-| 1 | **无损传输**：`output = maxInput` | 与红石粉 `output = maxInput − 1` 互补 —— 这是「线缆」的定义 |
+| 1 | **无损传输**：`output = maxInput` | 红石粉的衰减只发生在「粉 → 粉」；粉 → 铜块按粉自身强度注入，铜块转发不再衰减 —— 这是「线缆」的定义 |
 | 2 | **锈蚀频道隔离**：仅同锈蚀等级的铜块互通 | 四色互不干扰；但红石粉**可向任意锈蚀等级注入** |
 | 3 | 雕文铜块 = **二极管**：只从 `inputDir` 收、只向 `outputDir` 发 | 方向独立设置（4×4 = 16 组合） |
 | 4 | 切制铜块 = **立交桥**：水平 / 垂直信号独立传播 | 可交叉而不串扰 |
@@ -98,7 +98,7 @@
 活铜系统是活红石系统的信号层扩展，为铜方块及其变体赋予红石信号传输能力。活铜方块在 2D 容器网格中充当**无损信号线缆**，与活红石粉（衰减传输）形成互补的信号传输层。
 
 核心特性：
-- **无损传输**：铜块转发信号不衰减，`output = maxInput`（红石粉 `output = maxInput - 1`）
+- **无损传输**：铜块转发信号不衰减，`output = maxInput`（红石粉只在「粉 → 粉」这一跳减 1，粉 → 铜块按自身强度注入）
 - **锈蚀频道隔离**：仅同锈蚀等级的铜块之间互相导通，不同锈蚀等级互不干扰
 - **雕文铜块二极管**：输入/输出双方向独立设置，信号仅从输入方向接收、向输出方向传输
 - **切制铜块立交桥**：水平/垂直信号独立传播，可交叉而不串扰
@@ -111,7 +111,7 @@
 │                                                                      │
 │  ┌──────────────────┐        ┌──────────────────┐                   │
 │  │ 活红石粉（介质）  │  注入   │ 活铜块（无损线缆）│                   │
-│  │ 衰减: output-1    │ ────→  │ 转发: output=max  │                   │
+│  │ 粉→粉 才 -1       │ ────→  │ 转发: output=max  │                   │
 │  │ 可连任意锈蚀铜块  │        │ 仅连同锈蚀铜块    │                   │
 │  └──────────────────┘        └────────┬─────────┘                   │
 │                                       │                              │
@@ -368,17 +368,17 @@ Phase 2 是铜块信号传播的核心。BFS 队列现在同时包含红石粉�
 while queue not empty:
   current = queue.poll()
 
-  // ── 红石粉：衰减传播 ──
+  // ── 红石粉：自身强度（粉→粉才 -1）──
   if is(current, BIT_DUST):
-    maxInput = edgeGrid.maxOfSlot(current)
-    if maxInput <= 1 → continue
-    output = min(maxInput - 1, getSignalCap(count))
+    power = max(非粉入边 max, 粉邻居入边 max - 1)
+    if power <= 0 → continue
+    output = min(power, getSignalCap(count))       // 出边写自身强度，不预减
     for 4 方向 dir:
-      propagateDir(current, dir, output, ...)   // 衰减 -1，可连铜块
+      propagateDir(current, dir, output, ...)      // 可连铜块；铜块按这条边的满值注入
 
   // ── 铜块：无损转发 ──
   if is(current, BIT_COPPER):
-    maxInput = edgeGrid.maxOfSlot(current)
+    maxInput = maxInputOfSlot(current)
     cap = getSignalCap(count)
     output = min(maxInput, cap)                  // 不衰减！
 
@@ -451,7 +451,7 @@ for slot in bulbSlots:
 
   if hasInput && !data.prevInput():     // 上升沿
     if data.recordedSignal() == 0:      // 未记录 → 记录当前输入信号强度
-      maxInput = edgeGrid.maxOfSlot(slot)
+      maxInput = maxInputOfSlot(slot)
       cap = getSignalCap(count)
       data = data.withRecordedSignal(min(maxInput, cap))
     else:                               // 已记录 → 熄灭清除
@@ -477,7 +477,7 @@ Phase 4 新增铜块作为导电方块充能源。铜块充当**强信号源**�
 
 ```
 for slot in copperSlots:
-  maxInput = edgeGrid.maxOfSlot(slot)
+  maxInput = maxInputOfSlot(slot)
   if maxInput <= 0 → continue
   cap = getSignalCap(count)
   output = min(maxInput, cap)
@@ -654,7 +654,7 @@ else if (is(neighbor, BIT_BUTTON | BIT_LEVER | BIT_TORCH
 
 ```
 [火把(15)] → [红石粉] → [铜块 A] → [铜块 A] → [红石粉] → [红石灯]
-   Phase1    衰减到14    无损14      无损14     衰减到13     Phase5
+   Phase1    自身15      无损15      无损15     粉→粉 -1=14   Phase5
 ```
 
 ### 5.2 跨层注入

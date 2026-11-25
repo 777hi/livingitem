@@ -9,6 +9,8 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -93,6 +95,17 @@ class ContainerRedstoneDataTest {
     @DisplayName("信号上限：1 个为 15，其余为堆叠数的平方")
     void getSignalCap_followsSquareRuleExceptSingle(int stackCount, int expectedCap) {
         assertEquals(expectedCap, ContainerRedstoneData.getSignalCap(stackCount));
+    }
+
+    @Test
+    @DisplayName("中继器对外输出强度：有输入且延迟走完才输出上限，等待中 / 无输入为 0（tooltip 同源口径）")
+    void repeaterOutputSignal_onlyWhenDelayFinished() {
+        assertEquals(15, LivingRepeaterData.DEFAULT.withPowered(true).withDelayTimer(0).outputSignal(15),
+            "有输入且延迟走完应输出信号上限");
+        assertEquals(0, LivingRepeaterData.DEFAULT.withPowered(true).withDelayTimer(2).outputSignal(15),
+            "延迟倒计时中不应算作有输出");
+        assertEquals(0, LivingRepeaterData.DEFAULT.withPowered(false).withDelayTimer(0).outputSignal(15),
+            "无输入不应输出");
     }
 
     // ════════════════════════════════════════
@@ -762,5 +775,169 @@ class ContainerRedstoneDataTest {
 
         assertEquals(0, data.getSignal(11),
             "原版途径移除信号源后，稳态跳过应被打破、残留信号必须归零");
+    }
+
+    // ════════════════════════════════════════
+    // 回归：粉自身强度口径（出边 = 自身发射强度，减 1 只在粉→粉）
+    // ════════════════════════════════════════
+
+    /** 单行 30 格（宽 = 30 ⇒ 一行），容纳 15 格粉链 + 一个器件。 */
+    private static final int ROW_WIDTH = 30;
+
+    /** [红石块(0)] → 粉 1..15：第 k 个粉自身强度 = 16 - k，第 15 个粉正好是 1。 */
+    private static FakeContainerContext dustChainToStrengthOne() {
+        var ctx = new FakeContainerContext(ROW_WIDTH, ROW_WIDTH);
+        ctx.set(0, living(Items.REDSTONE_BLOCK, 1));
+        for (int i = 1; i <= 15; i++) {
+            ctx.set(i, living(Items.REDSTONE, 1));
+        }
+        return ctx;
+    }
+
+    /** 上述粉链的 functionSlots；deviceSlot < 0 表示不放器件。 */
+    private static Map<String, Set<Integer>> dustChainSlots(String functionId, int deviceSlot) {
+        Set<Integer> dust = new HashSet<>();
+        for (int i = 1; i <= 15; i++) dust.add(i);
+        Map<String, Set<Integer>> result = new HashMap<>();
+        result.put(LivingRedstoneBlockFunction.ID, Set.of(0));
+        result.put(LivingRedstoneFunction.ID, dust);
+        if (deviceSlot >= 0) result.put(functionId, Set.of(deviceSlot));
+        return result;
+    }
+
+    /**
+     * 回归现场：强度 1 的粉接中继器 / 比较器没有输出。
+     *
+     * <p>根因：粉写边时预减一格（旧 {@code output = maxInput - 1}），消费者（中继器 /
+     * 比较器 / 灯）读的正是这条边 —— 强度 1 的粉被读成 0，与「没电」无法区分。
+     * 现口径：粉出边 = 自身强度 {@code max(非粉入边, 粉入边 - 1)}，减 1 只发生在粉→粉
+     * （对齐原版 {@code RedStoneWireBlock#calculateTargetStrength}）。</p>
+     */
+    @Test
+    @DisplayName("回归：强度 1 的粉应触发中继器并输出满强度（原来读成 0）")
+    void dustStrengthOne_drivesRepeater() {
+        var ctx = dustChainToStrengthOne();
+        ItemStack repeater = living(Items.REPEATER, 1);
+        LivingRepeaterData.set(repeater, LivingRepeaterData.DEFAULT.withDirection(Pos2D.RIGHT));
+        ctx.set(16, repeater);
+
+        var slots = dustChainSlots(LivingRepeaterFunction.ID, 16);
+        var data = new ContainerRedstoneData();
+        for (int t = 0; t < 4; t++) {  // 中继器 delay=1 ⇒ 2 tick 后才写输出边，多给两拍余量
+            tickOnce(data, ctx, slots);
+        }
+
+        int output = data.settledOutput(16)[ContainerRedstoneData.EDGE_RIGHT];
+        assertEquals(15, output, "强度 1 的粉应触发中继器输出满强度，实际=" + output);
+    }
+
+    @Test
+    @DisplayName("回归：强度 1 的粉应被比较器读成 1 并输出 1（原来输出 0）")
+    void dustStrengthOne_drivesComparator() {
+        var ctx = dustChainToStrengthOne();
+        ItemStack comparator = living(Items.COMPARATOR, 1);
+        LivingComparatorData.set(comparator,
+            LivingComparatorData.DEFAULT.withDirection(Pos2D.RIGHT));
+        ctx.set(16, comparator);
+
+        var data = propagate(ctx, dustChainSlots(LivingComparatorFunction.ID, 16));
+
+        int output = data.settledOutput(16)[ContainerRedstoneData.EDGE_RIGHT];
+        assertEquals(1, output, "强度 1 的粉应被比较器读成 1，实际=" + output);
+        assertEquals(1, LivingComparatorData.of(ctx.getItem(16)).output(),
+            "比较器组件应存下实际输出强度（tooltip 显示同源）");
+    }
+
+    @Test
+    @DisplayName("回归：强度 1 的粉应点亮红石灯（原来判为无信号）")
+    void dustStrengthOne_lightsLamp() {
+        var ctx = dustChainToStrengthOne();
+        ctx.set(16, living(Items.REDSTONE_LAMP, 1));
+
+        propagate(ctx, dustChainSlots(LivingRedstoneLampFunction.ID, 16));
+
+        assertTrue(LivingRedstoneLampData.of(ctx.getItem(16)).lit(),
+            "强度 1 的粉应点亮红石灯");
+    }
+
+    @Test
+    @DisplayName("回归：比较器读强度 15 的粉应输出 15（原来少 1）")
+    void dustStrengthFifteen_comparatorOutputsFifteen() {
+        var ctx = new FakeContainerContext(SIZE, WIDTH);
+        ctx.set(9, living(Items.REDSTONE_BLOCK, 1));
+        ctx.set(10, living(Items.REDSTONE, 1));
+        ItemStack comparator = living(Items.COMPARATOR, 1);
+        LivingComparatorData.set(comparator,
+            LivingComparatorData.DEFAULT.withDirection(Pos2D.RIGHT));
+        ctx.set(11, comparator);
+
+        var data = propagate(ctx, Map.of(
+            LivingRedstoneBlockFunction.ID, Set.of(9),
+            LivingRedstoneFunction.ID, Set.of(10),
+            LivingComparatorFunction.ID, Set.of(11)));
+
+        int output = data.settledOutput(11)[ContainerRedstoneData.EDGE_RIGHT];
+        assertEquals(15, output, "比较器读满强度粉应输出 15，实际=" + output);
+    }
+
+    /** 显示口径守护：显示的是「自身强度」，不能因为出边口径调整而整体 +1。 */
+    @Test
+    @DisplayName("守护：粉链自身强度仍为 15 → 1（tooltip 口径不变）")
+    void dustChain_selfStrength_staysFifteenToOne() {
+        var ctx = dustChainToStrengthOne();
+        var data = propagate(ctx, dustChainSlots("", -1));
+
+        for (int i = 1; i <= 15; i++) {
+            int expected = 16 - i;
+            assertEquals(expected, LivingRedstoneData.of(ctx.getItem(i)).signalStrength(),
+                "第 " + i + " 个粉自身强度应为 " + expected);
+        }
+        assertTrue(data.getSignal(15) > 0, "链末粉自身强度 1，应判为有信号");
+    }
+
+    /**
+     * 边界口径守护：边界粉对外仍按「到达值」输出（= 自身强度 - 1）。
+     *
+     * <p>世界侧把容器当<b>方块</b>读，原版 {@code getBestNeighborSignal} 对非粉方块不减 1；
+     * 所以边界粉必须预补这次 -1，才能与世界粉链的衰减口径一致。</p>
+     */
+    @Test
+    @DisplayName("守护：边界粉对外输出 = 自身强度 - 1（世界侧不会自己再减）")
+    void boundaryDust_faceOutput_keepsArrivalValue() {
+        var ctx = new FakeContainerContext(SIZE, WIDTH);
+        ctx.set(7, living(Items.REDSTONE_BLOCK, 1));
+        ctx.set(8, living(Items.REDSTONE, 1));   // 右边界
+
+        var data = propagate(ctx, Map.of(
+            LivingRedstoneBlockFunction.ID, Set.of(7),
+            LivingRedstoneFunction.ID, Set.of(8)));
+
+        assertEquals(15, LivingRedstoneData.of(ctx.getItem(8)).signalStrength(),
+            "前置：边界粉自身强度应为 15");
+        assertEquals(14, data.getBoundarySignal(ContainerRedstoneData.EDGE_RIGHT),
+            "边界粉对外应按到达值 14 输出（世界侧粉读 14 即与原版口径一致）");
+    }
+
+    /**
+     * 边界口径守护（自身强度超过自身 cap）：对外 = 出边值 - 1。
+     *
+     * <p>若写成 {@code min(自身强度 - 1, 自身cap)}，自身强度超过 cap 时只减到 cap，
+     * 边界会白赚 1（内部粉读的是出边再减 1）。</p>
+     */
+    @Test
+    @DisplayName("守护：边界粉自身强度超 cap 时，对外 = 出边值 - 1（不能只减到 cap）")
+    void boundaryDust_overOwnCap_faceOutputSubtractsFromEdge() {
+        var ctx = new FakeContainerContext(SIZE, WIDTH);
+        ctx.set(7, living(Items.REDSTONE_BLOCK, 4));   // cap=16 ⇒ 给粉 16
+        ctx.set(8, living(Items.REDSTONE, 1));         // 右边界，自身 cap=15
+
+        var data = propagate(ctx, Map.of(
+            LivingRedstoneBlockFunction.ID, Set.of(7),
+            LivingRedstoneFunction.ID, Set.of(8)));
+
+        assertEquals(15, data.settledOutput(8)[ContainerRedstoneData.EDGE_RIGHT],
+            "前置：出边应被自身 cap 截到 15");
+        assertEquals(14, data.getBoundarySignal(ContainerRedstoneData.EDGE_RIGHT),
+            "边界对外应按出边值 - 1 = 14 输出（世界侧不会再减）");
     }
 }

@@ -585,23 +585,40 @@ public class ContainerRedstoneData implements RedstoneSensor {
         // 铜块（红电信号）不参与跨容器传输，跳过铜槽位的边界边。
         for (int c = 0; c < width; c++) {
             if (isCopperSlot(c)) continue;
-            faceOutput[E_UP] = Math.max(faceOutput[E_UP], edgeGrid.get(c, E_UP));
+            faceOutput[E_UP] = Math.max(faceOutput[E_UP], boundaryEdge(c, E_UP));
         }
         for (int c = 0; c < width; c++) {
             int slot = (height - 1) * width + c;
             if (isCopperSlot(slot)) continue;
-            faceOutput[E_DOWN] = Math.max(faceOutput[E_DOWN], edgeGrid.get(slot, E_DOWN));
+            faceOutput[E_DOWN] = Math.max(faceOutput[E_DOWN], boundaryEdge(slot, E_DOWN));
         }
         for (int r = 0; r < height; r++) {
             int slot = r * width;
             if (isCopperSlot(slot)) continue;
-            faceOutput[E_LEFT] = Math.max(faceOutput[E_LEFT], edgeGrid.get(slot, E_LEFT));
+            faceOutput[E_LEFT] = Math.max(faceOutput[E_LEFT], boundaryEdge(slot, E_LEFT));
         }
         for (int r = 0; r < height; r++) {
             int slot = r * width + (width - 1);
             if (isCopperSlot(slot)) continue;
-            faceOutput[E_RIGHT] = Math.max(faceOutput[E_RIGHT], edgeGrid.get(slot, E_RIGHT));
+            faceOutput[E_RIGHT] = Math.max(faceOutput[E_RIGHT], boundaryEdge(slot, E_RIGHT));
         }
+    }
+
+    /**
+     * 边界槽位对外输出的值：非粉元件 = 出边原值；红石粉 = 出边的值 - 1。
+     *
+     * <p>⚠️ 红石粉特殊：出边存的是<b>自身强度</b>，而世界侧把容器当<b>方块</b>读
+     * （原版 {@code getBestNeighborSignal} 对非粉方块不减 1），所以粉槽位这里补回
+     * 「粉 → 粉」的那次 -1，让容器边界等价于一格粉；其余元件（火把 / 中继器 / 红石块…）
+     * 按自身强度直接输出。</p>
+     */
+    private int boundaryEdge(int slot, int dir) {
+        int edge = edgeGrid.get(slot, dir);
+        return isDustSlot(slot) ? Math.max(0, edge - 1) : edge;
+    }
+
+    private boolean isDustSlot(int slot) {
+        return slot >= 0 && slot < slotMask.length && (slotMask[slot] & BIT_DUST) != 0;
     }
 
     private boolean isCopperSlot(int slot) {
@@ -655,7 +672,9 @@ public class ContainerRedstoneData implements RedstoneSensor {
      * 与旧共享边模型（相邻两槽共用同一条 hEdges/vEdges）不同，现在的边归【发出方】所有：
      *  - 写：源槽用 set(slot, dir, v) 写自己的出边；
      *  - 读：某槽读 dir 方向输入时，读的是邻居的对应出边 inputAt(slot,dir)=edgeGrid.get(neighbor,oppositeDir(dir))。
-     * 边界外（neighbor<0）由 inputAt 转 faceInput[dir] 兜底。
+     * 边界外（neighbor<0）inputAt 返回 0（外部信号只走 faceInput → 定向元件）。
+     * ⚠️ 出边值 = 该槽【自身发射强度】：粉写自身强度（粉→粉的 -1 在粉算强度时做，不预减），
+     * 所以二极管 / 灯 / 导电方块读粉边即得满强度（1 强度粉可驱动元件）。
      * reset() 每 tick 交换 edgeGrid/prevEdgeGrid 并清零，prevEdgeGrid 同名存储上一 tick 的发出边。
      */
     static class EdgeGrid {

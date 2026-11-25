@@ -77,21 +77,15 @@ public class LivingRepeaterFunction implements LivingItemFunction, HasDirection 
             .append(Component.literal(": " + data.delay() + " (" + (data.delay() * 2) + " ticks)"))
             .withStyle(ChatFormatting.GRAY));
 
-        if (data.powered()) {
-            tooltipAdder.accept(Component.translatable("tooltip.livingitem.repeater.powered")
-                .withStyle(ChatFormatting.RED, ChatFormatting.BOLD));
-            if (data.delayTimer() > 0) {
-                tooltipAdder.accept(Component.translatable("tooltip.livingitem.repeater.delay_timer")
-                    .append(Component.literal(": " + data.delayTimer()))
-                    .withStyle(ChatFormatting.GRAY));
-            } else if (data.delayTimer() < 0) {
-                tooltipAdder.accept(Component.translatable("tooltip.livingitem.repeater.delay_timer")
-                    .append(Component.literal(": " + Math.abs(data.delayTimer())))
-                    .withStyle(ChatFormatting.GRAY));
-            }
-        } else {
-            tooltipAdder.accept(Component.translatable("tooltip.livingitem.repeater.unpowered")
-                .withStyle(ChatFormatting.DARK_GRAY));
+        int outputSignal = data.outputSignal(signalCap);
+        tooltipAdder.accept(Component.translatable("tooltip.livingitem.repeater.output")
+            .append(Component.literal(": " + outputSignal))
+            .withStyle(outputSignal > 0 ? ChatFormatting.RED : ChatFormatting.DARK_GRAY));
+
+        if (data.delayTimer() != 0) {
+            tooltipAdder.accept(Component.translatable("tooltip.livingitem.repeater.delay_timer")
+                .append(Component.literal(": " + Math.abs(data.delayTimer())))
+                .withStyle(ChatFormatting.GRAY));
         }
 
         if (data.locked()) {

@@ -71,6 +71,15 @@ public record LivingRepeaterData(
         return new LivingRepeaterData(direction, delay, powered, delayTimer, l);
     }
 
+    /**
+     * 对外输出强度：有输入且延迟已走完才输出 {@code cap}，否则 0。
+     *
+     * <p>⚠️ Phase 4 写边与 tooltip 必须同源 —— 两处各自推导会出现「提示说亮了、实际没输出」。</p>
+     */
+    public int outputSignal(int cap) {
+        return powered && delayTimer <= 0 ? cap : 0;
+    }
+
     @Override
     public void addToTooltip(Item.TooltipContext context, Consumer<Component> tooltipAdder, TooltipFlag flag) {
     }
