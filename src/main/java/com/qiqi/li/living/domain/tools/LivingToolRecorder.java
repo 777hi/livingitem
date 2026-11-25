@@ -166,8 +166,11 @@ public final class LivingToolRecorder {
      * <p>与 {@link #isAssistItem}（环成员，工具 ∪ 武器）的差别：这里只要武器。</p>
      *
      * <p>⚠️ <b>活斧子 / 活剑同时满足它与 {@link #isAssistTool}</b>（既是工具又是武器，D3 共存；
-     * 剑 2026-11-07 纳入）⇒ 调用端必须用 {@code if (isAssistTool) ... else if (isAssistWeapon) ...}
-     * 保证互斥，否则一把会在两个环上各画一次。</p>
+     * 剑 2026-11-07 纳入）。渲染端<b>不可</b>再用"先判工具、后判武器"的静态互斥归边 ——
+     * 那样无记忆活剑会被全赶到工具侧，服务端写了动作戳、客户端攻击环却收不到
+     * （2026-11-13 事故）。现按"当前是否在攻击"动态分流（见
+     * {@code LivingToolModelRenderer#routeAssistToWeapon}）：出手时划归武器侧，待机仍算工具
+     * —— 既不让一把上两个环，也不漏掉攻击环。</p>
      */
     public static boolean isAssistWeapon(ItemStack stack) {
         return isLivingWeapon(stack)

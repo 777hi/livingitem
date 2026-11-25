@@ -21,6 +21,7 @@ import com.qiqi.li.living.domain.power.LivingWaxedCopperTooltipComponent;
 import com.qiqi.li.living.domain.power.LivingWaxedGeneratorData;
 import com.qiqi.li.living.domain.power.GeneratorSegment;
 import com.qiqi.li.living.config.TlmClientConfig;
+import com.qiqi.li.living.config.ToolVisualConfig;
 import com.qiqi.li.living.util.WaxedCopperFamily;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.item.ItemProperties;
@@ -64,6 +65,9 @@ public class LivingItemClient {
 
     public LivingItemClient(IEventBus modEventBus, ModContainer container) {
         container.registerExtensionPoint(IConfigScreenFactory.class, ConfigurationScreen::new);
+        // 环动画参数：客户端本机视觉，Mod 菜单可改、保存后热重载（无软依赖，始终注册）
+        container.registerConfig(ModConfig.Type.CLIENT, ToolVisualConfig.SPEC, ToolVisualConfig.FILE_NAME);
+        ToolVisualConfig.attach(modEventBus);
         if (ModList.get().isLoaded("touhou_little_maid")) {
             container.registerConfig(ModConfig.Type.CLIENT, TlmClientConfig.SPEC, TlmClientConfig.FILE_NAME);
             TlmClientConfig.attach(modEventBus);

@@ -105,7 +105,8 @@ src/test/java/com/qiqi/li/
 │   │       └── PendingMaidFavorTest.java  # ⚠️ 源码无类注释
 │   ├── config/
 │   │   ├── GameplayConfigTest.java  # 宿主位置开关的默认值与加载/热重载接线守卫。
-│   │   └── TlmClientConfigTest.java  # ⚠️ 源码无类注释
+│   │   ├── TlmClientConfigTest.java  # ⚠️ 源码无类注释
+│   │   └── ToolVisualConfigTest.java  # 环动画客户端配置的默认值 / 限幅 / 热替换守卫。
 │   ├── container/
 │   │   ├── ContainerAnchorTest.java  # 容器世界锚点的守卫（2026-10-23）。
 │   │   ├── ContainerBoundaryContractTest.java  # 容器边界守卫测试 —— 把 container-boundary.md 的 I-C3 / I-C4 / I-C7 / I-C11 钉成可执行断言。

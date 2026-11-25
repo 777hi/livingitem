@@ -737,7 +737,7 @@ renderStatic(THIRD_PERSON_RIGHT_HAND)     ← MC 摆正（吸收建模差异 + �
 | 横扫 / 暴击 | ✅ | 需冷却满（`f2 > 0.9F`）⇒ 依赖 §5 的手动推进 |
 | 耐久 | ✅ | `Player#attack` 内调 `itemstack.hurtEnemy(...)` ⇒ 走 `hurtAndBreak` 三层 |
 | 模组"不毁"附魔 | ✅ | 同上（`living-tool-tech.md` §2.4） |
-| **位置类附魔效果**（`EnchantmentLocationBasedEffect`） | ❌ **未复刻** | 原版在 `handleEquipmentChanges` 里还调<br>`EnchantmentHelper.runLocationChangedEffects` / `stopLocationBasedEffects`，<br>我们的 `equipTool` 只复刻了修饰符部分。<br>⚠️ 原版内置几乎不用，**主要为模组服务** |
+| **位置类附魔效果**（`EnchantmentLocationBasedEffect`） | ✅ **已补**（曾漏） | `equipTool` 里调 `EnchantmentHelper.stopLocationBasedEffects` / `runLocationChangedEffects`，**只在换武器时触发**（每 tick 触发会叠加）。<br>原版内置几乎不用，**主要为模组服务**。详见 [living-tool-tech.md §13.2](living-tool-tech.md#132-位置类附魔效果只在换了另一把时触发) |
 | `AttackEntityEvent` | ✅ | `CommonHooks.onPlayerAttackTarget`（§4.3） |
 | `Item#onLeftClickEntity` | ✅ | 同上，同一钩子里 |
 | 领地 / 保护插件 | ✅ | FakePlayer UUID = 主人 |

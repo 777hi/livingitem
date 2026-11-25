@@ -16,6 +16,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.config.GameplayConfig;
+import com.qiqi.li.living.config.ToolVisualConfig;
 import com.qiqi.li.living.container.HostRef;
 import com.qiqi.li.living.container.ItemEntityContainerContext;
 import com.qiqi.li.living.domain.tools.LivingToolAction;
@@ -132,26 +133,12 @@ public final class LivingToolModelRenderer {
     //                                            调大 = 平时飘得离宿主更远。
     //  IDLE_HALF_SATURATION     7.0 格          走到"上限一半"所需的射线长度（半饱和点）。
     //
-    //  ── 辅助环（无记忆的工具）────────────────────────────────────────────────
-    //  RING_BACK_OFFSET         0.75 格         环心沿【水平后方】偏移多远。
-    //                                            调小 = 某些视角下穿透脑袋、挡视线。
-    //  RING_HEIGHT              1.7 格          环心高度（【世界竖直】）。
-    //                                            调低 = 半径大时下半环会埋进地面。
-    //  RING_START_ANGLE         +90°            起始角（π/2 = 从正上方起步）。
-    //  RING_RADIUS_MAX=1.77     半径上限（渐近）—— 与下面组成【双曲饱和】。
-    //  RING_RADIUS_HALF_SAT=21  半饱和数量：n = 21 时半径 = 上限的一半（越大=饱和越晚）。
-    //                            半径 = 1.77·n/(n+21) ⇒ 先快后慢（1 把 0.08 / 10 把 0.57 / 36 把 1.12）
-    //
+    //  ── 可调参数（2026-11-26 起走客户端配置）────────────────────────────────
+    //  环大小 / 动画时长全部挪到 ToolVisualConfig（CLIENT 型、Mod 菜单热重载）：
+    //    pulse_ticks / attack_ring_ticks / pulse_scale / spin_period_min|max|divisor /
+    //    return_ticks / ring_radius_max / ring_radius_half_saturation
+    //  ⚠️ 别再从这里读常量 —— 改配置要立即生效；唯一保留的本地常量是下面的 MAX_DISTANCE。
     //  ⚠️ 环【没有朝向参数】—— 法线恒为"水平前方"，斧刃恒朝前。详见常量区说明块。
-    //
-    //  ── 动画（所有形态共用）──────────────────────────────────────────────────
-    //  SPIN_PERIOD_MIN          4 tick/圈       转圈【最快】档。
-    //                                            ⚠️ 别低于 4 —— 60fps 下会走样成倒转/抖动。
-    //  SPIN_PERIOD_MAX          20 tick/圈      转圈【最慢】档（挖得很慢时）。
-    //  SPIN_PERIOD_DIVISOR      10              挖掘预计 tick ÷ 本值 = 转圈周期。
-    //  RETURN_TICKS             8 tick          干完飞回待机位耗时（恒定 ⇒ 越远飞得越快）。
-    //  PULSE_TICKS              6 tick          交互脉冲的时长。
-    //  PULSE_SCALE              0.15            交互脉冲的力度（+15%）。
     //  MAX_DISTANCE             32 格           ⚠️ 别改！必须与 K2 同步半径、原版裂纹广播半径一致。
     // ══════════════════════════════════════════════════════════════════════════════
 
@@ -164,37 +151,19 @@ public final class LivingToolModelRenderer {
     /** 待机位的半饱和长度（格）：射线长等于此值时，待机距离 = 上限的一半。 */
     private static final double IDLE_HALF_SATURATION = 7.0;
 
-    /** 飞回耗时（tick）。<b>恒定</b> ⇒ 距离越远回得越快（自动满足，无需速度函数）。 */
-    private static final int RETURN_TICKS = 8;
-
     /**
-     * 转圈周期下限（tick / 圈）—— 最快。
+     * 脉冲状态簿记（{@link #PULSE_START}）的冻结 / 剪枝窗口。
      *
-     * <p>⚠️ 不能低于 4：60fps 下 1 tick 只有 3 帧，1 tick/圈 = 每帧 120°，
-     * 远超 Nyquist 极限 ⇒ 会看成<b>倒转或抖动</b>（车轮效应）。4 tick/圈 = 每帧 30°，清晰可辨。</p>
-     */
-    private static final int SPIN_PERIOD_MIN = 4;
-
-    /** 转圈周期上限（tick / 圈）—— 最慢。 */
-    private static final int SPIN_PERIOD_MAX = 20;
-
-    /** 「挖掘预计 tick」→ 转圈周期的除数（digTicks / 本值 = 周期，再 clamp）。 */
-    private static final double SPIN_PERIOD_DIVISOR = 10.0;
-
-    /** 缩放脉冲时长（tick）。 */
-    private static final int PULSE_TICKS = 6;
-
-    /** 缩放脉冲的最大放大比例（0.30 = 放大到 1.30 倍；2026-09-24 用户调，原 0.15）。 */
-    private static final float PULSE_SCALE = 0.30F;
-
-    /**
-     * 攻击环的<b>存活窗口</b>（tick）—— 与 {@link #PULSE_TICKS} 相同（2026-09-24 用户定）：
-     * 每次出手 ⇒ 飞到目标处脉冲一下 ⇒ 立刻收回背后，「一下一下扑上去咬」的节奏。
+     * <p>🔴 <b>必须取 {@code pulseTicks} 与 {@code attackRingTicks} 的较大值</b>（2026-11-26 配置化）：
+     * 两者拆成独立配置后，若只按 {@code pulseTicks} 剪枝，而用户把攻击环窗口调得更长 ——
+     * 起点簿记会在脉冲结束那一刻被清掉，下一帧 {@code pulseElapsed} 重新冻结出一个"刚出手"的起点
+     * ⇒ 攻击环<b>永远停在目标处收不回来</b>。取 max 让簿记活到两个消费者中较晚的那个。</p>
      *
-     * <p>⚠️ 窗口 &lt; 武器攻击冷却（剑 12.5 tick）⇒ 连续攻击时环会【飞出去→收回】反复 ——
-     * 这是<b>有意的效果</b>（原先取 20 留在原地反复脉冲，用户看效果后改成了扑咬式）。</p>
+     * <p>默认值两者相等（6）⇒ 与改造前逐位一致。</p>
      */
-    private static final long ATTACK_RING_TICKS = PULSE_TICKS;
+    private static long pulseWindowTicks() {
+        return Math.max(ToolVisualConfig.pulseTicks(), ToolVisualConfig.attackRingTicks());
+    }
 
     /**
      * 模型【立正】修正角 —— 绕 Z 转 {@code -45°}，把「手持斜 45°」建模的贴图长轴立正成 +Y。
@@ -316,35 +285,19 @@ public final class LivingToolModelRenderer {
     private static final double RING_START_ANGLE = Math.PI / 2.0;
 
     /**
-     * 环半径 = BASE + STEP × 数量，再 clamp 到上限（越多环越大）。
+     * 环半径（格）—— 所有环（背后 / 挖掘 / 攻击）共用同一条<b>双曲饱和</b>公式：
+     * <pre>    r(n) = MAX · n / (n + K)</pre>
+     * <p>先快后慢、有上界：1 把 0.08 / 10 把 0.57 / 36 把 1.12（默认值下）。
+     * 历史：曾为线性 {@code BASE + STEP × n}，2026-10-01 改双曲饱和后不再需要 BASE / STEP；
+     * 攻击环的独立起始半径（0.7）也一并退役（手持 display 后剑不再穿模）。</p>
      *
-     * <p>⭐ 调参历程：0.28 → 0.35（背后环混编含剑防穿模）→ 0.7 / 0.007 / 1.40
-     * （背后环更舒展）→ 0.34 / 0.07 / 1.77 → 0.07 / 0.07 / 1.77 →
-     * <b>2026-10-01 用户调：0.07 / 0.007 / 1.77</b>（STEP 再压小 ⇒ 半径几乎恒定，
-     * 单把 0.077、10 把 0.14、100 把 0.77）。</p>
-     *
-     * <p>挖掘环共用同组；攻击环 BASE 独立（0.7）但 STEP / MAX 共用。</p>
+     * <p>⚠️ MAX / K 现在从 {@link ToolVisualConfig} 读（客户端可热调）：
+     * K 越大 = 饱和越晚 ⇒ 起步更紧凑、"随数量铺开"的区间更长。</p>
      */
-    /**
-     * 环半径的<b>渐近上限</b>（格）—— 与 {@link #RING_RADIUS_HALF_SATURATION} 组成双曲饱和。
-     *
-     * <p>⭐ 2026-10-01 用户定：半径改【双曲饱和】{@code r(n) = MAX · n / (n + K)}
-     * （先快后慢、有上界），取代原来的线性 {@code BASE + STEP × n}
-     * ⇒ 不再需要 {@code BASE / STEP}，所有环（背后 / 挖掘 / 攻击）共用同一公式。</p>
-     */
-    private static final double RING_RADIUS_MAX = 1.77;
-
-    /**
-     * 环半径的<b>半饱和数量</b>：物品数 = 本值时半径 = {@link #RING_RADIUS_MAX} 的一半。
-     *
-     * <p>⭐ 调参（用户定）：7 → <b>21</b>（2026-10-01）—— K 越大 = 饱和越晚
-     * ⇒ 起步更紧凑（1 把 0.08）、"随数量铺开"的区间更长（36 把 1.12，仍有余量）。</p>
-     */
-    private static final double RING_RADIUS_HALF_SATURATION = 21.0;
-
-    // ⭐ 攻击环【不再有独立起始半径】（2026-09-30 用户定：与其它环一致）⇒ 统一用
-    //    RING_RADIUS_BASE / STEP / MAX。原 ATTACK_RING_RADIUS_BASE(0.7) 是当初为"剑长穿模"
-    //    调的；渲染链路改成手持 display 后大小已与手上一致，实测不再需要单独放大。
+    private static double ringRadius(int n) {
+        return ToolVisualConfig.ringRadiusMax() * n
+            / (n + ToolVisualConfig.ringRadiusHalfSaturation());
+    }
 
     /** 世界竖直 —— 环平面【竖直】的基准（环内"上"也取它）。 */
     private static final Vec3 WORLD_UP = new Vec3(0.0, 1.0, 0.0);
@@ -441,7 +394,8 @@ public final class LivingToolModelRenderer {
 
         Set<String> seen = new HashSet<>();
         // ⭐ 无记忆的两类分开收集 —— 它们【去不同的环】：活工具 → 挖掘/背后环；活武器 → 攻击环。
-        //   （活斧子两者都满足 ⇒ 靠下面 if / else if 的顺序判为【工具】，不会画两遍。）
+        //   ⚠️ 双身份（活剑 / 活斧）不再靠"先工具后武器"静态归边：刚出手时临时进攻击环列表，
+        //      待机仍留在挖掘/背后环 —— 唯一分流判据见 routeAssistToWeapon（2026-11-13 修）。
         List<ItemStack> assistTools = new ArrayList<>();
         List<ItemStack> assistWeapons = new ArrayList<>();
         // 槽位记录 —— 背后环要按【背包顺序】排布：工具/武器分收集会打乱顺序，合并时靠它恢复
@@ -460,14 +414,16 @@ public final class LivingToolModelRenderer {
             if (stack == mainHand || stack == offHand) {
                 continue;
             }
-            // ⭐ 先判工具、再判武器（活斧子两者都满足 ⇒ 算工具，进挖掘/背后环）
-            if (LivingToolRecorder.isAssistTool(stack)) {
-                assistTools.add(stack);
-                assistSlots.put(stack, slot);
-                continue;
-            }
-            if (LivingToolRecorder.isAssistWeapon(stack)) {
-                assistWeapons.add(stack);
+            // ⭐ 无记忆（工具 ∪ 武器）按【当前行为】动态分流，不再按静态身份"先工具后武器"：
+            //    刚出手的双身份物品（活剑 / 活斧）临时进攻击环（2026-11-13 修，见 routeAssistToWeapon）。
+            if (LivingToolRecorder.isAssistItem(stack)) {
+                if (routeAssistToWeapon(stack, now, level.getGameTime(),
+                        LivingToolRecorder.isAssistWeapon(stack),
+                        LivingToolRecorder.isAssistTool(stack))) {
+                    assistWeapons.add(stack);
+                } else {
+                    assistTools.add(stack);
+                }
                 assistSlots.put(stack, slot);
                 continue;
             }
@@ -513,7 +469,9 @@ public final class LivingToolModelRenderer {
                 //    与补刀收集同口径（只收直接槽位；活背包展开见 TODO 实体宿主节）。
                 if (entry.host().kind() == HostRef.Kind.ENTITY && entry.host().hostSlot() == -1
                         && ToolRenderState.of(stack).memory().isEmpty()) {
-                    // 🔴 工具 / 武器分流判据与 ① 相同（活斧子算工具）。
+                    // ⚠️ 实体宿主直接内容【不在这里静态分流】：工具 ∪ 武器都进 entityRings，
+                    //    由 renderEntityRing 的 splitByAction 按动作戳决定谁去攻击环
+                    //    —— 双身份在这里不会漏（与 ① 的 routeAssistToWeapon 同一效果）。
                     if (LivingToolRecorder.isAssistTool(stack) || LivingToolRecorder.isAssistWeapon(stack)) {
                         entityRings.computeIfAbsent(entry.host().entityId(),
                             k -> new ArrayList<>()).add(stack);
@@ -525,16 +483,18 @@ public final class LivingToolModelRenderer {
                 //   否则它们在物品形态里既没有射线、也不在环上 ⇒ 完全不显示。
                 //   ⚠️ 只收自己的（环是相对某个玩家排布的）；别人的背包仍不画，与现状持平。
                 if (bearer == mc.player && ToolRenderState.of(stack).memory().isEmpty()) {
-                    // 🔴 工具 / 武器必须分流，判据顺序与 ① 相同（活斧子两者都满足 ⇒ 算工具）。
-                    //    全塞 assistTools 的话，武器会被 renderAssistRing 按「对这方块有没有加成」
-                    //    分组（剑默认挖掘速度 1.0 ⇒ 对绝大多数方块恒判待机；挖树叶 / 作物这类
-                    //    #sword_efficient 方块时又是 1.5 ⇒ 反而飞到方块处转圈）⇒
-                    //    打怪时**永远没有攻击环**（2026-10-29 真机：活背包里辅助模式的活武器不飞向目标）。
-                    if (LivingToolRecorder.isAssistTool(stack)) {
-                        assistTools.add(stack);
-                    } else if (LivingToolRecorder.isAssistWeapon(stack)) {
+                    // 🔴 与 ① 同一份动态分流（2026-11-13）：双身份的活剑 / 活斧刚出手时
+                    //    必须进 assistWeapons，否则 renderAttackRing 收不到 ⇒ 打怪没有攻击环。
+                    //    历史：2026-10-29 曾因"全塞 assistTools"修过一次，但只修了本分支；
+                    //    2026-11-07 剑纳入工具判据后，① 背包顶层分支又以同样方式中招。
+                    if (routeAssistToWeapon(stack, now, level.getGameTime(),
+                            LivingToolRecorder.isAssistWeapon(stack),
+                            LivingToolRecorder.isAssistTool(stack))) {
                         assistWeapons.add(stack);
+                    } else if (LivingToolRecorder.isAssistTool(stack)) {
+                        assistTools.add(stack);
                     }
+                    // 非工具非武器：与原逻辑一致 —— 直接 continue，不画
                     continue;
                 }
                 renderOne(mc, poseStack, buffers, level, cameraPos, partialTick, now,
@@ -752,9 +712,8 @@ public final class LivingToolModelRenderer {
         BlockPos target = null;
         for (ItemStack weapon : weapons) {
             LivingToolAction action = ToolRenderState.of(weapon).action();
-            double pulseAge = action == null || action.target() == null
-                ? Double.MAX_VALUE : pulseElapsed(action.tick(), now, gameTime);
-            if (pulseAge < ATTACK_RING_TICKS) {
+            double pulseAge = pulseAgeOf(action, now, gameTime);
+            if (pulseAge < ToolVisualConfig.attackRingTicks()) {
                 attacking.add(weapon);
                 if (action.tick() > latest) {
                     latest = action.tick();
@@ -765,6 +724,59 @@ public final class LivingToolModelRenderer {
             }
         }
         return new ActionSplit(attacking, idle, latest, target);
+    }
+
+    /**
+     * 动作戳的已播时长（tick）—— <b>攻击窗口判据的唯一来源</b>。
+     *
+     * <p>无戳 / {@code target == null}（右键空气、施法）的动作为过期（{@code Double.MAX_VALUE}），
+     * 不参与任何攻击环动画。{@link #splitByAction} 与 {@link #attackingWindow} 共用本方法，
+     * 改窗口口径只需改这里与 {@link ToolVisualConfig#attackRingTicks()} —— 不许多处各写一遍。</p>
+     */
+    static double pulseAgeOf(@Nullable LivingToolAction action, double now, long gameTime) {
+        return action == null || action.target() == null
+            ? Double.MAX_VALUE : pulseElapsed(action.tick(), now, gameTime);
+    }
+
+    /**
+     * 双身份物品（无记忆活剑 / 活斧）此刻是否正在【攻击窗口】内 —— 攻击环优先分流的判据本体。
+     *
+     * <p>🔴 <b>事故（2026-11-13）</b>：2026-11-07 剑经 {@code SWORD_DIG} 纳入工具判据后，
+     * 无记忆活剑同时满足 {@code isAssistTool} / {@code isAssistWeapon}；收集端"先工具后武器"
+     * 的静态分流把它全塞进挖掘/背后环列表 ⇒ 服务端明明写了动作戳，客户端 {@code assistWeapons}
+     * 却收不到这把剑 ⇒ <b>辅助攻击时永远没有攻击环</b>（活斧子更早就是这样）。
+     * 收集阶段改问本方法：刚出手的双身份物品临时划归武器列表，其余维持原口径。</p>
+     *
+     * <p>窗口判据与 {@link #splitByAction} 同源（{@link #pulseAgeOf}）—— 物品进了武器列表后，
+     * 渲染时会不会真的飞到目标处，两处结论必须一致。</p>
+     */
+    static boolean attackingWindow(ItemStack stack, double now, long gameTime) {
+        return pulseAgeOf(ToolRenderState.of(stack).action(), now, gameTime)
+            < ToolVisualConfig.attackRingTicks();
+    }
+
+    /**
+     * 无记忆活物品进【攻击环】还是【挖掘/背后环】的唯一分流判据。
+     *
+     * <p>两个身份判定作<b>入参</b>传入（调用方负责取 {@code isAssistWeapon} / {@code isAssistTool}）——
+     * 分流逻辑本身是纯函数，可被单测直接钉住（FML 单测不加载 item tags，标签判据在测试里恒 false）。</p>
+     *
+     * <ul>
+     *   <li><b>纯武器</b>（非工具身份）⇒ 恒走攻击环路径</li>
+     *   <li><b>纯工具</b> ⇒ 恒走挖掘/背后环</li>
+     *   <li><b>双身份</b>（活剑 / 活斧）⇒ 只有 {@link #attackingWindow} 为真时才临时走攻击环；
+     *       待机时仍算工具（能挖树叶 / 参与背后环），不重复上两个环。</li>
+     * </ul>
+     */
+    static boolean routeAssistToWeapon(ItemStack stack, double now, long gameTime,
+                                       boolean weaponIdentity, boolean toolIdentity) {
+        if (!weaponIdentity) {
+            return false;
+        }
+        if (!toolIdentity) {
+            return true;   // 纯武器（无挖掘身份）⇒ 一贯走攻击环路径
+        }
+        return attackingWindow(stack, now, gameTime);   // 双身份 ⇒ 看当前是否在攻击
     }
 
     /**
@@ -789,11 +801,13 @@ public final class LivingToolModelRenderer {
     /** 出手瞬间的缩放脉冲：{@code age} 进窗内按正弦胀出，过窗回落 1.0。 */
     static float pulseScaleOf(long latestTick, double now, long gameTime) {
         float age = (float) pulseElapsed(latestTick, now, gameTime);
-        if (age >= PULSE_TICKS) {
+        float pulseTicks = ToolVisualConfig.pulseTicks();
+        if (age >= pulseTicks) {
             return 1.0F;
         }
-        float t = age / PULSE_TICKS;
-        return 1.0F + PULSE_SCALE * (float) Math.sin(Math.PI * Mth.clamp(t, 0.0F, 1.0F));
+        float t = age / pulseTicks;
+        return 1.0F + ToolVisualConfig.pulseScale()
+            * (float) Math.sin(Math.PI * Mth.clamp(t, 0.0F, 1.0F));
     }
 
     /**
@@ -906,7 +920,7 @@ public final class LivingToolModelRenderer {
         // ⭐ 半径 = 【双曲饱和】MAX · n / (n + K)：先快后慢，渐近上限（永远达不到）。
         //    与射线待机距离同一口径（IDLE_MAX_OFFSET / IDLE_HALF_SATURATION）。
         //    1 把 0.08 / 10 把 0.57 / 21 把 0.89（上限一半）/ 36 把 1.12。
-        double radius = RING_RADIUS_MAX * n / (n + RING_RADIUS_HALF_SATURATION);
+        double radius = ringRadius(n);
         for (int i = 0; i < n; i++) {
             double angle = RING_START_ANGLE + Math.PI * 2.0 * i / n;
             // 径向（圆心 → 物品）：只决定【位置】
@@ -1005,7 +1019,7 @@ public final class LivingToolModelRenderer {
             spinRad = spinAngle(now, period);
             remember(key, now, pos);
         } else if (action != null && action.target() != null
-            && pulseElapsed(action.tick(), now, level.getGameTime()) < PULSE_TICKS) {
+            && pulseElapsed(action.tick(), now, level.getGameTime()) < ToolVisualConfig.pulseTicks()) {
             // 交互 / 攻击：瞬现到目标位 + 缩放脉冲（不转圈）。
             //   交互（右键）由 replayUse 写 target；活武器攻击由 replayAttack 写【生物所在格】
             //   —— 两者动画同款（用户 2026-09-24 定："有记忆的，像活工具的交互动画一样"）。
@@ -1013,14 +1027,17 @@ public final class LivingToolModelRenderer {
             // ⚠️ target == null（右键空气 / 物品施法）【不能走这条】⇒ 跳过脉冲，模型留在原位。
             //    （surfacePoint 本身永不返回 null —— clip 未命中就退回格心 ⇒ 空中目标也安全。）
             pos = surfacePoint(level, origin, action.target());
-            float t = (float) (pulseElapsed(action.tick(), now, level.getGameTime()) / PULSE_TICKS);
-            scale = 1.0F + PULSE_SCALE * (float) Math.sin(Math.PI * Mth.clamp(t, 0.0F, 1.0F));
+            float t = (float) (pulseElapsed(action.tick(), now, level.getGameTime())
+                / ToolVisualConfig.pulseTicks());
+            scale = 1.0F + ToolVisualConfig.pulseScale()
+                * (float) Math.sin(Math.PI * Mth.clamp(t, 0.0F, 1.0F));
             remember(key, now, pos);
         } else {
             WorkMemo memo = WORK_MEMO.get(key);
-            if (memo != null && now - memo.lastWorkTick < RETURN_TICKS) {
+            int returnTicks = ToolVisualConfig.returnTicks();
+            if (memo != null && now - memo.lastWorkTick < returnTicks) {
                 // 干完了，飞回待机位（缓出）
-                double t = (now - memo.lastWorkTick) / RETURN_TICKS;
+                double t = (now - memo.lastWorkTick) / returnTicks;
                 pos = memo.workPos.lerp(idlePos, easeOut(t));
             } else {
                 pos = idlePos;   // 待机：不动
@@ -1161,28 +1178,34 @@ public final class LivingToolModelRenderer {
      * 动作脉冲的已播时长（tick）。
      *
      * <p>起点在<b>首次见到该动作戳</b>时冻结：此刻用「客户端 gameTime − 动作戳」估计已播多久
-     * （钳到 [0, {@link #PULSE_TICKS}]，陈旧动作 ⇒ 直接判过期，不重播），之后逐帧只靠
+     * （钳到 [0, {@link #pulseWindowTicks()}]，陈旧动作 ⇒ 直接判过期，不重播），之后逐帧只靠
      * 本地时钟推进 ⇒ gameTime 每秒的同步跳变不再撕扯脉冲进度（老实现每帧都拿 gameTime
      * 去减服务端戳，6t 窗口里跳 1~2 tick = 进度跳 17~33%）。</p>
      */
     static double pulseElapsed(long actionTick, double now, long gameTimeNow) {
         double start = PULSE_START.computeIfAbsent(actionTick,
-            k -> now - Mth.clamp(gameTimeNow - (double) actionTick, 0.0, (double) PULSE_TICKS));
+            k -> now - Mth.clamp(gameTimeNow - (double) actionTick, 0.0, (double) pulseWindowTicks()));
         return now - start;
     }
 
-    /** 过窗的动作起点簿记即无用（唯一用途是「还在脉冲窗口内」判定），逐帧剪枝。 */
+    /**
+     * 过窗的动作起点簿记即无用，逐帧剪枝。
+     *
+     * <p>⚠️ 阈值用 {@link #pulseWindowTicks()} 而非单一脉冲时长 —— 见该方法的联动说明。</p>
+     */
     static void prunePulseStarts(double now) {
-        PULSE_START.values().removeIf(start -> now - start > PULSE_TICKS);
+        PULSE_START.values().removeIf(start -> now - start > pulseWindowTicks());
     }
 
     /** 挖掘预计 tick → 转圈周期（挖得越快转得越快）。 */
     private static int spinPeriod(@Nullable Integer digTicks) {
+        int min = ToolVisualConfig.spinPeriodMin();
+        int max = Math.max(min, ToolVisualConfig.spinPeriodMax());   // 用户把 max 调低于 min 时以 min 为准
         if (digTicks == null) {
-            return SPIN_PERIOD_MAX;
+            return max;
         }
-        return Mth.clamp((int) Math.ceil(digTicks / SPIN_PERIOD_DIVISOR),
-            SPIN_PERIOD_MIN, SPIN_PERIOD_MAX);
+        float divisor = ToolVisualConfig.spinPeriodDivisor();
+        return Mth.clamp((int) Math.ceil(digTicks / divisor), min, max);
     }
 
     /** 缓出：起步快、落位慢，有"落位感"。 */

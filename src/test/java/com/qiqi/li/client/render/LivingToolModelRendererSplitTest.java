@@ -1,6 +1,7 @@
 package com.qiqi.li.client.render;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -36,6 +37,7 @@ class LivingToolModelRendererSplitTest {
     void tearDown() {
         // 项目红线：静态状态必须显式 reset（Gradle 同一 JVM 跑全部测试）
         LivingToolModelRenderer.clearAnimationState();
+        com.qiqi.li.living.config.ToolVisualConfig.resetForTest();
     }
 
     private static ItemStack weaponWithAction(long tick, BlockPos target) {
@@ -123,5 +125,103 @@ class LivingToolModelRendererSplitTest {
 
         float stale = LivingToolModelRenderer.pulseScaleOf(GAME_TIME - 100, NOW, GAME_TIME);
         assertEquals(1.0F, stale, 1.0E-6F);
+    }
+
+    // ── 双身份动态分流（2026-11-13 回归）────────────────────────────────────
+    // 两个身份都作为入参传入：FML 单测不加载 item tags，标签/活化判据在测试里恒 false（环境性），
+    // 故这里用显式布尔模拟身份命中，钉住分流逻辑本身。
+
+    @Test
+    @DisplayName("双身份·无动作戳 ⇒ 待机仍算工具，不占攻击环")
+    void dualIdentity_idle_staysTool() {
+        ItemStack sword = new ItemStack(Items.DIAMOND_SWORD);
+
+        assertFalse(LivingToolModelRenderer.attackingWindow(sword, NOW, GAME_TIME));
+        assertFalse(LivingToolModelRenderer.routeAssistToWeapon(sword, NOW, GAME_TIME, true, true),
+            "待机双身份物品应留在挖掘/背后环，避免同一个在两环各画一次");
+    }
+
+    @Test
+    @DisplayName("双身份·刚出手 ⇒ 临时划归武器列表（攻击环收得到输入）")
+    void dualIdentity_freshAction_routesToAttackRing() {
+        ItemStack sword = weaponWithAction(GAME_TIME, BlockPos.containing(5.5, 2.5, 5.5));
+
+        assertTrue(LivingToolModelRenderer.attackingWindow(sword, NOW, GAME_TIME));
+        assertTrue(LivingToolModelRenderer.routeAssistToWeapon(sword, NOW, GAME_TIME, true, true),
+            "打怪时活剑/活斧必须进 assistWeapons，否则渲染端永远没有攻击环");
+    }
+
+    @Test
+    @DisplayName("双身份·陈旧戳 / 空目标 ⇒ 回工具环；纯工具恒不进攻击环")
+    void dualIdentity_staleAndPureTool_stayTool() {
+        ItemStack stale = weaponWithAction(GAME_TIME - 100, BlockPos.containing(1, 2, 3));
+        assertFalse(LivingToolModelRenderer.routeAssistToWeapon(stale, NOW, GAME_TIME, true, true));
+
+        ItemStack nullTarget = weaponWithAction(GAME_TIME, null);
+        assertFalse(LivingToolModelRenderer.routeAssistToWeapon(nullTarget, NOW, GAME_TIME, true, true));
+
+        ItemStack pickaxe = new ItemStack(Items.DIAMOND_PICKAXE);
+        assertFalse(LivingToolModelRenderer.routeAssistToWeapon(pickaxe, NOW, GAME_TIME, false, true),
+            "纯工具没有武器身份 ⇒ 恒走挖掘/背后环");
+    }
+
+    @Test
+    @DisplayName("纯武器（非工具身份）⇒ 恒走攻击环路径，与是否出手无关")
+    void pureWeapon_alwaysRoutesToWeapon() {
+        ItemStack weapon = new ItemStack(Items.DIAMOND_SWORD);
+
+        assertTrue(LivingToolModelRenderer.routeAssistToWeapon(weapon, NOW, GAME_TIME, true, false));
+    }
+
+    @Test
+    @DisplayName("窗口判据同源：attackingWindow 与 splitByAction 结论必须一致")
+    void windowCriteria_agreeWithSplit() {
+        BlockPos target = BlockPos.containing(7.5, 3.5, 9.5);
+        List<ItemStack> cases = List.of(
+            weaponWithAction(GAME_TIME, target),         // 刚出手
+            weaponWithAction(GAME_TIME - 100, target),   // 陈旧戳
+            weaponWithAction(GAME_TIME, null),           // 空目标
+            new ItemStack(Items.IRON_AXE));              // 无戳
+
+        for (ItemStack weapon : cases) {
+            boolean viaWindow = LivingToolModelRenderer.attackingWindow(weapon, NOW, GAME_TIME);
+            boolean viaSplit = !LivingToolModelRenderer.splitByAction(
+                List.of(weapon), NOW, GAME_TIME).attacking().isEmpty();
+            assertEquals(viaSplit, viaWindow,
+                "两处窗口判据必须同源，否则双身份物品进了武器列表却飞不到目标");
+        }
+    }
+
+    // ── 配置化联动（2026-11-26）─────────────────────────────────────────────
+
+    @Test
+    @DisplayName("攻击环调长后必须能收回：簿记剪枝用 max(脉冲, 攻击环)")
+    void longerAttackRing_stillExpires() {
+        // 模拟用户把攻击环从 6 调到 20、脉冲保持 6
+        com.qiqi.li.living.config.ToolVisualConfig.applyForTest(
+            6, 20, 0.30F, 4, 20, 10.0F, 8, 1.77F, 21.0F);
+        try {
+            long actionTick = GAME_TIME;
+            // 首次见到戳（无同步延迟）⇒ 已播时长 = 0
+            double age0 = LivingToolModelRenderer.pulseElapsed(actionTick, NOW, actionTick);
+            assertEquals(0.0, age0, 1.0E-6F);
+
+            // 推进 10 tick：脉冲早结束但攻击环仍在窗口内 ⇒ 簿记不能被清掉
+            double now10 = NOW + 10;
+            LivingToolModelRenderer.prunePulseStarts(now10);
+            assertEquals(10.0, LivingToolModelRenderer.pulseElapsed(actionTick, now10, actionTick + 10),
+                1.0E-6, "起点若被提前清掉，下一帧会重冻成'刚出手'⇒ 环永远不收回");
+
+            // 推进到 21 tick：超过攻击环窗口 ⇒ 簿记应被清掉、戳过期
+            double now21 = NOW + 21;
+            LivingToolModelRenderer.prunePulseStarts(now21);
+            double age21 = LivingToolModelRenderer.pulseElapsed(actionTick, now21, actionTick + 21);
+            // 剪枝后重算起点 = now - clamp(gameTime - 戳, 0, 20) = now - 20 ⇒ age 恰为 20（=窗口，不再算在窗口内）
+            assertEquals(20.0, age21, 1.0E-6F, "清掉后重算应判为已过期");
+            assertFalse(LivingToolModelRenderer.attackingWindow(
+                weaponWithAction(actionTick, BlockPos.containing(1, 2, 3)), now21, actionTick + 21));
+        } finally {
+            com.qiqi.li.living.config.ToolVisualConfig.resetForTest();
+        }
     }
 }
