@@ -1024,7 +1024,7 @@ public class ContainerLivingItemHandler {
      * @param pos 容器方块位置
      * @param handler 已获取的 IItemHandler（如果为 null 则从能力系统获取）
      * @param processedHandlers 已处理的 IItemHandler 去重集合
-     * @param processedKeys 已处理的 containerKey 去重集合
+     * @param processedKeys 已处理的容器缓存键去重集合（带维度）
      * @return 是否成功处理了该容器
      */
     public static boolean processContainerAt(Level level, BlockPos pos, IItemHandler handler,
@@ -1038,7 +1038,7 @@ public class ContainerLivingItemHandler {
 
         TickableContainerContext context = resolveContextAt(level, pos, handler);
         if (context == null) return false;
-        if (processedKeys != null && !processedKeys.add(context.getContainerKey())) return false;
+        if (processedKeys != null && !processedKeys.add(context.getCacheKey())) return false;
 
         processIsolated(context, level);
         return true;

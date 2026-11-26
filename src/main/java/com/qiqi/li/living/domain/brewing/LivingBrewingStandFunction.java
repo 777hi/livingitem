@@ -1,6 +1,5 @@
 package com.qiqi.li.living.domain.brewing;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -10,7 +9,9 @@ import com.qiqi.li.living.api.HasDirection;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
-import com.qiqi.li.living.container.ContainerContexts;
+import com.qiqi.li.living.container.ContainerKeys;
+import com.qiqi.li.living.container.ContainerKind;
+import com.qiqi.li.living.container.ContainerViewers;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.container.TickableContainerContext;
 import com.qiqi.li.living.domain.brewing.BrewingStandSegment.BrewingRuntime;
@@ -201,13 +202,8 @@ public class LivingBrewingStandFunction implements LivingItemFunction, HasDirect
      * 批次完成时给「正在照看这台机器的人」播原版酿造完成音（{@code block.brewing_stand.brew}，
      * 对齐原版 {@code BrewingStandBlockEntity.doBrew} 的 {@code levelEvent 1035}）。
      *
-     * <p><b>为什么只发查看者、不做半径广播</b>：原版玩家站在方块旁 ⇒ 等价于「开着这个容器的 GUI」；
-     * 而活酿造台可能在玩家的背包 / 远处箱子里，按位置广播（16 格）要么听不到（在背包里人走远了）、
-     * 要么扰民（不该由远处的路人承担）。⇒ 判定 = {@link ContainerContexts#isViewing}；
-     * 背包 / 末影箱容器（无 BE）直接发主人本人 —— 自己的酿造完成自己听见，不管开没开 GUI。</p>
-     *
-     * <p>位置取容器方块中心；背包容器取玩家自身位置。客户端按距离衰减（{@code ClientboundSoundPacket}
-     * 是位置音）⇒ 离箱子远就轻，符合直觉。</p>
+     * <p>世界容器只发给查看者；背包 / 末影箱直接发给主人，不要求打开界面。</p>
+     * <p>方块容器取方块中心；无方块位置时取接收者自身位置。</p>
      */
     private static void playBrewSound(ContainerContext ctx, Level level) {
         if (level.isClientSide) return;
@@ -223,34 +219,27 @@ public class LivingBrewingStandFunction implements LivingItemFunction, HasDirect
                 Vec3 p = viewer.position();                              // 背包容器：音就在人身上
                 x = p.x; y = p.y; z = p.z;
             }
-            viewer.connection.send(new ClientboundSoundPacket(
-                Holder.direct(SoundEvents.BREWING_STAND_BREW), SoundSource.BLOCKS,
-                x, y, z, 1.0F, 1.0F, level.random.nextLong()));
+            if (viewer.connection != null) {
+                viewer.connection.send(new ClientboundSoundPacket(
+                    Holder.direct(SoundEvents.BREWING_STAND_BREW), SoundSource.BLOCKS,
+                    x, y, z, 1.0F, 1.0F, level.getRandom().nextLong()));
+            }
         }
     }
 
-    /** 音效目标：背包容器 ⇒ 主人本人；世界容器 ⇒ 正在查看它的玩家（{@code isViewing}）。 */
     private static List<ServerPlayer> brewSoundTargets(ContainerContext ctx, Level level) {
         Player owner = ctx.getOwnerPlayer();
         if (owner != null) {
-            return (owner instanceof ServerPlayer sp && sp.connection != null) ? List.of(sp) : List.of();
+            return owner instanceof ServerPlayer sp ? List.of(sp) : List.of();
         }
-        // tick 路径传入的运行时类型必为 TickableContainerContext（processContext 的入口契约），
-        // 但 tick() 的签名是 ContainerContext ⇒ 这里做带注释的收窄取关联 BE
         if (!(ctx instanceof TickableContainerContext tickable)) return List.of();
-        // 按**位置**匹配 viewer（I-C5）—— 不再要求 BE 是原版 Container
-        List<BlockPos> positions = tickable.getAssociatedBlockPositions();
-        if (positions.isEmpty()) return List.of();
+        String key = tickable.getCacheKey();
+        var kind = ContainerKeys.kindOf(key);
+        if (kind != ContainerKind.WORLD_BLOCK && kind != ContainerKind.ENTITY) return List.of();
         var server = level.getServer();
         if (server == null) return List.of();
 
-        List<ServerPlayer> out = new ArrayList<>();
-        for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-            if (p.connection != null && ContainerContexts.isViewingPositions(p, positions)) {
-                out.add(p);
-            }
-        }
-        return out;
+        return ContainerViewers.of(server.getPlayerList().getPlayers(), key, tickable.getAssociatedBlockPositions());
     }
 
     // ==================== 世界侧辅助 ====================

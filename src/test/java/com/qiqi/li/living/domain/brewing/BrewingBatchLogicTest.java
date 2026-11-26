@@ -2,22 +2,67 @@ package com.qiqi.li.living.domain.brewing;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
+import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
+import com.qiqi.li.living.api.LivingItemFunction.SlotEntry;
+import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.container.ContainerContexts;
+import com.qiqi.li.living.container.ContainerLivingItemHandler;
+import com.qiqi.li.living.container.TickContext;
+import com.qiqi.li.living.container.TickableContainerContext;
+import com.qiqi.li.living.domain.brewing.BrewingStandSegment.BrewingRuntime;
+import com.qiqi.li.living.runtime.ContainerRuntimeCache;
+import com.qiqi.li.living.runtime.RuntimeSegments;
+
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.network.protocol.game.ClientboundSoundPacket;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.network.ServerGamePacketListenerImpl;
+import net.minecraft.server.players.PlayerList;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.util.RandomSource;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.vehicle.MinecartChest;
+import net.minecraft.world.flag.FeatureFlags;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.InventoryMenu;
+import net.minecraft.world.inventory.PlayerEnderChestContainer;
+import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.alchemy.PotionBrewing;
+import net.minecraft.world.item.alchemy.PotionContents;
+import net.minecraft.world.item.alchemy.Potions;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.ChestBlockEntity;
+import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.items.wrapper.InvWrapper;
 
-/**
- * 活酿造台批次状态机的纯逻辑测试。
- *
- * <p>判据来源：原版 {@code BrewingStandBlockEntity.serverTick}（设计稿 §1.6 / §4.5）+ D7 / D8 / D11。
- * 每条断言都对应一条已定案的规则，避免「实现漂移」。</p>
- */
+/** 活酿造台批次状态机及完成音效测试。 */
 class BrewingBatchLogicTest {
 
     private static final Item WART = Items.NETHER_WART;
@@ -27,6 +72,160 @@ class BrewingBatchLogicTest {
 
     private static final Optional<Item> NO_BATCH = Optional.empty();
     private static final Optional<Item> WART_BATCH = Optional.of(WART);
+
+    private static final BlockPos CHEST_POS = new BlockPos(24, 64, -16);
+    private static final int STAND_SLOT = 13;
+    private static final int BOTTLE_SLOT = 4;
+    private static final int INGREDIENT_SLOT = 14;
+
+    @Test
+    @DisplayName("世界容器酿造完成：同坐标箱子只给本维度的查看者播放原版音效")
+    void completedWorldBatch_playsSoundOnlyInItsDimension() {
+        MinecraftServer server = mock(MinecraftServer.class);
+        PlayerList playerList = mock(PlayerList.class);
+        when(server.getPlayerList()).thenReturn(playerList);
+        ServerLevel overworld = brewingLevel(server, Level.OVERWORLD);
+        ServerLevel nether = brewingLevel(server, Level.NETHER);
+        ServerPlayer viewer = soundPlayer(overworld);
+        ServerPlayer netherViewer = soundPlayer(nether);
+        ChestMenu menu = openChest(viewer, overworld);
+        openChest(netherViewer, nether);
+        when(playerList.getPlayers()).thenReturn(List.of(viewer, netherViewer));
+        var context = ContainerContexts.resolve(viewer, menu.slots.getFirst());
+
+        finishBatch(context, overworld);
+
+        assertBrewSound(viewer, Vec3.atCenterOf(CHEST_POS));
+        verifyNoInteractions(netherViewer.connection);
+    }
+
+    @Test
+    @DisplayName("实体容器酿造完成：同位箱子矿车只给实际宿主的查看者播放音效")
+    void completedEntityBatch_playsSoundOnlyForItsHostViewer() {
+        MinecraftServer server = mock(MinecraftServer.class);
+        PlayerList playerList = mock(PlayerList.class);
+        when(server.getPlayerList()).thenReturn(playerList);
+        ServerLevel level = brewingLevel(server, Level.OVERWORLD);
+        ServerPlayer viewer = soundPlayer(level);
+        ServerPlayer otherViewer = soundPlayer(level);
+        Vec3 position = Vec3.atCenterOf(CHEST_POS);
+        when(viewer.position()).thenReturn(position);
+        when(otherViewer.position()).thenReturn(position);
+        var menu = openChestMinecart(viewer, level, position);
+        openChestMinecart(otherViewer, level, position);
+        when(playerList.getPlayers()).thenReturn(List.of(viewer, otherViewer));
+        var context = ContainerContexts.resolve(viewer, menu.slots.getFirst());
+
+        finishBatch(context, level);
+
+        assertBrewSound(viewer, position);
+        verifyNoInteractions(otherViewer.connection);
+    }
+
+    @Test
+    @DisplayName("末影箱酿造完成：主人未开末影箱也直接收到音效，旁人不收")
+    void completedOwnedBatch_playsSoundForOwnerWithoutOpenMenu() {
+        MinecraftServer server = mock(MinecraftServer.class);
+        PlayerList playerList = mock(PlayerList.class);
+        when(server.getPlayerList()).thenReturn(playerList);
+        ServerLevel level = brewingLevel(server, Level.OVERWORLD);
+        ServerPlayer owner = soundPlayer(level);
+        ServerPlayer bystander = soundPlayer(level);
+        when(playerList.getPlayers()).thenReturn(List.of(owner, bystander));
+        Vec3 ownerPosition = new Vec3(8.25, 64.5, -3.75);
+        when(owner.position()).thenReturn(ownerPosition);
+        PlayerEnderChestContainer enderChest = new PlayerEnderChestContainer();
+        when(owner.getEnderChestInventory()).thenReturn(enderChest);
+        var context = ContainerContexts.resolve(owner, new Slot(enderChest, 0, 0, 0));
+
+        finishBatch(context, level);
+
+        assertBrewSound(owner, ownerPosition);
+        verifyNoInteractions(bystander.connection);
+    }
+
+    private static ServerLevel brewingLevel(MinecraftServer server, ResourceKey<Level> dimension) {
+        ServerLevel level = mock(ServerLevel.class);
+        when(level.dimension()).thenReturn(dimension);
+        when(level.getServer()).thenReturn(server);
+        PotionBrewing.Builder recipes = new PotionBrewing.Builder(FeatureFlags.VANILLA_SET);
+        recipes.addContainer(Items.POTION);
+        recipes.addMix(Potions.WATER, WART, Potions.AWKWARD);
+        PotionBrewing brewing = recipes.build();
+        when(level.potionBrewing()).thenReturn(brewing);
+        when(level.getRandom()).thenReturn(RandomSource.create(42));
+        return level;
+    }
+
+    private static ServerPlayer soundPlayer(ServerLevel level) {
+        ServerPlayer player = mock(ServerPlayer.class);
+        when(player.level()).thenReturn(level);
+        when(player.serverLevel()).thenReturn(level);
+        when(player.getStringUUID()).thenReturn(UUID.randomUUID().toString());
+        when(player.isSpectator()).thenReturn(true);
+        Inventory inventory = new Inventory(player);
+        when(player.getInventory()).thenReturn(inventory);
+        player.containerMenu = new InventoryMenu(inventory, false, player);
+        player.connection = mock(ServerGamePacketListenerImpl.class);
+        return player;
+    }
+
+    private static ChestMenu openChest(ServerPlayer viewer, ServerLevel level) {
+        ChestBlockEntity chest = new ChestBlockEntity(CHEST_POS, Blocks.CHEST.defaultBlockState());
+        chest.setLevel(level);
+        when(level.getBlockEntity(CHEST_POS)).thenReturn(chest);
+        when(level.getBlockState(CHEST_POS)).thenReturn(chest.getBlockState());
+        doReturn(new InvWrapper(chest)).when(level).getCapability(Capabilities.ItemHandler.BLOCK, CHEST_POS, null);
+        ChestMenu menu = ChestMenu.threeRows(1, viewer.getInventory(), chest);
+        viewer.containerMenu = menu;
+        return menu;
+    }
+
+    private static AbstractContainerMenu openChestMinecart(ServerPlayer viewer, ServerLevel level, Vec3 position) {
+        MinecartChest cart = spy(new MinecartChest(level, position.x, position.y, position.z));
+        doReturn(new InvWrapper(cart)).when(cart).getCapability(Capabilities.ItemHandler.ENTITY);
+        when(level.getEntity(cart.getUUID())).thenReturn(cart);
+        var menu = cart.createMenu(1, viewer.getInventory());
+        viewer.containerMenu = menu;
+        return menu;
+    }
+
+    private static void finishBatch(TickableContainerContext context, ServerLevel level) {
+        assertNotNull(context);
+        ItemStack stand = new ItemStack(Items.BREWING_STAND);
+        LivingItemManager.setLiving(stand, true);
+        ItemStack water = PotionContents.createItemStack(Items.POTION, Potions.WATER);
+        TickContext tick = new TickContext(context);
+        context.setTickContext(tick);   // 只驱动功能 tick，不另行 flush 槽位同步包。
+        String key = context.getCacheKey();
+        try {
+            context.setItem(STAND_SLOT, stand);
+            context.setItem(BOTTLE_SLOT, water);
+            context.setItem(INGREDIENT_SLOT, new ItemStack(WART));
+            ContainerRuntimeCache.update(context, STAND_SLOT, RuntimeSegments.EMPTY.with(
+                BrewingStandSegment.INSTANCE, new BrewingRuntime(1, WART_BATCH)));
+
+            new LivingBrewingStandFunction().tick(
+                List.of(new SlotEntry(STAND_SLOT, context.getItem(STAND_SLOT))), context, tick, level);
+
+            assertEquals(new PotionContents(Potions.AWKWARD),
+                context.getItem(BOTTLE_SLOT).get(DataComponents.POTION_CONTENTS), "实际酿造必须完成");
+            assertTrue(context.getItem(INGREDIENT_SLOT).isEmpty(), "完成时实际扣除材料");
+        } finally {
+            context.setTickContext(null);
+            ContainerRuntimeCache.removeContainer(key);
+            ContainerLivingItemHandler.clearAllCaches();
+        }
+    }
+
+    private static void assertBrewSound(ServerPlayer viewer, Vec3 position) {
+        var sent = ArgumentCaptor.forClass(ClientboundSoundPacket.class);
+        verify(viewer.connection).send(sent.capture());
+        ClientboundSoundPacket packet = sent.getValue();
+        assertEquals(SoundEvents.BREWING_STAND_BREW, packet.getSound().value());
+        assertEquals(SoundSource.BLOCKS, packet.getSource());
+        assertEquals(position, new Vec3(packet.getX(), packet.getY(), packet.getZ()));
+    }
 
     // ---------------- 启动（D7：启动扣 1 次燃料）----------------
 

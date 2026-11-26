@@ -1,5 +1,6 @@
 package com.qiqi.li.living.compat.sophisticated;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -9,15 +10,28 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+
+import java.lang.reflect.Field;
+import java.util.List;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.network.ServerGamePacketListenerImpl;
+import net.minecraft.server.players.PlayerList;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
@@ -26,9 +40,13 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.items.ItemStackHandler;
+import net.neoforged.neoforge.items.SlotItemHandler;
+import net.neoforged.neoforge.items.wrapper.RangedWrapper;
 import net.p3pp3rf1y.sophisticatedbackpacks.backpack.BackpackBlockEntity;
 import net.p3pp3rf1y.sophisticatedbackpacks.backpack.BackpackItem;
 import net.p3pp3rf1y.sophisticatedbackpacks.backpack.wrapper.BackpackWrapper;
@@ -38,10 +56,15 @@ import net.p3pp3rf1y.sophisticatedbackpacks.common.gui.BackpackContext;
 
 import com.qiqi.li.living.container.ContainerAnchor;
 import com.qiqi.li.living.container.ContainerContexts;
+import com.qiqi.li.living.container.ContainerKeys;
+import com.qiqi.li.living.container.ContainerLivingItemHandler;
 import com.qiqi.li.living.container.ContainerUuids;
+import com.qiqi.li.living.container.ContainerViewers;
 import com.qiqi.li.living.container.ItemFormContainerContext;
 import com.qiqi.li.living.container.ItemFormContainers;
 import com.qiqi.li.living.container.MenuSlotOwners;
+import com.qiqi.li.living.container.TickContext;
+import com.qiqi.li.living.container.TickableContainerContext;
 
 /**
  * 精妙背包来源的守卫（2026-10-23）—— 重点是 {@link SophisticatedBackpackSource#handleOfMenu}
@@ -445,6 +468,131 @@ class SophisticatedBackpackSourceTest {
         assertNull(ItemFormContainers.contextOf(menu, owner));
         assertFalse(ItemFormContainers.isItemContentMenu(menu, owner));
         assertNull(ItemFormContainers.handleOf(menu, owner));
+    }
+
+    @ParameterizedTest(name = "子菜单有 UUID：{0}")
+    @ValueSource(booleans = {true, false})
+    @DisplayName("精妙子背包的原生位置不能订阅 parent BE 快照或槽位")
+    void snapshotViewer_blockSubBackpackNeverViewsParent(boolean hasUuid) throws ReflectiveOperationException {
+        ItemStack parent = livingBackpack();
+        ItemStack child = hasUuid ? livingBackpack() : backpack();
+        PositionedBackpack placed = new PositionedBackpack(parent);
+        var parentContext = new BackpackContext.Block(BackpackWrapper.fromStack(parent), placed.pos);
+        BackpackContainer menu = new BackpackContainer(
+            new BackpackContext.BlockSubBackpack(BackpackWrapper.fromStack(child), placed.pos, parentContext));
+        ItemStack original = new ItemStack(Items.APPLE, 2);
+        placed.open(menu, child, original);
+        assertEquals(placed.pos, menu.getBlockPosition().orElseThrow(), "上游会报告外层坐标");
+
+        withMenuResolver(menu, () -> {
+            if (hasUuid) {
+                String childKey = ContainerKeys.cuuidKey(ContainerUuids.ofItem(child));
+                assertEquals(List.of(placed.viewer), ContainerViewers.of(List.of(placed.viewer), childKey, List.of()));
+            } else {
+                assertNull(ItemFormContainers.handleOf(menu, placed.viewer));
+            }
+            placed.flushDirtySlot();
+            assertAll(
+                () -> assertEquals(List.of(), placed.blockViewers()),
+                () -> verifyNoInteractions(placed.viewer.connection),
+                () -> assertTrue(ItemStack.matches(original, menu.remoteSlots.get(0)),
+                    "子菜单的远端快照不得被外层背包覆盖"));
+        });
+    }
+
+    @ParameterizedTest(name = "顶层方块菜单有 UUID：{0}")
+    @ValueSource(booleans = {true, false})
+    @DisplayName("精妙顶层方块背包仍接收自身快照和槽位包，不依赖 UUID")
+    void snapshotViewer_topLevelBlockBackpackViewsOwnBlock(boolean hasUuid) throws ReflectiveOperationException {
+        ItemStack stack = hasUuid ? livingBackpack() : backpack();
+        PositionedBackpack placed = new PositionedBackpack(stack);
+        BackpackContainer menu = new BackpackContainer(
+            new BackpackContext.Block(BackpackWrapper.fromStack(stack), placed.pos));
+        placed.open(menu, stack, new ItemStack(Items.APPLE, 2));
+
+        withMenuResolver(menu, () -> {
+            assertEquals(List.of(placed.viewer), placed.blockViewers());
+            placed.flushDirtySlot();
+            var packet = ArgumentCaptor.forClass(ClientboundContainerSetSlotPacket.class);
+            verify(placed.viewer.connection).send(packet.capture());
+            assertEquals(menu.containerId, packet.getValue().getContainerId());
+            assertEquals(0, packet.getValue().getSlot());
+            assertTrue(ItemStack.matches(placed.updated, packet.getValue().getItem()));
+            assertTrue(ItemStack.matches(placed.updated, menu.remoteSlots.get(0)));
+        });
+    }
+
+    private static final class PositionedBackpack {
+        final ServerLevel level = mock(ServerLevel.class);
+        final ServerPlayer viewer = mock(ServerPlayer.class);
+        final ItemStack updated = new ItemStack(Items.DIAMOND, 3);
+        final BlockPos pos;
+        final TickableContainerContext context;
+
+        PositionedBackpack(ItemStack parent) {
+            var wrapper = BackpackWrapper.fromStack(parent);
+            var be = new BackpackBlockEntity(wrapper);
+            pos = be.getBlockPos();
+            be.setLevel(level);
+            when(level.dimension()).thenReturn(Level.OVERWORLD);
+            when(level.getBlockEntity(pos)).thenReturn(be);
+            when(level.getBlockState(pos)).thenReturn(Blocks.CHEST.defaultBlockState());
+            // 方块能力包装与菜单中的存储视图不必是同一实例。
+            var inventory = (ItemStackHandler) wrapper.getInventoryHandler();
+            var contents = new RangedWrapper(inventory, 0, inventory.getSlots());
+            when(level.getCapability(Capabilities.ItemHandler.BLOCK, pos, null)).thenReturn(contents);
+            when(viewer.level()).thenReturn(level);
+            when(viewer.serverLevel()).thenReturn(level);
+            viewer.connection = mock(ServerGamePacketListenerImpl.class);
+            MinecraftServer server = mock(MinecraftServer.class);
+            PlayerList players = mock(PlayerList.class);
+            when(level.getServer()).thenReturn(server);
+            when(server.getPlayerList()).thenReturn(players);
+            when(players.getPlayers()).thenReturn(List.of(viewer));
+            context = ContainerLivingItemHandler.resolveContextAt(level, pos, null);
+            assertNotNull(context);
+        }
+
+        void open(BackpackContainer menu, ItemStack stack, ItemStack initial) {
+            var contents = (ItemStackHandler) BackpackWrapper.fromStack(stack).getInventoryHandler();
+            contents.setStackInSlot(0, initial);
+            menu.appendSlot(new SlotItemHandler(contents, 0, 0, 0));
+            menu.setRemoteSlot(0, initial);
+            viewer.containerMenu = menu;
+        }
+
+        List<ServerPlayer> blockViewers() {
+            return ContainerViewers.of(List.of(viewer), context.getCacheKey(), context.getAssociatedBlockPositions());
+        }
+
+        void flushDirtySlot() {
+            context.setTickContext(new TickContext(context));
+            try {
+                context.setItem(0, updated);
+                assertTrue(ItemStack.matches(updated, context.getItem(0)));
+                context.syncSlotToClients(0, updated);
+                verifyNoInteractions(viewer.connection);
+                context.flushDirtySlots();
+            } finally {
+                context.setTickContext(null);
+                ContainerLivingItemHandler.clearAllCaches();
+            }
+        }
+    }
+
+    private static void withMenuResolver(BackpackContainer menu, Runnable assertions)
+            throws ReflectiveOperationException {
+        var resolver = new SophisticatedMenuResolver();
+        MenuSlotOwners.MenuPositionResolver registration = candidate -> candidate == menu ? resolver.resolve(candidate) : null;
+        Field field = MenuSlotOwners.class.getDeclaredField("MENU_RESOLVERS");
+        field.setAccessible(true);
+        List<?> resolvers = (List<?>) field.get(null);
+        MenuSlotOwners.registerMenuResolver(registration);
+        try {
+            assertions.run();
+        } finally {
+            resolvers.remove(registration);
+        }
     }
 
     private static void assertUnknownHost(ItemFormContainerContext context) {

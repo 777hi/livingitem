@@ -1,7 +1,20 @@
 package com.qiqi.li.network;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import com.qiqi.li.living.container.ContainerKeys;
 import com.qiqi.li.living.container.ItemFormContainers;
@@ -12,16 +25,16 @@ import com.qiqi.li.living.runtime.ContainerRuntimeCache;
 import com.qiqi.li.living.runtime.RuntimeSegments;
 import com.qiqi.li.testutil.FakeContainerContext;
 
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
-import java.util.List;
-import java.util.UUID;
-
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.network.ServerGamePacketListenerImpl;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.ChestBlockEntity;
 
 /**
  * 运行时数据发包的守卫（2026-10-18 起；门控判定 2026-10-23 迁至 ContainerViewersTest）。
@@ -32,6 +45,82 @@ import org.junit.jupiter.api.Test;
  * 判据本身极简，测试的价值在于把规则钉住：将来谁把门控删了 / 把背包也门控了，这里立刻红。</p>
  */
 class LivingItemRuntimeSyncTest {
+
+    private static final BlockPos CHEST_POS = new BlockPos(4, 64, 4);
+    private static final String BARE_CHEST_KEY = "chest_4_64_4";
+
+    @BeforeEach
+    void setUp() {
+        ContainerRuntimeCache.clear();
+    }
+
+    @AfterEach
+    void tearDown() {
+        ContainerRuntimeCache.clear();
+        ItemFormContainers.clearForTest();
+    }
+
+    @Test
+    @DisplayName("真实 runtime flush：同坐标的两个维度各收自己的非空快照")
+    void worldBlock_samePositionInTwoDimensions_sendsOnlyOwnSnapshot() {
+        ServerPlayer overworldViewer = chestViewer(Level.OVERWORLD);
+        ServerPlayer netherViewer = chestViewer(Level.NETHER);
+        List<ServerPlayer> online = List.of(overworldViewer, netherViewer);
+        String overworldKey = "minecraft:overworld|" + BARE_CHEST_KEY;
+        String netherKey = "minecraft:the_nether|" + BARE_CHEST_KEY;
+        HopperRuntime overworldRuntime = stageHopper(overworldKey, 1);
+        HopperRuntime netherRuntime = stageHopper(netherKey, 2);
+        var positions = Map.of(overworldKey, List.of(CHEST_POS), netherKey, List.of(CHEST_POS));
+
+        LivingItemRuntimeSync.flush(online, positions::get);
+
+        assertHopperSnapshot(overworldViewer, overworldKey, overworldRuntime);
+        assertHopperSnapshot(netherViewer, netherKey, netherRuntime);
+    }
+
+    @Test
+    @DisplayName("真实 runtime flush：裸世界键即使能查到坐标也不派发")
+    void worldBlock_bareKeyIsNotDispatched() {
+        ServerPlayer overworldViewer = chestViewer(Level.OVERWORLD);
+        ServerPlayer netherViewer = chestViewer(Level.NETHER);
+        stageHopper(BARE_CHEST_KEY, 1);
+        var positions = Map.of(BARE_CHEST_KEY, List.of(CHEST_POS));
+
+        LivingItemRuntimeSync.flush(List.of(overworldViewer, netherViewer), positions::get);
+
+        verifyNoInteractions(overworldViewer.connection, netherViewer.connection);
+    }
+
+    private static ServerPlayer chestViewer(ResourceKey<Level> dimension) {
+        ServerLevel level = mock(ServerLevel.class);
+        when(level.dimension()).thenReturn(dimension);
+        ServerPlayer player = mock(ServerPlayer.class);
+        when(player.level()).thenReturn(level);
+        when(player.serverLevel()).thenReturn(level);
+        when(player.isSpectator()).thenReturn(true);
+        Inventory inventory = new Inventory(player);
+        when(player.getInventory()).thenReturn(inventory);
+        ChestBlockEntity chest = new ChestBlockEntity(CHEST_POS, Blocks.CHEST.defaultBlockState());
+        chest.setLevel(level);
+        when(level.getBlockEntity(CHEST_POS)).thenReturn(chest);
+        player.containerMenu = ChestMenu.threeRows(1, inventory, chest);
+        player.connection = mock(ServerGamePacketListenerImpl.class);
+        return player;
+    }
+
+    private static HopperRuntime stageHopper(String key, int cooldown) {
+        HopperRuntime runtime = new HopperRuntime(cooldown, new ResolvedSlotData(0, 1, 2, 27, 9));
+        ContainerRuntimeCache.update(new FakeContainerContext(27, 9, key), 0,
+            RuntimeSegments.EMPTY.with(HopperSegment.INSTANCE, runtime));
+        return runtime;
+    }
+
+    private static void assertHopperSnapshot(ServerPlayer viewer, String key, HopperRuntime runtime) {
+        var sent = ArgumentCaptor.forClass(LivingItemSyncPacket.class);
+        verify(viewer.connection).send(sent.capture());
+        assertEquals(key, sent.getValue().containerKey());
+        assertEquals(runtime, sent.getValue().slotData().get(0).get(HopperSegment.INSTANCE));
+    }
 
     // ── 物品形态容器（活背包，2026-10-23 真机实录）────────────────────────────
     //
@@ -73,8 +162,7 @@ class LivingItemRuntimeSyncTest {
 
         LivingItemRuntimeSync.flush(List.of(viewer), k -> List.of());
 
-        org.mockito.ArgumentCaptor<LivingItemSyncPacket> captor =
-            org.mockito.ArgumentCaptor.forClass(LivingItemSyncPacket.class);
+        ArgumentCaptor<LivingItemSyncPacket> captor = ArgumentCaptor.forClass(LivingItemSyncPacket.class);
         verify(viewer.connection).send(captor.capture());
         assertEquals(key, captor.getValue().containerKey(),
             "必须发这个物品形态容器的键 —— 发错键客户端会显示成别的容器的数据");

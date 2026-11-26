@@ -174,7 +174,7 @@ src/test/java/com/qiqi/li/
 │   │   │   ├── BeaconTooltipComponentTest.java  # BeaconTooltipComponent 构建测试（9 柱面板的数据载体）。
 │   │   │   └── BeaconTooltipTest.java  # 活信标 tooltip 文本层守卫（2026-11-08 用户定：条目三态配色 + 满级再生改「账本末尾授予行」）。
 │   │   ├── brewing/
-│   │   │   ├── BrewingBatchLogicTest.java  # 活酿造台批次状态机的纯逻辑测试。
+│   │   │   ├── BrewingBatchLogicTest.java  # 活酿造台批次状态机及完成音效测试。
 │   │   │   ├── BrewingMaterialConsumeTest.java  # 材料消耗（consumeOne）守卫 —— 2026-10-13 用户实测 bug 的回归。
 │   │   │   ├── BrewingSlotEligibilityTest.java  # 活酿造台的槽位准入（隔离规则）单测。
 │   │   │   └── LivingBrewingStandDataTest.java  # 活酿造台数据组件的 codec 守卫（2026-10-12 反馈层新增 brewStartTick）。

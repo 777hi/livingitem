@@ -1,6 +1,7 @@
 package com.qiqi.li.living.container;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -13,6 +14,7 @@ import javax.annotation.Nullable;
 import com.qiqi.li.logging.ModLog;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.CompoundContainer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.Container;
@@ -172,6 +174,11 @@ public final class MenuSlotOwners {
             return menuEntity.blockPosition();
         }
 
+        return registeredMenuPosition(menu);
+    }
+
+    @Nullable
+    private static BlockPos registeredMenuPosition(AbstractContainerMenu menu) {
         for (MenuPositionResolver resolver : MENU_RESOLVERS) {
             try {
                 BlockPos pos = resolver.resolve(menu);
@@ -206,20 +213,64 @@ public final class MenuSlotOwners {
                 ? List.of(entity.blockPosition()) : List.of();
         }
 
-        // ② 注册的联动解析器（逐槽版）
+        List<BlockPos> registered = registeredSlotPositions(menu, slot);
+        if (!registered.isEmpty()) return registered;
+
+        BlockPos menuPos = menuPosition(menu);
+        return menuPos == null ? List.of() : List.of(menuPos);
+    }
+
+    private static List<BlockPos> registeredSlotPositions(AbstractContainerMenu menu, Slot slot) {
         for (Resolver resolver : SLOT_RESOLVERS) {
             try {
                 List<BlockPos> out = resolver.resolve(menu, slot);
                 if (out != null && !out.isEmpty()) return out;
             } catch (RuntimeException e) {
-                ModLog.CONTAINER.debug("槽位位置解析器 {} 抛异常：{}",
-                    resolver.getClass().getName(), e.toString());
+                ModLog.CONTAINER.debug("槽位位置解析器 {} 抛异常：{}", resolver.getClass().getName(), e.toString());
             }
         }
+        return List.of();
+    }
 
-        // ③ 菜单级（联动模块注册的）
-        BlockPos menuPos = menuPosition(menu);
-        return menuPos == null ? List.of() : List.of(menuPos);
+    /** 方块派发用：实体位置和物品内容菜单的外层位置都不是方块槽归属。 */
+    static BlockSlotMatcher blockSlots(ServerPlayer player, AbstractContainerMenu menu, Collection<BlockPos> positions) {
+        return new BlockSlotMatcher(player, menu, positions);
+    }
+
+    static final class BlockSlotMatcher {
+        private final ServerPlayer player;
+        private final AbstractContainerMenu menu;
+        private final Collection<BlockPos> positions;
+        private final boolean itemContentMenu;
+        private final Entity menuEntity;
+        private final boolean matchesMenuPosition;
+
+        private BlockSlotMatcher(ServerPlayer player, AbstractContainerMenu menu, Collection<BlockPos> positions) {
+            this.player = player;
+            this.menu = menu;
+            this.positions = positions;
+            itemContentMenu = ItemFormContainers.isItemContentMenu(menu, player);
+            menuEntity = resolveMenuEntity(menu, null);
+            BlockPos menuPos = itemContentMenu || menuEntity != null ? null : registeredMenuPosition(menu);
+            matchesMenuPosition = menuPos != null && positions.contains(menuPos);
+        }
+
+        boolean matches(Slot slot) {
+            if (slot.container == player.getInventory()) return false;
+            List<BlockPos> structured = resolveFromSlotContainer(slot.container);
+            if (!structured.isEmpty()) return matchesAny(structured);
+            if (itemContentMenu || slot.container instanceof Entity) return false;
+            if (EntityContainers.menuHostEntity(menu, slot) != null) return false;
+            List<BlockPos> registered = registeredSlotPositions(menu, slot);
+            return registered.isEmpty() ? matchesMenuPosition : matchesAny(registered);
+        }
+
+        private boolean matchesAny(List<BlockPos> candidates) {
+            for (BlockPos pos : candidates) {
+                if (positions.contains(pos)) return true;
+            }
+            return false;
+        }
     }
 
     /** 该菜单里是否有槽属于 {@code positions} 中的任一位置。 */

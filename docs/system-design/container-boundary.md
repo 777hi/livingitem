@@ -140,8 +140,10 @@
 
 ### I-C5 身份与 viewer 匹配按稳定键，不按 `Container` 实例
 
-- 容器身份 = `ContainerIdentity.getCacheKey()`（= 维度前缀 + **稳定键**）；viewer 匹配 =
-  「这个菜单槽属于哪个**容器**」。
+- 容器身份 = `ContainerIdentity.getCacheKey()`；方块容器跨世界去重必须用含维度的完整键，不能用裸坐标键。
+  方块 viewer 必须先与来源同维度，再按菜单槽的**方块宿主**匹配。实体所在格、物品内容菜单的
+  外层方块坐标都不证明方块归属；混合菜单中有明确方块归属的独立槽仍可匹配。
+  来源维度不明时不派发，不用另一世界的同坐标顶替。
 - **稳定键的选法**（`D-container-04` 的「位置键」只对方块宿主成立）：
   **方块 → 位置**（`chest_x_y_z` / `container_<dim>_x_y_z`）；**实体 → UUID**（`entity_<uuid>`，
   `D-container-10`）—— 位置对**会动**的宿主不稳定，见下方「实体宿主」条目。
@@ -606,7 +608,7 @@ safe-by-construction 不改（逐条理由见 [TODO 物品传输](../TODO.md) §
 | I-C1 / I-C2 | `grep "instanceof Container"` 全库审计（人工，每次改容器层必跑） |
 | I-C1（实体宿主）| 守卫测试：`EntityContainersTest` —— 双闸（形状白名单：`ContainerEntity` / 带箱驴骡 **进**；无箱马、普通实体 **出**；能力面：第三方 `ContainerEntity` 无能力 ⇒ **出**、有能力 ⇒ **进**、其菜单槽 ⇒ 解析 null）+ 构造即抛（最后防线） |
 | I-C3 / I-C4 / I-C7 | 守卫测试：`SlotIgnoringHandler`（`insertItem` 忽略 slot）+ `FilteredExtractHandler`（`extractItem` 被过滤器拦）—— 让「写回错槽」「吞物品」在单测里直接红 |
-| I-C5 | 守卫测试：非 `Container` 方块实体的 viewer 匹配（`ContainerContextsTest` 已有同类替身场景）；实体宿主的 `getBlockPos()` 恒 null 与「键=UUID」在 `EntityContainersTest` |
+| I-C5 | `ContainerViewersTest`（同坐标跨维 / 同格异宿主）· `LivingItemChunkContainerScanTest`（双箱去重与槽位同步 / 混合菜单）· `SophisticatedBackpackSourceTest`（父方块与子包）· `EntityContainersTest`（实体键与槽归属） |
 | I-C6 | 代码审查：`continue` 前必须有日志或调试计数 |
 | I-C10 | 守卫测试：`toPhysicalSlot` / `toLogicalSlot` 互逆 + 遥测键用物理槽（`EntityContainersTest`）；新增前置槽时人工过一遍跨边界点清单 |
 | I-C12 | 守卫测试：`ContainerFluidConservationTest`（抽屉 500 → 普通槽 64，总量守恒 / 目标满不搬 / 异类不覆盖）。⏳ 待补：漏斗、末影箱、活箱子 insert 同判据 |

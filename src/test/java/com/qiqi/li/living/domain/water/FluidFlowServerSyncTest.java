@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -123,6 +124,26 @@ class FluidFlowServerSyncTest {
     }
 
     @Test
+    @DisplayName("真实流体 flush：全服玩家都开着同坐标箱子时，只给本维度查看者发快照")
+    void realChest_samePositionInAnotherDimension_onlyLocalViewerReceivesSnapshot() {
+        SingleChestFixture fixture = singleChest();
+        ServerLevel nether = mock(ServerLevel.class);
+        when(nether.dimension()).thenReturn(Level.NETHER);
+        MinecraftServer server = fixture.level.getServer();
+        when(nether.getServer()).thenReturn(server);
+        ServerPlayer netherViewer = SingleChestFixture.player(nether);
+        ChestBlockEntity netherChest = SingleChestFixture.chestAt(nether, CHEST_POS);
+        netherViewer.containerMenu = ChestMenu.threeRows(1, netherViewer.getInventory(), netherChest);
+        when(fixture.playerList.getPlayers()).thenReturn(List.of(
+            fixture.viewer, netherViewer, fixture.otherChestViewer, fixture.idlePlayer));
+
+        fixture.tickAndFlush();
+
+        assertWaterSnapshot(fixture.sentPackets(1).getFirst(), fixture.context.getCacheKey());
+        verifyNoInteractions(netherViewer.connection);
+    }
+
+    @Test
     @DisplayName("真实单箱：关闭发空包，同坐标新 BE/新菜单重开后旧活跃状态不阻挡非空包")
     void realChest_closeThenReloadAtSamePosition_sendsFreshSnapshot() {
         SingleChestFixture fixture = singleChest();
@@ -203,6 +224,7 @@ class FluidFlowServerSyncTest {
     /** 真实单箱菜单与槽位；仅世界、在线玩家列表和玩家连接使用边界桩。 */
     private static final class SingleChestFixture {
         final ServerLevel level = mock(ServerLevel.class);
+        final PlayerList playerList = mock(PlayerList.class);
         final ServerPlayer viewer;
         final ServerPlayer otherChestViewer;
         final ServerPlayer idlePlayer;
@@ -213,13 +235,12 @@ class FluidFlowServerSyncTest {
         SingleChestFixture() {
             when(level.dimension()).thenReturn(Level.OVERWORLD);
             MinecraftServer server = mock(MinecraftServer.class);
-            PlayerList playerList = mock(PlayerList.class);
             when(level.getServer()).thenReturn(server);
             when(server.getPlayerList()).thenReturn(playerList);
 
-            viewer = player();
-            otherChestViewer = player();
-            idlePlayer = player();
+            viewer = player(level);
+            otherChestViewer = player(level);
+            idlePlayer = player(level);
             when(playerList.getPlayers()).thenReturn(List.of(viewer, otherChestViewer, idlePlayer));
             otherChestViewer.containerMenu = ChestMenu.threeRows(
                 1, otherChestViewer.getInventory(), chestAt(CHEST_POS.east()));
@@ -228,9 +249,10 @@ class FluidFlowServerSyncTest {
             fluidData.registerGeneratedSource(SOURCE_SLOT, Fluids.WATER.getFluidType());
         }
 
-        private ServerPlayer player() {
+        private static ServerPlayer player(ServerLevel level) {
             ServerPlayer player = mock(ServerPlayer.class);
             when(player.level()).thenReturn(level);
+            when(player.serverLevel()).thenReturn(level);
             // 只跳过开箱音效/世界调度；菜单槽位与 viewer 位置匹配仍走真实实现。
             when(player.isSpectator()).thenReturn(true);
             Inventory inventory = new Inventory(player);
@@ -241,6 +263,10 @@ class FluidFlowServerSyncTest {
         }
 
         ChestBlockEntity chestAt(BlockPos pos) {
+            return chestAt(level, pos);
+        }
+
+        private static ChestBlockEntity chestAt(ServerLevel level, BlockPos pos) {
             ChestBlockEntity be = new ChestBlockEntity(pos, Blocks.CHEST.defaultBlockState());
             be.setLevel(level);
             when(level.getBlockEntity(pos)).thenReturn(be);

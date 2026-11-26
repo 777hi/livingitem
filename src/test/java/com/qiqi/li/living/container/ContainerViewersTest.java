@@ -14,17 +14,25 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.vehicle.ChestBoat;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ChestMenu;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.inventory.PlayerEnderChestContainer;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.ChestBlockEntity;
+import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.items.wrapper.InvWrapper;
 
 /**
  * 「谁正在看这个容器」的<b>唯一</b>判定入口的守卫（2026-10-23）。
@@ -184,6 +192,73 @@ class ContainerViewersTest {
     }
 
     // ── 位置匹配（世界方块容器）───────────────────────────────────────────
+
+    @Test
+    @DisplayName("世界容器：同坐标真实箱子菜单只匹配缓存键指定的维度")
+    void worldBlock_samePosition_matchesOnlyKeyDimension() {
+        BlockPos pos = new BlockPos(1, 2, 3);
+        ServerPlayer overworld = chestViewer(Level.OVERWORLD, pos);
+        ServerPlayer nether = chestViewer(Level.NETHER, pos);
+        List<ServerPlayer> online = List.of(overworld, nether);
+
+        assertEquals(List.of(overworld), ContainerViewers.of(
+            online, "minecraft:overworld|chest_1_2_3", List.of(pos)));
+        assertEquals(List.of(nether), ContainerViewers.of(
+            online, "minecraft:the_nether|chest_1_2_3", List.of(pos)));
+    }
+
+    @Test
+    @DisplayName("世界容器：已有匹配位置和真实菜单，裸世界键仍不认观众")
+    void worldBlock_bareKey_noViewers() {
+        BlockPos pos = new BlockPos(1, 2, 3);
+        List<ServerPlayer> online = List.of(chestViewer(Level.OVERWORLD, pos), chestViewer(Level.NETHER, pos));
+
+        assertEquals(List.of(), ContainerViewers.of(online, "chest_1_2_3", List.of(pos)));
+    }
+
+    @Test
+    @DisplayName("共享快照 viewer：同维同格的箱船只接收自身容器快照，不接收方块快照")
+    void worldBlock_samePositionEntityMenu_isNotSnapshotViewer() {
+        BlockPos pos = new BlockPos(1, 2, 3);
+        ServerPlayer blockViewer = chestViewer(Level.OVERWORLD, pos);
+        ServerLevel level = blockViewer.serverLevel();
+        ServerPlayer boatViewer = player(UUID.randomUUID());
+        when(boatViewer.level()).thenReturn(level);
+        when(boatViewer.serverLevel()).thenReturn(level);
+        Inventory inventory = new Inventory(boatViewer);
+        when(boatViewer.getInventory()).thenReturn(inventory);
+        UUID boatId = UUID.randomUUID();
+        ChestBoat boat = mock(ChestBoat.class);
+        when(boat.getUUID()).thenReturn(boatId);
+        when(boat.level()).thenReturn(level);
+        when(boat.blockPosition()).thenReturn(pos);
+        when(boat.getContainerSize()).thenReturn(27);
+        when(boat.getCapability(Capabilities.ItemHandler.ENTITY)).thenReturn(new InvWrapper(boat));
+        when(level.getEntity(boatId)).thenReturn(boat);
+        boatViewer.containerMenu = ChestMenu.threeRows(1, inventory, boat);
+        List<ServerPlayer> online = List.of(blockViewer, boatViewer);
+
+        assertEquals(List.of(boatViewer), ContainerViewers.of(
+            online, "minecraft:overworld|entity_" + boatId, List.of(pos)), "箱船菜单确实属于该实体");
+        assertEquals(List.of(blockViewer), ContainerViewers.of(
+            online, "minecraft:overworld|chest_1_2_3", List.of(pos)), "箱船同格不是方块容器查看证据");
+    }
+
+    private static ServerPlayer chestViewer(ResourceKey<Level> dimension, BlockPos pos) {
+        ServerLevel level = mock(ServerLevel.class);
+        when(level.dimension()).thenReturn(dimension);
+        ServerPlayer viewer = player(UUID.randomUUID());
+        when(viewer.level()).thenReturn(level);
+        when(viewer.serverLevel()).thenReturn(level);
+        when(viewer.isSpectator()).thenReturn(true);
+        Inventory inventory = new Inventory(viewer);
+        when(viewer.getInventory()).thenReturn(inventory);
+        ChestBlockEntity chest = new ChestBlockEntity(pos, Blocks.CHEST.defaultBlockState());
+        chest.setLevel(level);
+        when(level.getBlockEntity(pos)).thenReturn(chest);
+        viewer.containerMenu = ChestMenu.threeRows(1, inventory, chest);
+        return viewer;
+    }
 
     @Test
     @DisplayName("世界容器：位置为空 ⇒ 没有观众（宁可不发，也不发错人）")

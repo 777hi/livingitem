@@ -746,13 +746,13 @@ public class SimpleContainerContext implements TickableContainerContext {
             return;
         }
 
+        var entity = getEntity();
+        var dimension = level.dimension();
         for (ServerPlayer serverPlayer : level.getServer().getPlayerList().getPlayers()) {
+            if (entity == null && !ContainerContexts.isInDimension(serverPlayer, dimension)) continue;
             AbstractContainerMenu menu = serverPlayer.containerMenu;
-            if (menu == serverPlayer.inventoryMenu) continue;
-
-            // 快路径：整个菜单就是这一个方块 ⇒ 不必逐槽解析
-            BlockPos menuPos = MenuSlotOwners.menuPosition(menu);
-            boolean wholeMenuIsMine = menuPos != null && myPositions.contains(menuPos);
+            if (menu == null || menu == serverPlayer.inventoryMenu) continue;
+            var blockSlots = entity == null ? MenuSlotOwners.blockSlots(serverPlayer, menu, myPositions) : null;
 
             for (int i = 0; i < menu.slots.size(); i++) {
                 Slot slot = menu.slots.get(i);
@@ -762,13 +762,12 @@ public class SimpleContainerContext implements TickableContainerContext {
                 // ⚠️ 必须比【物理槽】：菜单/包的槽号是 handler 索引，而 logicalSlot 是容器存储格编号
                 // （马/驴/骡的索引 0 是马鞍 ⇒ 两者差 1；不过这一层就是「渲染和逻辑差一格」）
                 if (slot.container == serverPlayer.getInventory()) continue;
-                if (getEntity() != null) {
-                    if (EntityContainers.menuHostEntity(menu, slot) != getEntity()
-                            || EntityContainers.menuPhysicalSlot(getEntity(), menu, slot)
+                if (entity != null) {
+                    if (EntityContainers.menuHostEntity(menu, slot) != entity
+                            || EntityContainers.menuPhysicalSlot(entity, menu, slot)
                                 != toPhysicalSlot(logicalSlot)) continue;
                 } else {
-                    if (slot.getContainerSlot() != toPhysicalSlot(logicalSlot)) continue;
-                    if (!wholeMenuIsMine && !slotBelongsToPositions(menu, slot, myPositions)) continue;
+                    if (slot.getContainerSlot() != toPhysicalSlot(logicalSlot) || !blockSlots.matches(slot)) continue;
                 }
 
                 int stateId = menu.incrementStateId();
@@ -777,15 +776,6 @@ public class SimpleContainerContext implements TickableContainerContext {
                     new ClientboundContainerSetSlotPacket(menu.containerId, stateId, i, stack.copy()));
             }
         }
-    }
-
-    /** 该菜单槽是否属于 {@code positions} 中的任一位置（I-C5 的位置口径）。 */
-    private static boolean slotBelongsToPositions(AbstractContainerMenu menu, Slot slot,
-                                                  List<BlockPos> positions) {
-        for (BlockPos pos : MenuSlotOwners.resolve(menu, slot)) {
-            if (positions.contains(pos)) return true;
-        }
-        return false;
     }
 
     /**

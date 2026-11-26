@@ -503,9 +503,7 @@ public class LivingItem {
     /**
      * 按**缓存键**在候选世界列表里反查容器位置（包级私有，供单测；生产入口是上面的实例方法）。
      *
-     * <p>三种键形：{@code <维度>|chest_x_y_z}（世界容器，定向该维度——维度即权威，
-     * 跨维度同坐标不发错人）· 裸 {@code chest_x_y_z}（退化形态 / 测试替身，扫全部世界）·
-     * {@code player_…}（背包类，{@code LivingItemRuntimeSync} 的独立分支处理，到这里返回空）。</p>
+     * <p>方块键必须有维度前缀；背包类由 {@code LivingItemRuntimeSync} 直接按所有者派发。</p>
      */
     static Collection<BlockPos> runtimeContainerPositions(List<ServerLevel> levels, String containerKey) {
         // 实体容器（2026-10-21）：entity_<uuid> ⇒ 逐维 getEntity(uuid) ⇒ 实体的**当前**位置。
@@ -522,28 +520,17 @@ public class LivingItem {
             return List.of();
         }
 
+        String dim = dimPrefixOf(containerKey);
+        if (dim == null) return List.of();
+
         BlockPos pos = parsePosFromContainerKey(containerKey);
         if (pos == null) return List.of();
 
-        String dim = dimPrefixOf(containerKey);
-        if (dim != null) {
-            // 键声明了维度 ⇒ 只认那个世界（找不到该世界 / 该位置无 BE ⇒ 空集合 = 不发包，
-            // 绝不落到别的维度——那正是本次修复要防的「跨维度同坐标发错人」）
-            for (ServerLevel level : levels) {
-                if (dim.equals(level.dimension().location().toString())) {
-                    Collection<BlockPos> positions = runtimeContainerPositions(level, pos);
-                    return positions == null ? List.of() : positions;
-                }
+        for (ServerLevel level : levels) {
+            if (dim.equals(level.dimension().location().toString())) {
+                Collection<BlockPos> positions = runtimeContainerPositions(level, pos);
+                return positions == null ? List.of() : positions;
             }
-            return List.of();
-        }
-
-        // 无维度前缀（裸键 / 退化）：保持旧行为——扫全部世界，第一个有 BE 的命中
-        for (var level : levels) {
-            // null = 该世界此位置无方块实体，继续查下一个世界；
-            // 非 null（可能为空集合）即代表命中，直接返回（见下方方法说明）。
-            Collection<BlockPos> positions = runtimeContainerPositions(level, pos);
-            if (positions != null) return positions;
         }
         return List.of();
     }
@@ -553,7 +540,7 @@ public class LivingItem {
      *
      * <p><b>返回值语义</b>：</p>
      * <ul>
-     *   <li>{@code null} —— 该位置在此世界上<b>没有方块实体</b>（让调用方继续查下一个世界）；</li>
+     *   <li>{@code null} —— 该位置在指定世界没有方块实体；</li>
      *   <li><b>空集合</b> —— 有方块实体但解析不出位置（当前实现不会出现，保留语义以防将来收紧）；</li>
      *   <li><b>非空</b> —— 命中一个或多个位置（单 BE / 大箱两半）。</li>
      * </ul>
@@ -590,11 +577,7 @@ public class LivingItem {
     }
 
     /**
-     * 从**缓存键**解析方块坐标。键形见 {@code ContainerIdentity.getCacheKey()}：
-     * 世界容器 = {@code <维度>|chest_x_y_z}（2026-10-12 起带前缀），大箱子
-     * {@code <维度>|chest_x1_y1_z1_x2_y2_z2}（只取第一个）；裸 {@code chest_x_y_z}
-     * （退化形态 / 测试替身）同样受理。玩家背包键（{@code player_<uuid>}）由
-     * {@code LivingItemRuntimeSync} 的独立分支处理，不会走到这里 ⇒ 返回 {@code null}。
+     * 从方块容器缓存键取第一段位置；大箱另一半由指定世界的方块状态解析。
      */
     private static BlockPos parsePosFromContainerKey(String containerKey) {
         List<BlockPos> positions = com.qiqi.li.living.container.ContainerKeys.positionsOf(containerKey);

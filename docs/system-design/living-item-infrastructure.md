@@ -824,10 +824,10 @@ O(r³) 叠加，直接打爆 tick。
 
 ### 3.3 大箱子去重
 
-大箱子（`ChestBlock`）在 NeoForge 中，左右两半返回**同一个 `IItemHandler` 实例**。因此去重策略分两层：
+NeoForge 查询大箱子（`ChestBlock`）两半的能力时，可为同一存储空间分别创建 `IItemHandler` 包装。因此同拍去重分两层：
 
 1. **IdentityHashMap 按 IItemHandler 实例去重**：同一实例意味着同一容器，已处理则跳过
-2. **HashSet 按 containerKey 去重**：防止某些模组容器每次创建新 `IItemHandler` 实例
+2. **HashSet 按带维度的容器缓存键去重**：不同 handler 包装仍只处理一次，跨维度的同坐标容器各自处理。
 
 ```java
 // 在 LivingItem.processLevelContainers() 中

@@ -1,5 +1,6 @@
 package com.qiqi.li;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -28,8 +29,12 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
+import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerChunkCache;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
+import com.qiqi.li.living.container.TickContext;
+import com.qiqi.li.living.domain.tnt.ExplosionData;
+import com.qiqi.li.living.domain.tnt.LivingTntData;
 import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.domain.water.FluidFlowBehavior;
 import com.qiqi.li.living.domain.water.FluidFlowBehaviors;
@@ -44,6 +49,7 @@ import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
+import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
@@ -52,13 +58,24 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import net.minecraft.server.players.PlayerList;
+import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.vehicle.ChestBoat;
+import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.MenuType;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.ChestType;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.level.storage.loot.LootTable;
@@ -273,6 +290,188 @@ class LivingItemChunkContainerScanTest {
         assertTrue(restored.isSource(SOURCE_SLOT), "恢复后的源必须重新进入自维持驱动");
     }
 
+    @Test
+    @DisplayName("整服同拍扫描：不同维度的同坐标箱子都实际推进流体")
+    void samePositionInTwoDimensions_bothChestsTick() {
+        ChestWorld overworld = new ChestWorld();
+        ChestWorld nether = overworld.addDimension(Level.NETHER);
+        FluidType water = Fluids.WATER.getFluidType();
+        FluidType lava = Fluids.LAVA.getFluidType();
+        ContainerFluidData waterData = seedFluid(overworld, water);
+        ContainerFluidData lavaData = seedFluid(nether, lava);
+
+        var processedHandlers = new IdentityHashMap<IItemHandler, Boolean>();
+        Set<String> processedKeys = new HashSet<>();
+        LivingItem.processChunkContainers(overworld.level, overworld.chunk, processedHandlers, processedKeys);
+        LivingItem.processChunkContainers(nether.level, nether.chunk, processedHandlers, processedKeys);
+
+        // 区块返回值只数查到能力的 BE；扩散格才证明两只箱子都进了实际 tick。
+        assertFluidSpread(waterData, water);
+        assertFluidSpread(lavaData, lava);
+    }
+
+    @Test
+    @DisplayName("同维真双箱：两个不同 handler 只 tick 一次，左右半箱槽位都同步")
+    void doubleChestWithDistinctHandlers_ticksOnceAndSyncsBothHalves() {
+        ChestWorld world = new ChestWorld();
+        ChestBlockEntity right = world.installDoubleChest();
+        int slot = 0;
+        int leftMenuSlot = right.getContainerSize() + slot;
+        world.chest.setItem(slot, litTnt(80));
+        right.setItem(slot, litTnt(40));
+
+        world.processChest();
+
+        ItemStack leftStack = world.chest.getItem(slot);
+        ItemStack rightStack = right.getItem(slot);
+        assertEquals(79, LivingTntData.of(leftStack).explosion().fuseTimer(), "左半箱引信只递减一拍");
+        assertEquals(39, LivingTntData.of(rightStack).explosion().fuseTimer(), "右半箱引信只递减一拍");
+        ArgumentCaptor<ClientboundContainerSetSlotPacket> packets =
+            ArgumentCaptor.forClass(ClientboundContainerSetSlotPacket.class);
+        Mockito.verify(world.connection, Mockito.times(2)).send(packets.capture());
+        // 原版合并容器的物理槽是 RIGHT 在前；容器身份的位置排序是 LEFT 在前。
+        assertSlotSync(world, packets.getAllValues(), slot, rightStack);
+        assertSlotSync(world, packets.getAllValues(), leftMenuSlot, leftStack);
+    }
+
+    @Test
+    @DisplayName("同一服玩家表：脏槽只发本维同坐标箱子菜单，不改异维菜单快照")
+    void dirtyChestSlot_syncsOnlySameDimensionMenu() {
+        ChestWorld overworld = new ChestWorld();
+        ChestWorld nether = overworld.addDimension(Level.NETHER);
+        ItemStack updated = new ItemStack(Items.DIAMOND, 3);
+        ItemStack foreign = new ItemStack(Items.APPLE, 2);
+        overworld.chest.setItem(SOURCE_SLOT, updated);
+        nether.chest.setItem(SOURCE_SLOT, foreign);
+        nether.viewer.containerMenu.setRemoteSlot(SOURCE_SLOT, foreign);
+
+        var context = ContainerLivingItemHandler.resolveContextAt(overworld.level, CHEST_POS, overworld.handler);
+        assertNotNull(context);
+        context.setTickContext(new TickContext(context));
+        try {
+            context.syncSlotToClients(SOURCE_SLOT, updated);
+            Mockito.verifyNoInteractions(overworld.connection, nether.connection);
+            context.flushDirtySlots();
+        } finally {
+            context.setTickContext(null);
+        }
+
+        ArgumentCaptor<ClientboundContainerSetSlotPacket> packets =
+            ArgumentCaptor.forClass(ClientboundContainerSetSlotPacket.class);
+        Mockito.verify(overworld.connection).send(packets.capture());
+        assertSlotSync(overworld, packets.getAllValues(), SOURCE_SLOT, updated);
+        Mockito.verifyNoInteractions(nether.connection);
+        assertTrue(ItemStack.matches(foreign, nether.viewer.containerMenu.remoteSlots.get(SOURCE_SLOT)),
+            "异维同坐标菜单的远端快照必须保持异维槽位原值");
+    }
+
+    @Test
+    @DisplayName("真实方块脏槽：同维同格的箱船菜单不发包，也不改远端快照")
+    void dirtyChestSlot_doesNotSyncSamePositionEntityMenu() {
+        ChestWorld world = new ChestWorld();
+        ItemStack boatStack = new ItemStack(Items.APPLE, 2);
+        ChestBoat boat = boatAtChest(world, boatStack);
+        world.viewer.containerMenu = ChestMenu.threeRows(1, world.inventory, boat);
+        world.viewer.containerMenu.setRemoteSlot(SOURCE_SLOT, boatStack.copy());
+
+        flushChestSlot(world, new ItemStack(Items.DIAMOND, 3));
+
+        assertAll(
+            () -> Mockito.verifyNoInteractions(world.connection),
+            () -> assertTrue(ItemStack.matches(boatStack, world.viewer.containerMenu.remoteSlots.get(SOURCE_SLOT)),
+                "箱船的远端快照不得被同格箱子的脏槽覆盖"));
+    }
+
+    @Test
+    @DisplayName("混合菜单：仅同步真实箱子槽，不覆盖同格箱船的同号槽")
+    void dirtyChestSlot_syncsOnlyBlockSlotInMixedMenu() {
+        ChestWorld world = new ChestWorld();
+        ItemStack boatStack = new ItemStack(Items.APPLE, 2);
+        ChestBoat boat = boatAtChest(world, boatStack);
+        world.viewer.containerMenu = new MixedMenu(boat, world.chest);
+        world.viewer.containerMenu.setRemoteSlot(0, boatStack.copy());
+        ItemStack updated = new ItemStack(Items.DIAMOND, 3);
+
+        flushChestSlot(world, updated);
+
+        ArgumentCaptor<ClientboundContainerSetSlotPacket> packets =
+            ArgumentCaptor.forClass(ClientboundContainerSetSlotPacket.class);
+        assertAll(
+            () -> {
+                Mockito.verify(world.connection).send(packets.capture());
+                assertSlotSync(world, packets.getAllValues(), 1, updated);
+            },
+            () -> assertTrue(ItemStack.matches(boatStack, world.viewer.containerMenu.remoteSlots.get(0)),
+                "菜单里真实箱子槽的存在不能授权写箱船槽"));
+    }
+
+    private static ChestBoat boatAtChest(ChestWorld world, ItemStack stack) {
+        ChestBoat boat = Mockito.mock(ChestBoat.class);
+        Mockito.when(boat.getContainerSize()).thenReturn(27);
+        Mockito.when(boat.level()).thenReturn(world.level);
+        Mockito.when(boat.blockPosition()).thenReturn(CHEST_POS);
+        Mockito.when(boat.getItem(SOURCE_SLOT)).thenReturn(stack);
+        Mockito.when(boat.getCapability(Capabilities.ItemHandler.ENTITY)).thenReturn(new InvWrapper(boat));
+        return boat;
+    }
+
+    private static void flushChestSlot(ChestWorld world, ItemStack updated) {
+        world.chest.setItem(SOURCE_SLOT, updated);
+        var context = ContainerLivingItemHandler.resolveContextAt(world.level, CHEST_POS, world.handler);
+        assertNotNull(context);
+        context.setTickContext(new TickContext(context));
+        try {
+            context.syncSlotToClients(SOURCE_SLOT, updated);
+            Mockito.verifyNoInteractions(world.connection);
+            context.flushDirtySlots();
+        } finally {
+            context.setTickContext(null);
+        }
+    }
+
+    private static final class MixedMenu extends AbstractContainerMenu {
+        MixedMenu(Container entity, Container block) {
+            super(MenuType.GENERIC_9x3, 1);
+            addSlot(new Slot(entity, SOURCE_SLOT, 0, 0));
+            addSlot(new Slot(block, SOURCE_SLOT, 0, 0));
+        }
+
+        @Override public ItemStack quickMoveStack(Player player, int index) { return ItemStack.EMPTY; }
+        @Override public boolean stillValid(Player player) { return true; }
+    }
+
+    private static ContainerFluidData seedFluid(ChestWorld world, FluidType fluid) {
+        var context = ContainerLivingItemHandler.resolveContextAt(world.level, CHEST_POS, world.handler);
+        assertNotNull(context);
+        ContainerFluidData data = ContainerFluidData.getOrCreate(context);
+        data.registerGeneratedSource(SOURCE_SLOT, fluid);
+        return data;
+    }
+
+    private static void assertFluidSpread(ContainerFluidData data, FluidType fluid) {
+        var flow = data.getFlows().get(SOURCE_SLOT + 1);
+        assertNotNull(flow, "源格旁必须由实际 tick 生成流动格");
+        assertEquals(SOURCE_SLOT, flow.fromSlot());
+        assertSame(fluid, flow.fluid());
+    }
+
+    private static ItemStack litTnt(int fuseTicks) {
+        ItemStack stack = new ItemStack(Items.TNT);
+        LivingItemManager.setLiving(stack, true);
+        LivingTntData.set(stack, new LivingTntData(ExplosionData.DEFAULT.ignite(fuseTicks)));
+        return stack;
+    }
+
+    private static void assertSlotSync(ChestWorld world, List<ClientboundContainerSetSlotPacket> packets,
+                                       int slot, ItemStack expected) {
+        var menu = world.viewer.containerMenu;
+        var packet = packets.stream().filter(p -> p.getSlot() == slot).findFirst().orElse(null);
+        assertNotNull(packet, "菜单槽 " + slot + " 必须收到槽位包");
+        assertEquals(menu.containerId, packet.getContainerId());
+        assertTrue(ItemStack.matches(expected, packet.getItem()), "槽位包必须携带该槽最终内容");
+        assertTrue(ItemStack.matches(expected, menu.remoteSlots.get(slot)), "菜单远端快照必须同步更新");
+    }
+
     /** 倒入单源后经真实区块处理落附件；不直接调用流体引擎或写回钩子。 */
     private static ContainerFluidData seedAndTick(ChestWorld world, FluidType fluid) {
         var context = ContainerLivingItemHandler.resolveContextAt(world.level, CHEST_POS, world.handler);
@@ -330,7 +529,7 @@ class LivingItemChunkContainerScanTest {
             .getChunk(Mockito.anyInt(), Mockito.anyInt(), Mockito.any(), Mockito.anyBoolean());
     }
 
-    /** 世界、区块可用性与网络是边界替身；槽位和附件均由真实 27 槽 ChestBlockEntity 持有。 */
+    /** 世界、区块可用性与网络是边界替身；槽位和附件均由真实 ChestBlockEntity 持有。 */
     private static final class ChestWorld {
         final ServerLevel level = Mockito.mock(ServerLevel.class);
         final ServerChunkCache source = Mockito.mock(ServerChunkCache.class);
@@ -341,7 +540,10 @@ class LivingItemChunkContainerScanTest {
         /** isPositionTicking（BE 权威）：与 loaded 解耦，模拟「FULL 未 ticking」的 pending 窗口。 */
         final Set<Long> ticking = new HashSet<>();
         final Map<BlockPos, BlockEntity> blockEntities = new HashMap<>();
+        final Map<BlockPos, BlockState> blockStates = new HashMap<>();
         final AtomicLong gameTime = new AtomicLong();
+        final MinecraftServer server;
+        final PlayerList players;
         final ServerPlayer viewer = Mockito.mock(ServerPlayer.class);
         final Inventory inventory = new Inventory(viewer);
         final ServerGamePacketListenerImpl connection = Mockito.mock(ServerGamePacketListenerImpl.class);
@@ -349,7 +551,15 @@ class LivingItemChunkContainerScanTest {
         IItemHandler handler;
 
         ChestWorld() {
-            Mockito.when(level.dimension()).thenReturn(Level.OVERWORLD);
+            this(Level.OVERWORLD, Mockito.mock(MinecraftServer.class), Mockito.mock(PlayerList.class));
+            Mockito.when(server.getPlayerList()).thenReturn(players);
+            Mockito.when(players.getPlayers()).thenReturn(List.of(viewer));
+        }
+
+        private ChestWorld(ResourceKey<Level> dimension, MinecraftServer server, PlayerList players) {
+            this.server = server;
+            this.players = players;
+            Mockito.when(level.dimension()).thenReturn(dimension);
             var dimensionType = Mockito.mock(net.minecraft.world.level.dimension.DimensionType.class);
             Mockito.when(level.dimensionType()).thenReturn(dimensionType);
             Mockito.when(level.getGameTime()).thenAnswer(inv -> gameTime.get());
@@ -357,8 +567,7 @@ class LivingItemChunkContainerScanTest {
             Mockito.when(level.getBlockEntity(Mockito.any(BlockPos.class)))
                 .thenAnswer(inv -> blockEntities.get(inv.getArgument(0)));
             Mockito.when(level.getBlockState(Mockito.any(BlockPos.class)))
-                .thenAnswer(inv -> CHEST_POS.equals(inv.getArgument(0))
-                    ? Blocks.CHEST.defaultBlockState() : Blocks.AIR.defaultBlockState());
+                .thenAnswer(inv -> blockStates.getOrDefault(inv.getArgument(0), Blocks.AIR.defaultBlockState()));
             Mockito.when(level.getCapability(Capabilities.ItemHandler.BLOCK, CHEST_POS, null))
                 .thenAnswer(inv -> handler);
             Mockito.when(source.getChunkNow(Mockito.anyInt(), Mockito.anyInt()))
@@ -370,17 +579,43 @@ class LivingItemChunkContainerScanTest {
             Mockito.when(chunk.getPos()).thenReturn(chunkPos);
             Mockito.when(chunk.getBlockEntities()).thenReturn(blockEntities);
 
-            MinecraftServer server = Mockito.mock(MinecraftServer.class);
-            PlayerList players = Mockito.mock(PlayerList.class);
             Mockito.when(level.getServer()).thenReturn(server);
-            Mockito.when(server.getPlayerList()).thenReturn(players);
-            Mockito.when(players.getPlayers()).thenReturn(List.of(viewer));
             Mockito.when(viewer.level()).thenReturn(level);
             Mockito.when(viewer.getInventory()).thenReturn(inventory);
             // 菜单仍绑定真实箱子槽位，但不触发开箱音效与开盖计数。
             Mockito.when(viewer.isSpectator()).thenReturn(true);
             viewer.connection = connection;
             installChest(new ChestBlockEntity(CHEST_POS, Blocks.CHEST.defaultBlockState()));
+        }
+
+        ChestWorld addDimension(ResourceKey<Level> dimension) {
+            ChestWorld other = new ChestWorld(dimension, server, players);
+            Mockito.when(players.getPlayers()).thenReturn(List.of(viewer, other.viewer));
+            return other;
+        }
+
+        ChestBlockEntity installDoubleChest() {
+            ChestBlock block = (ChestBlock) Blocks.CHEST;
+            BlockState leftState = block.defaultBlockState().setValue(ChestBlock.TYPE, ChestType.LEFT);
+            BlockPos rightPos = CHEST_POS.relative(ChestBlock.getConnectedDirection(leftState));
+            BlockState rightState = leftState.setValue(ChestBlock.TYPE, ChestType.RIGHT);
+            chest = new ChestBlockEntity(CHEST_POS, leftState);
+            ChestBlockEntity right = new ChestBlockEntity(rightPos, rightState);
+            placeChest(chest);
+            placeChest(right);
+
+            var leftContents = ChestBlock.getContainer(block, leftState, level, CHEST_POS, true);
+            var rightContents = ChestBlock.getContainer(block, rightState, level, rightPos, true);
+            assertNotNull(leftContents);
+            assertNotNull(rightContents);
+            handler = new InvWrapper(leftContents);
+            IItemHandler rightHandler = new InvWrapper(rightContents);
+            assertEquals(54, handler.getSlots());
+            assertEquals(54, rightHandler.getSlots());
+            Mockito.when(level.getCapability(Capabilities.ItemHandler.BLOCK, rightPos, null))
+                .thenReturn(rightHandler);
+            viewer.containerMenu = ChestMenu.sixRows(1, inventory, leftContents);
+            return right;
         }
 
         void reloadChest(CompoundTag saved) {
@@ -403,10 +638,15 @@ class LivingItemChunkContainerScanTest {
 
         private void installChest(ChestBlockEntity current) {
             chest = current;
-            chest.setLevel(level);
-            blockEntities.put(CHEST_POS, chest);
+            placeChest(chest);
             handler = new InvWrapper(chest);
             viewer.containerMenu = ChestMenu.threeRows(1, inventory, chest);
+        }
+
+        private void placeChest(ChestBlockEntity be) {
+            be.setLevel(level);
+            blockEntities.put(be.getBlockPos(), be);
+            blockStates.put(be.getBlockPos(), be.getBlockState());
         }
 
         int processChest() {

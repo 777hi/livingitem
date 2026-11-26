@@ -8,11 +8,15 @@ import java.util.UUID;
 import javax.annotation.Nullable;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.level.Level;
 
 /**
  * 「<b>谁正在看这个容器</b>」的<b>唯一</b>判定入口（2026-10-23）。
@@ -108,11 +112,15 @@ public final class ContainerViewers {
             return out;
         }
 
-        // ④ 世界方块 / 掉落物：按位置匹配（I-C5）。
-        //    不要求 BE 是原版 Container —— 否则第三方方块容器永远匹配不上（真机：看不到水）。
-        if (positions == null || positions.isEmpty()) return out;
+        // ④ 方块容器：同维度再按菜单槽归属匹配（I-C5）。掉落物没有菜单。
+        if (kind != ContainerKind.WORLD_BLOCK || positions == null || positions.isEmpty()) return out;
+        String dimPrefix = ContainerKeys.dimPrefixOf(cacheKey);
+        if (dimPrefix == null) return out;
+        ResourceLocation id = ResourceLocation.tryParse(dimPrefix);
+        if (id == null) return out;
+        ResourceKey<Level> dimension = ResourceKey.create(Registries.DIMENSION, id);
         for (ServerPlayer player : players) {
-            if (ContainerContexts.isViewingPositions(player, positions)) {
+            if (ContainerContexts.isViewingPositions(player, dimension, positions)) {
                 out.add(player);
             }
         }

@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.CompoundContainer;
 import net.minecraft.world.Container;
@@ -208,28 +209,24 @@ public final class ContainerContexts {
         return null;
     }
 
-    // ── isViewingPositions：按位置判断玩家是否正在看该容器（I-C5）───
+    // ── 方块容器 viewer 匹配（I-C5）───
 
-    /**
-     * 按**位置**判断玩家是否正看着该容器 —— 契约 I-C5 的正解（2026-10-18，专题 S3）。
-     *
-     * <p>为什么不按 {@code Container} 实例判：后者要求菜单槽的 {@code slot.container}
-     * <b>等于</b>某个原版 {@code Container} 实例，对「有物品能力但不是 {@code Container}」的
-     * 第三方方块实体永远返回 {@code false} ⇒
-     * 运行时 tooltip 遥测与定向槽位同步静默不发（真机表现：「tooltip 没有进度信息」）。</p>
-     *
-     * <p>本方法把匹配口径换成<b>位置</b>：菜单槽属于哪个位置由 {@link MenuSlotOwners} 解析
-     * （原版 BE / 大箱子反射 / 菜单级 {@code getBlockPosition()} 三条路）。</p>
-     *
-     * <p>⚠️ 位置是 tick 上下文、容器键（{@code chest_x_y_z}）、缓存键的共用事实源；
-     * {@code Container} 实例是第四套并行事实源，必然漂 —— 过去三次事故
-     * （大箱实例比不中 / 强转崩 / 匹配不上）都源于此。</p>
-     */
-    public static boolean isViewingPositions(ServerPlayer player, Collection<BlockPos> positions) {
-        if (positions == null || positions.isEmpty()) return false;
+    static boolean isInDimension(ServerPlayer player, ResourceKey<Level> dimension) {
+        Level playerLevel = player.level();
+        return dimension != null && playerLevel != null && dimension.equals(playerLevel.dimension());
+    }
+
+    /** 按来源维度和菜单槽归属匹配；不要求方块实体实现原版 {@link Container}。 */
+    public static boolean isViewingPositions(ServerPlayer player, ResourceKey<Level> dimension,
+                                             Collection<BlockPos> positions) {
+        if (positions == null || positions.isEmpty() || !isInDimension(player, dimension)) return false;
         AbstractContainerMenu menu = player.containerMenu;
-        if (menu == player.inventoryMenu) return false;
-        return MenuSlotOwners.isViewing(menu, new ArrayList<>(positions));
+        if (menu == null || menu == player.inventoryMenu) return false;
+        var blockSlots = MenuSlotOwners.blockSlots(player, menu, positions);
+        for (Slot slot : menu.slots) {
+            if (blockSlots.matches(slot)) return true;
+        }
+        return false;
     }
 
     /**

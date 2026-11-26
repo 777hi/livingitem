@@ -1,8 +1,12 @@
 package net.p3pp3rf1y.sophisticatedbackpacks.common.gui;
 
+import java.util.Optional;
+
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.MenuType;
+import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 
 /**
@@ -27,6 +31,18 @@ public class BackpackContainer extends AbstractContainerMenu {
     /** 真实 {@code BackpackContainer#getBackpackContext()} 的同形方法。 */
     public BackpackContext getBackpackContext() {
         return context;
+    }
+
+    /** 原生顶层和子方块背包菜单都会报告外层背包的位置。 */
+    public Optional<BlockPos> getBlockPosition() {
+        var type = context.getType();
+        return type == BackpackContext.ContextType.BLOCK_BACKPACK
+                || type == BackpackContext.ContextType.BLOCK_SUB_BACKPACK
+            ? Optional.of(context.getBackpackPosition(null)) : Optional.empty();
+    }
+
+    public Slot appendSlot(Slot slot) {
+        return addSlot(slot);
     }
 
     @Override

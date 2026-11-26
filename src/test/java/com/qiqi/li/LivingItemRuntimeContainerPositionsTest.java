@@ -146,15 +146,15 @@ class LivingItemRuntimeContainerPositionsTest {
     }
 
     @Test
-    @DisplayName("裸键（无维度前缀，退化形态/测试替身）→ 扫描全部世界的首个命中（旧行为保持）")
-    void rawKey_scansAllLevels() {
+    @DisplayName("裸方块键没有维度 → 不猜测容器所在世界")
+    void rawBlockKey_returnsEmpty() {
         List<ServerLevel> levels = List.of(
-            serverLevel(Level.OVERWORLD, null),          // 主世界没有 ⇒ 继续查下一个世界
+            serverLevel(Level.OVERWORLD, null),
             serverLevel(Level.NETHER, anyBe()));
 
         var result = LivingItem.runtimeContainerPositions(levels, "chest_1_64_2");
 
-        assertEquals(List.of(POS), List.copyOf(result));
+        assertTrue(result.isEmpty(), "没有来源维度时，不得用其他世界的同坐标方块顶包");
     }
 
     @Test

@@ -108,7 +108,7 @@
 | 3 堆叠加速 · 4 / 9 作废判据 · 8 消耗时机 | `BrewingBatchLogicTest`（14 项，含批次标记 Idle 自愈） |
 | 7 活物品不作材料 / 瓶子 / 燃料 | `BrewingSlotEligibilityTest`（6 项：材料 · 瓶子 · 燃料三侧都有守卫） |
 | 10 残留物「另寻归宿」（含龙息不整栈替换） | `BrewingMaterialConsumeTest`（6 项：普通材料 · **龙息整栈替换回归** · 空栈变玻璃瓶 · 并入未满堆 · 容器满丢弃 · 空槽 no-op） |
-| 12 酿造反馈（白幕 / 燃料条 / 音效） | `LivingBrewingStandDataTest`（4 项：codec 守卫）+ `LivingBrewingStandDecoratorTest`（8 项：守卫 / 堆叠时长 / 时间线 / 重播）+ `ProgressBarDecoratorTest`（6 项：几何 / 刻度 / clamp）+ 游戏内（附录·酿造反馈） |
+| 12 酿造反馈（白幕 / 燃料条 / 音效） | `LivingBrewingStandDataTest`（codec）· `LivingBrewingStandDecoratorTest`（白幕）· `ProgressBarDecoratorTest`（燃料条）· `BrewingBatchLogicTest`（完成音效的宿主归属）· 游戏内（附录·酿造反馈） |
 | 其余（燃料补满 / 转化 / 方向 / 漏斗） | 游戏内验证清单（见附录） |
 
 ---
@@ -516,9 +516,8 @@ brewTime == 0（待机）：
 ### 8.4 完成音效（项目第一个活物品音效）
 
 - **素材**：原版 `SoundEvents.BREWING_STAND_BREW`（对齐原版 `levelEvent 1035`，原汁原味）；
-- **发给谁**：`playBrewSound` 只发**正在照看这台机器的人**——世界容器 ⇒ 开着这个容器
-  GUI 的玩家（`ContainerContexts#isViewing`）；背包 / 末影箱容器 ⇒ 主人本人（不管开没开
-  GUI，自己的酿造完成自己听见）；
+- **发给谁**：`playBrewSound` 只发正在查看此方块或实体容器的玩家，共用 `ContainerViewers` 的宿主匹配；
+  玩家背包 / 末影箱则直接发给主人，不要求打开界面。物品形态容器与掉落物不发完成音效；
 - **为什么不半径广播**：原版玩家站在方块旁 ⇒ 等价于「开着 GUI」；活酿造台可能在背包 /
   远处箱子里，按位置广播要么听不到（人走远了）、要么扰民（路人无故听响）；
 - **位置**：容器方块中心；背包容器取玩家自身位置。客户端按距离衰减（位置音）⇒ 离箱子远
