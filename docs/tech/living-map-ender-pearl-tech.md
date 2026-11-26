@@ -123,6 +123,7 @@
   - [v55 → v56：绳索连接的航空学载具传送拉爆物理](#v55--v56绳索连接的航空学载具传送拉爆物理)
   - [v56 → v57：高视距频繁传送卡死（区块生成风暴）](#v56--v57高视距频繁传送卡死区块生成风暴)
   - [v57 → v58：精妙背包界面里扩展地图完全不渲染（渲染挂点）](#v57--v58精妙背包界面里扩展地图完全不渲染渲染挂点)
+  - [v58 → v59：藏宝图活化后出现两枚红叉（结构标记落点口径）](#v58--v59藏宝图活化后出现两枚红叉结构标记落点口径)
 
 ---
 
@@ -1049,12 +1050,28 @@ private static boolean handleLivingMapCreation(PlayerInteractEvent.RightClickIte
 
 `ensureIconMappingBuilt` 遍历 `registry.holders()` **全量**结构，因此**无标签的模组结构也能被标记**（早期实现遍历标签，会漏掉这类结构）。原版结构也不再排除，要塞/沉船/海底废墟/埋藏的宝藏均会标记。
 
+#### 落点口径（原版 locate 位）
+
+标记坐标走原版 `ChunkGenerator#getStructureGeneratingAt` 的口径：`getPlacementsForStructure(holder)` 里命中该区块（`isStructureChunk`）的 `StructurePlacement`，用 `getLocatePos(chunkPos)`（区块角 + `locate_offset`）。
+
+⚠️ 不能硬编码区块中心 `(minX+8, minZ+8)`：埋藏宝藏的 structure_set 配了 `locate_offset [9, 0, 9]`，箱子就在区块 (9,9)；按中心打点会偏 1 格 —— 原版藏宝图上与原版红叉重叠成半像素重影，模组自建图上照着红叉挖也挖不到箱子。没有 placement 命中时（数据包自定义放置 / 结构集被移除）退回区块中心，保持旧行为。
+
+#### 物品自带条目优先
+
+原版探险图 / 藏宝图把目标世界坐标写进物品的 `MAP_DECORATIONS` 组件，携带时又经 `MapItemSavedData#tickCarriedBy` 并进地图装饰。扫到**同图标 + 同像素（±0.5）**的条目时以条目为准：
+
+- 按原版口径补写该条目（从未被携带过的地图也能出图标；装饰 id 沿用条目的键，后续 `tickCarriedBy` 不会重复添加）
+- 清掉旧扫描曾按区块中心写下的同 id（`struct_…` / `underground_…`）错位标记
+
+否则再补一枚只会在原版藏宝图 / 探险图上叠成两枚同款图标。
+
 #### 扫描机制
 
 - **触发条件**：玩家手持活地图 + 玩家在地图覆盖范围内
 - **扫描方式**：遍历地图范围内已加载区块（`getChunkNow()`，不触发加载），每个区块调用 `getAllReferences()` 获取结构引用
 - **图标匹配**：`structureIconMap`（`HashMap<Holder<Structure>, Holder<MapDecorationType>>`），O(1) 查找；未命中时查 `undergroundStructureSet` 决定回退图标
-- **去重**：`addDecoration()` 内部按 id 存储（`Map<String, MapDecoration>`），同 id 重复添加自动覆盖，无需额外去重
+- **落点解析**：`getPlacementsForStructure` 的结果按结构缓存（每次 `doScan` 一份），只对未扫描过的区块判 `isStructureChunk`
+- **去重**：同 id 重复添加由 `addDecoration()` 覆盖（旧存档的错位标记因此自愈）；与物品自带 `MAP_DECORATIONS` 同处的结构不再重复添加（见上）
 - **标记添加**：`MapItemSavedData.addDecoration()` 添加运行时标记（自动同步客户端）
 - **扫描缓存**：`SCANNED_CHUNKS`（`Map<Integer, Set<Long>>`）按地图 ID → 已扫描区块坐标缓存，后续 tick 只扫描新加载的区块，而非一次性扫描后永久跳过
 
@@ -1294,7 +1311,7 @@ compileOnly files("libs/sable-companion-common-1.21.1-1.6.0.jar")  // JarJar 嵌
 | `LivingMapTargetRenderer` | `client/render/LivingMapTargetRenderer.java` | 客户端渲染工具：3D准心标记渲染（`renderMarker`，原版准心纹理）、GUI十字形光标渲染（`renderMarkerGui`，5像素十字形，z=4 压过装饰），颜色由共用的 `pickColor` 按"已探索/图标命中"三色决定，供 `ItemInHandRendererMixin`、`MapRendererMixin`、`AbstractContainerScreenMixin` 共享 |
 | `ItemInHandRendererMixin` | `client/mixin/ItemInHandRendererMixin.java` | 客户端渲染：注入 renderMap 方法，3D空间中渲染目标标记 |
 | `MapRendererMixin` | `client/mixin/MapRendererMixin.java` | 客户端渲染：注入 MapRenderer.render 方法，展示框地图光标渲染 |
-| `StructureMapDecorator` | `living/domain/map/StructureMapDecorator.java` | 远程开图结构标记：懒标记（玩家靠近时扫描已加载区块），原版结构按标签映射专属图标，无专属图标的结构按生成阶段回退为 `RED_X`（地下）/ `TARGET_X`（地表）。`reset()` 清空图标映射与已扫描区块集，必须在服务器停止时调用 |
+| `StructureMapDecorator` | `living/domain/map/StructureMapDecorator.java` | 远程开图结构标记：懒标记（玩家靠近时扫描已加载区块），原版结构按标签映射专属图标，无专属图标的结构按生成阶段回退为 `RED_X`（地下）/ `TARGET_X`（地表）。落点走原版 locate 口径（`StructurePlacement#getLocatePos`，含 `locate_offset`），物品自带 `MAP_DECORATIONS` 同处条目优先。`reset()` 清空图标映射与已扫描区块集，必须在服务器停止时调用 |
 | `ModSable` | `compat/sable/ModSable.java` | Sable 安全调用入口：类加载保护、NoClassDefFoundError 捕获、`hasSoftConnection` 容错包装 |
 | `SableCompat` | `compat/sable/SableCompat.java` | Sable 依赖检测：ModList.isLoaded("sable") |
 | `SableIntegration` | `compat/sable/SableIntegration.java` | Sable 核心逻辑：SubLevel 检测、飞艇瞬移、偏移计算、软连接检测（连接链 + 绳索包围盒相交） |
@@ -2922,4 +2939,27 @@ if (consumed < cost) {
 
 **修改文件**：`LivingContainerOverlay`（新）、`LivingMapOverlay`（新）、`LivingMapGroups`（新）、
 `LivingContainerOverlaySubscriber`（新）、`LivingFarmlandOverlay`（新）、`AbstractContainerScreenMixin`（瘦身成纯交互）。
+
+### v58 → v59：藏宝图活化后出现两枚红叉（结构标记落点口径）
+
+**问题**：真机——把原版藏宝图（埋藏宝藏的 `filled_map`）活化成活地图后，宝箱位置出现**两枚红叉**，
+两枚指示的落点不一致，难以传送到宝箱正上方。
+
+**根因**：结构标记曾按「起始区块中心」`(minX+8, minZ+8)` 打点；原版藏宝图的目标装饰走
+`StructurePlacement#getLocatePos`（区块角 + `locate_offset`），而 `buried_treasures` 配的是
+`[9, 0, 9]` —— 箱子就在区块 (9,9)。⇒ 两枚红叉的世界坐标差 1 格（zoom 1 图上差半像素，红叉笔画细，
+表现为重影）；组件条目没命中而退到像素反推时，落点还会各自偏 1 格（偏向随宝箱在地图中心东/西侧翻转）。
+
+**修复**：`doScan` 改用 `getPlacementsForStructure` 里命中 `isStructureChunk` 的 placement 的
+`getLocatePos`（无 placement 命中时回退区块中心）；物品 `MAP_DECORATIONS` 同处条目（同图标 + 同像素 ±0.5）
+优先 —— 按原版口径补写条目并清掉旧扫描写下的同 id 错位标记，原版藏宝图 / 探险图上不再叠第二枚图标。
+
+**行为变化（已知并接受）**：模组自建图里**非宝藏结构**的图标也从「区块中心」移到「原版 locate 位」
+（多数是区块角，最多偏 8 格；zoom 1 图上 4 像素）。这是向原版口径对齐 —— 原版探险图一直按 locate 位画。
+
+**修改文件**：`StructureMapDecorator`（落点改 locate + 条目优先）、`StructureMapDecoratorComponentEntryTest`（新）。
+
+**验证**：`gradlew test --tests '*StructureMapDecoratorComponentEntryTest' --tests '*MapCoordHelper*'` 全绿
+（条目同处 / 半像素容差 / 差 8 格不命中 / 图标类型不同不命中 / 无条目五例）；
+实机（藏宝图活化 → 只剩一枚红叉且压在宝箱上）待用户端复验。
 

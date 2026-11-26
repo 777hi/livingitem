@@ -219,6 +219,7 @@ src/test/java/com/qiqi/li/
 │   │   │   ├── MapCoordHelperMatchTest.java  # 组件装饰条目与命中装饰的 同一处匹配 （2026-10-27 审查 P2-2）。
 │   │   │   ├── MapCoordHelperTest.java  # MapCoordHelper 坐标换算测试。
 │   │   │   ├── MapUpdateSkipHelperTest.java  # 地图更新节流器的 跨存档 不变量（2026-11-01）。
+│   │   │   ├── StructureMapDecoratorComponentEntryTest.java  # 结构标记与物品自带 MAP_DECORATIONS 条目的"同处"判定。
 │   │   │   └── TeleportHelperYTest.java  # 传送落点 Y 的 站立面语义 （2026-10-27 审查 P1-1，v50 简化回归）。
 │   │   ├── piston/
 │   │   │   ├── LivingPistonDataTest.java  # ⚠️ 源码无类注释
