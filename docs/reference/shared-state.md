@@ -27,7 +27,7 @@
 | `BeaconEntityHostSync` | 登记 | `current` |
 | `BeaconPlayerHostSync` | 登记 | `current` |
 | `ContainerChunkCache` | 登记 | `INSTANCE` |
-| `ContainerLivingItemHandler` | 登记 | `CONTAINER_DATA` `LAST_SEEN` `LIVING_SLOT_ITEMS` `PENDING_RUNTIME_INVALIDATIONS` `POS_TO_CACHE_KEY` |
+| `ContainerLivingItemHandler` | 登记 | `CONTAINER_DATA` `LAST_SEEN` `LIVING_SLOT_ITEMS` `POS_TO_CACHE_KEY` |
 | `ContainerMenuInfoRequestPacket` | 登记 | `LAST_REQUEST` |
 | `ContainerRuntimeCache` | 登记 | `dirtyContainers` `store` |
 | `EntityContainers` | ⚠️ 本类无清理入口 | `PROVIDERS` |

@@ -86,18 +86,22 @@ class ContainerCacheSweepTest {
             List.of(positions), List.of(), level);
     }
 
+    private static void seedRuntimeCache(ContainerContext ctx) {
+        ContainerRuntimeCache.update(ctx, 0, RuntimeSegments.EMPTY);
+        assertTrue(ContainerRuntimeCache.holdsContainer(ctx.getCacheKey()), "预置运行时缓存必须命中容器键");
+    }
+
     // ── 主路径：lastSeen sweep ────────────────────────────────
 
     @Test
-    @DisplayName("消失满阈值的容器被回收：四张表 + 整容器运行时作废（与「玩家破坏」同一条入口）")
+    @DisplayName("消失满阈值的容器被回收，运行时缓存整键立即清除")
     void unseenContainer_isReclaimed() {
         Level level = overworld();
         SimpleContainerContext ctx = blockContainer(level, new BlockPos(10, 64, 10));
         String key = ctx.getCacheKey();
 
         ContainerLivingItemHandler.trackLivingSlots(key, Map.of(3, Items.FURNACE), ctx);
-        ContainerRuntimeCache.update(ctx, 3, RuntimeSegments.EMPTY);
-        ContainerLivingItemHandler.drainRuntimeCacheInvalidations();
+        seedRuntimeCache(ctx);
         assertEquals(1, ContainerLivingItemHandler.trackedContainerCount());
 
         // 停止被看到：把盖章时刻推到阈值之外（真实运行里由「容器不再进入 processContext」造成）
@@ -107,12 +111,7 @@ class ContainerCacheSweepTest {
         assertEquals(1, ContainerLivingItemHandler.sweepUnseenContainers(now, TTL), "应回收 1 个容器");
         assertEquals(0, ContainerLivingItemHandler.trackedContainerCount(), "槽位追踪应被清");
 
-        var inv = ContainerLivingItemHandler.drainRuntimeCacheInvalidations();
-        assertEquals(1, inv.size(), "回收应登记整容器作废");
-        assertEquals(key, inv.get(0).cacheKey(), "作废键必须与运行时缓存存储键同构");
-
-        ContainerRuntimeCache.removeContainer(inv.get(0).cacheKey());
-        assertFalse(ContainerRuntimeCache.holdsContainer(key), "L4 消费后运行时缓存不该再有这个键");
+        assertFalse(ContainerRuntimeCache.holdsContainer(key), "sweep 返回前必须清掉整键运行时缓存");
     }
 
     @Test
@@ -122,14 +121,14 @@ class ContainerCacheSweepTest {
         SimpleContainerContext ctx = blockContainer(level, new BlockPos(1, 64, 1));
         String key = ctx.getCacheKey();
         ContainerLivingItemHandler.trackLivingSlots(key, Map.of(0, Items.FURNACE), ctx);
+        seedRuntimeCache(ctx);
 
         long now = System.currentTimeMillis();
         ContainerLivingItemHandler.setLastSeenForTest(key, now - TTL / 2);
 
         assertEquals(0, ContainerLivingItemHandler.sweepUnseenContainers(now, TTL));
         assertEquals(1, ContainerLivingItemHandler.trackedContainerCount());
-        assertTrue(ContainerLivingItemHandler.drainRuntimeCacheInvalidations().isEmpty(),
-            "未过期 ⇒ 不该产生任何作废登记");
+        assertTrue(ContainerRuntimeCache.holdsContainer(key), "未过期的运行时缓存必须保留");
     }
 
     @Test
@@ -161,15 +160,14 @@ class ContainerCacheSweepTest {
 
         // 故意不调 getOrCreateContainerData / entry(ctx) —— 这正是原缺口的成因
         ContainerLivingItemHandler.trackLivingSlots(key, Map.of(1, Items.FURNACE), ctx);
+        seedRuntimeCache(ctx);
         assertEquals(1, ContainerLivingItemHandler.trackedContainerCount());
 
         ContainerLivingItemHandler.removeDataByPos(level, pos);
 
         assertEquals(0, ContainerLivingItemHandler.trackedContainerCount(),
             "位置索引命中 ⇒ 破坏应清掉槽位追踪（修复前这里恒为 1：索引压根没建）");
-        var inv = ContainerLivingItemHandler.drainRuntimeCacheInvalidations();
-        assertEquals(1, inv.size(), "并且登记整容器运行时作废");
-        assertEquals(key, inv.get(0).cacheKey());
+        assertFalse(ContainerRuntimeCache.holdsContainer(key), "位置索引命中也必须立即清掉运行时缓存");
     }
 
     @ParameterizedTest(name = "首次追踪={0}, 实体先登记={1}")
@@ -189,7 +187,7 @@ class ContainerCacheSweepTest {
 
         if (entityFirst) {
             registerForPositionIndex(entity, trackSlots);
-            assertTrue(ContainerLivingItemHandler.describeLifecycleStats().contains("位置索引=0 "),
+            assertTrue(ContainerLivingItemHandler.describeLifecycleStats().endsWith("位置索引=0"),
                 "单独登记实体不能写入方块索引");
             registerForPositionIndex(block, trackSlots);
         } else {
@@ -202,12 +200,13 @@ class ContainerCacheSweepTest {
                 "方块反查不得读到同格实体的数据");
         }
 
+        seedRuntimeCache(block);
+        seedRuntimeCache(entity);
         ContainerLivingItemHandler.removeDataByPos(level, pos);
 
         assertNull(ContainerLivingItemHandler.peekContainerDataByPos(level, pos, ContainerRedstoneData.KEY));
-        assertEquals(List.of(new ContainerLivingItemHandler.RuntimeCacheInvalidation(
-            block.getCacheKey())),
-            ContainerLivingItemHandler.drainRuntimeCacheInvalidations());
+        assertFalse(ContainerRuntimeCache.holdsContainer(block.getCacheKey()), "方块运行时键必须立即删除");
+        assertTrue(ContainerRuntimeCache.holdsContainer(entity.getCacheKey()), "同格实体的运行时键必须保留");
         if (trackSlots) {
             assertEquals(1, ContainerLivingItemHandler.trackedContainerCount(), "保留实体槽位追踪");
         } else {
@@ -239,13 +238,14 @@ class ContainerCacheSweepTest {
         assertSame(data, ContainerLivingItemHandler.peekContainerDataByPos(level, left, ContainerRedstoneData.KEY));
         assertSame(data, ContainerLivingItemHandler.peekContainerDataByPos(level, right, ContainerRedstoneData.KEY));
 
+        seedRuntimeCache(ctx);
         ContainerLivingItemHandler.removeDataByPos(level, right);
 
         assertNull(ContainerLivingItemHandler.peekContainerDataByPos(level, left, ContainerRedstoneData.KEY));
         assertNull(ContainerLivingItemHandler.peekContainerDataByPos(level, right, ContainerRedstoneData.KEY));
         assertEquals(0, ContainerLivingItemHandler.trackedContainerCount(),
             "按右半坐标破坏也要清掉整条双箱数据（键本身是一个整体）");
-        assertFalse(ContainerLivingItemHandler.drainRuntimeCacheInvalidations().isEmpty());
+        assertFalse(ContainerRuntimeCache.holdsContainer(key), "按右半坐标删除必须立即清掉双箱的运行时整键");
     }
 
     @Test
@@ -295,7 +295,7 @@ class ContainerCacheSweepTest {
     // ── 可观测性（实机验证 sweep 是否在回收的入口） ──────────────
 
     @Test
-    @DisplayName("describeLifecycleStats 报出四张表的规模，供 /livingitem debug cache 观察是否回落")
+    @DisplayName("describeLifecycleStats 报出追踪、盖章和位置索引规模，供 /livingitem debug cache 观察")
     void describeLifecycleStats_reportsTableSizes() {
         Level level = overworld();
         SimpleContainerContext ctx = blockContainer(level, new BlockPos(3, 64, 3));
@@ -319,7 +319,6 @@ class ContainerCacheSweepTest {
         long now = System.currentTimeMillis();
         ContainerLivingItemHandler.setLastSeenForTest(key, now - TTL - 1);
         assertEquals(1, ContainerLivingItemHandler.sweepUnseenContainers(now, TTL));
-        ContainerLivingItemHandler.drainRuntimeCacheInvalidations();
 
         assertTrue(ContainerLivingItemHandler.describeLifecycleStats().contains("盖章键=0"),
             ContainerLivingItemHandler.describeLifecycleStats());
@@ -384,13 +383,12 @@ class ContainerCacheSweepTest {
             .count();
     }
 
-    private static void assertLifecycleSizes(int tracked, int stamps, int positions, int invalidations) {
+    private static void assertLifecycleSizes(int tracked, int stamps, int positions) {
         String stats = ContainerLivingItemHandler.describeLifecycleStats();
         assertAll(
             () -> assertTrue(stats.contains("追踪容器=" + tracked + " "), stats),
             () -> assertTrue(stats.contains("盖章键=" + stamps + " "), stats),
-            () -> assertTrue(stats.contains("位置索引=" + positions + " "), stats),
-            () -> assertTrue(stats.endsWith("待作废=" + invalidations), stats));
+            () -> assertTrue(stats.endsWith("位置索引=" + positions), stats));
     }
 
     @Test
@@ -465,13 +463,12 @@ class ContainerCacheSweepTest {
         assertEquals(COMPLETED_TICKS, completed[0], "所有 processContext 调用都必须完成主流程");
         assertEquals(1, ContainerLivingItemHandler.trackedContainerCount());
         String activeStats = ContainerLivingItemHandler.describeLifecycleStats();
+        seedRuntimeCache(ctx);
         ContainerLivingItemHandler.removeDataByPos(level, pos);
-        var invalidations = ContainerLivingItemHandler.drainRuntimeCacheInvalidations();
         assertAll(
-            () -> assertTrue(activeStats.contains("位置索引=1 "), activeStats),
+            () -> assertTrue(activeStats.endsWith("位置索引=1"), activeStats),
             () -> assertEquals(0, ContainerLivingItemHandler.trackedContainerCount(), "按位置删除必须命中活容器"),
-            () -> assertEquals(List.of(new ContainerLivingItemHandler.RuntimeCacheInvalidation(
-                ctx.getCacheKey())), invalidations));
+            () -> assertFalse(ContainerRuntimeCache.holdsContainer(ctx.getCacheKey()), "运行时整键必须立即清除"));
     }
 
     private enum EntryAccess {
@@ -512,20 +509,20 @@ class ContainerCacheSweepTest {
         Level level = overworld();
         SimpleContainerContext ctx = blockContainer(level, new BlockPos(32, 64, 32));
         access.access(ctx);
-        assertLifecycleSizes(0, 1, 1, 0);
+        seedRuntimeCache(ctx);
+        assertLifecycleSizes(0, 1, 1);
 
         long cutoff = System.currentTimeMillis();
         ContainerLivingItemHandler.setLastSeenForTest(ctx.getCacheKey(), cutoff - TTL + 1);
         assertEquals(0, ContainerLivingItemHandler.sweepUnseenContainers(cutoff, TTL),
             "回收阈值内保留查询创建的条目");
+        assertTrue(ContainerRuntimeCache.holdsContainer(ctx.getCacheKey()), "未到期的运行时整键必须保留");
         ContainerLivingItemHandler.setLastSeenForTest(ctx.getCacheKey(), cutoff - TTL);
         access.access(ctx);
         assertEquals(1, ContainerLivingItemHandler.sweepUnseenContainers(cutoff, TTL),
             "访问已存在的条目不是 tick，不得更新盖章");
-        var invalidations = ContainerLivingItemHandler.drainRuntimeCacheInvalidations();
-        assertEquals(List.of(new ContainerLivingItemHandler.RuntimeCacheInvalidation(
-            ctx.getCacheKey())), invalidations);
-        assertLifecycleSizes(0, 0, 0, 0);
+        assertFalse(ContainerRuntimeCache.holdsContainer(ctx.getCacheKey()), "到期回收必须立即清除运行时整键");
+        assertLifecycleSizes(0, 0, 0);
     }
 
     @ParameterizedTest(name = "{0}")
@@ -535,13 +532,14 @@ class ContainerCacheSweepTest {
         Level level = overworld();
         SimpleContainerContext ctx = blockContainer(level, new BlockPos(33, 64, 33));
         access.access(ctx);
+        seedRuntimeCache(ctx);
         long cutoff = System.currentTimeMillis();
         ContainerLivingItemHandler.setLastSeenForTest(ctx.getCacheKey(), cutoff - TTL - 1);
 
         assertEquals(1, ContainerLivingItemHandler.sweepUnseenContainers(cutoff, TTL));
         assertEquals(0L, ContainerLivingItemHandler.getContainerRevision(ctx), "修订计数随条目整体回收");
-        assertEquals(1, ContainerLivingItemHandler.drainRuntimeCacheInvalidations().size());
-        assertLifecycleSizes(0, 0, 0, 0);
+        assertFalse(ContainerRuntimeCache.holdsContainer(ctx.getCacheKey()), "回收必须立即清除运行时整键");
+        assertLifecycleSizes(0, 0, 0);
     }
 
     private enum Removal {
@@ -561,27 +559,26 @@ class ContainerCacheSweepTest {
 
     @ParameterizedTest(name = "{0}")
     @EnumSource(Removal.class)
-    @DisplayName("显式删除同步清 LAST_SEEN，之后 TTL sweep 不重复发整容器作废")
-    void explicitRemoval_clearsStampWithoutDuplicateSweepInvalidation(Removal removal) {
+    @DisplayName("显式删除同步清 LAST_SEEN，之后 TTL sweep 不重复回收")
+    void explicitRemoval_clearsStampAndRuntimeCache(Removal removal) {
         Level level = overworld();
         SimpleContainerContext ctx = blockContainer(level, new BlockPos(34, 64, 34));
         ContainerLivingItemHandler.trackLivingSlots(ctx.getCacheKey(), Map.of(0, Items.FURNACE), ctx);
         ContainerLivingItemHandler.putContainerData(ctx, SpongeContainerFluidHandler.EDGE, true);
+        seedRuntimeCache(ctx);
         long cutoff = System.currentTimeMillis();
         ContainerLivingItemHandler.setLastSeenForTest(ctx.getCacheKey(), cutoff - TTL - 1);
 
         removal.remove(ctx);
-        assertEquals(List.of(new ContainerLivingItemHandler.RuntimeCacheInvalidation(
-            ctx.getCacheKey())),
-            ContainerLivingItemHandler.drainRuntimeCacheInvalidations());
+        assertFalse(ContainerRuntimeCache.holdsContainer(ctx.getCacheKey()), "显式删除必须立即清除运行时整键");
         String removedStats = ContainerLivingItemHandler.describeLifecycleStats();
+        seedRuntimeCache(ctx);
         int swept = ContainerLivingItemHandler.sweepUnseenContainers(cutoff, TTL);
         assertAll(
             () -> assertTrue(removedStats.contains("盖章键=0 "), removedStats),
             () -> assertEquals(0, swept, "显式删除的键不再进入 TTL 回收"),
-            () -> assertTrue(ContainerLivingItemHandler.drainRuntimeCacheInvalidations().isEmpty(),
-                "同一删除不得重复登记整容器作废"));
-        assertLifecycleSizes(0, 0, 0, 0);
+            () -> assertTrue(ContainerRuntimeCache.holdsContainer(ctx.getCacheKey()), "旧盖章不得清掉新写入的运行时缓存"));
+        assertLifecycleSizes(0, 0, 0);
     }
 
     @Test
@@ -591,36 +588,40 @@ class ContainerCacheSweepTest {
         BlockPos pos = new BlockPos(35, 64, 35);
         SimpleContainerContext original = blockContainer(level, pos);
         ContainerLivingItemHandler.trackLivingSlots(original.getCacheKey(), Map.of(0, Items.FURNACE), original);
+        seedRuntimeCache(original);
         long cutoff = System.currentTimeMillis();
         ContainerLivingItemHandler.setLastSeenForTest(original.getCacheKey(), cutoff - TTL - 1);
         ContainerLivingItemHandler.removeDataByKey(original.getCacheKey());
-        ContainerLivingItemHandler.drainRuntimeCacheInvalidations();
+        assertFalse(ContainerRuntimeCache.holdsContainer(original.getCacheKey()), "重建前必须清掉旧的运行时缓存");
 
         SimpleContainerContext recreated = blockContainer(level, pos);
         assertEquals(original.getCacheKey(), recreated.getCacheKey());
         ContainerLivingItemHandler.putContainerData(recreated, SpongeContainerFluidHandler.EDGE, true);
-        assertLifecycleSizes(0, 1, 1, 0);
+        seedRuntimeCache(recreated);
+        assertLifecycleSizes(0, 1, 1);
         assertEquals(0, ContainerLivingItemHandler.sweepUnseenContainers(cutoff, TTL),
             "新条目必须使用新盖章，不能被旧截止时刻收掉");
+        assertTrue(ContainerRuntimeCache.holdsContainer(recreated.getCacheKey()), "重建后的运行时缓存必须保留");
         assertEquals(Boolean.TRUE,
             ContainerLivingItemHandler.peekContainerDataByPos(level, pos, SpongeContainerFluidHandler.EDGE));
         ContainerLivingItemHandler.removeDataByPos(level, pos);
-        assertEquals(1, ContainerLivingItemHandler.drainRuntimeCacheInvalidations().size(), "新位置索引必须命中");
-        assertLifecycleSizes(0, 0, 0, 0);
+        assertFalse(ContainerRuntimeCache.holdsContainer(recreated.getCacheKey()), "新位置索引必须命中");
+        assertLifecycleSizes(0, 0, 0);
     }
 
     @Test
-    @DisplayName("连续创建和显式删除不同键：盖章、位置、追踪与待作废不累计空壳")
+    @DisplayName("连续创建和显式删除不同键：盖章、位置、追踪与运行时缓存不累计空壳")
     void repeatedCreateRemove_doesNotLeakLifecycleTables() {
         Level level = overworld();
         for (int cycle = 0; cycle < 32; cycle++) {
             SimpleContainerContext ctx = blockContainer(level, new BlockPos(40 + cycle, 64, 40));
             ContainerLivingItemHandler.trackLivingSlots(ctx.getCacheKey(), Map.of(0, Items.FURNACE), ctx);
             ContainerLivingItemHandler.putContainerData(ctx, SpongeContainerFluidHandler.EDGE, true);
+            seedRuntimeCache(ctx);
             ContainerLivingItemHandler.removeDataByPos(level, ctx.getAssociatedBlockPositions().get(0));
-            assertEquals(1, ContainerLivingItemHandler.drainRuntimeCacheInvalidations().size());
+            assertFalse(ContainerRuntimeCache.holdsContainer(ctx.getCacheKey()), "每次删除都必须清掉运行时整键");
         }
-        assertLifecycleSizes(0, 0, 0, 0);
+        assertLifecycleSizes(0, 0, 0);
     }
 
     @Test
@@ -640,6 +641,7 @@ class ContainerCacheSweepTest {
             }
         }));
 
+        seedRuntimeCache(ctx);
         try (MockedStatic<LivingItemManager> ignored = isolateFunctions()) {
             ContainerLivingItemHandler.processContext(ctx, level);
         }
@@ -647,15 +649,16 @@ class ContainerCacheSweepTest {
         assertEquals(0, ContainerLivingItemHandler.sweepUnseenContainers(cutoff, TTL));
         assertEquals(Boolean.TRUE,
             ContainerLivingItemHandler.peekContainerDataByPos(level, pos, SpongeContainerFluidHandler.EDGE));
-        assertTrue(ContainerLivingItemHandler.drainRuntimeCacheInvalidations().isEmpty());
-        assertLifecycleSizes(0, 1, 1, 0);
+        assertTrue(ContainerRuntimeCache.holdsContainer(ctx.getCacheKey()), "正常 tick 续期后必须保留运行时整键");
+        assertLifecycleSizes(0, 1, 1);
         String key = ctx.getCacheKey();
         ContainerLivingItemHandler.removeContainerData(ctx, SpongeContainerFluidHandler.EDGE);
-        assertLifecycleSizes(0, 1, 1, 0);
+        assertTrue(ContainerRuntimeCache.holdsContainer(key), "清除单个容器级数据键不得清除运行时整键");
+        assertLifecycleSizes(0, 1, 1);
         long now = System.currentTimeMillis();
         ContainerLivingItemHandler.setLastSeenForTest(key, now - TTL);
         assertEquals(1, ContainerLivingItemHandler.sweepUnseenContainers(now, TTL));
-        assertEquals(1, ContainerLivingItemHandler.drainRuntimeCacheInvalidations().size());
-        assertLifecycleSizes(0, 0, 0, 0);
+        assertFalse(ContainerRuntimeCache.holdsContainer(key), "续期后再次到期仍必须立即清除运行时整键");
+        assertLifecycleSizes(0, 0, 0);
     }
 }

@@ -87,6 +87,7 @@ public class TickContext {
     private Map<String, Set<Integer>> functionSlots = Collections.emptyMap();
 
     private final ContainerContext ctx;
+    private final ContainerLivingItemHandler.ContainerEntry entry;
     private ContainerSnapshot _snapshot = ContainerSnapshot.EMPTY;
 
     /**
@@ -104,10 +105,16 @@ public class TickContext {
     private long _snapshotRevision = Long.MIN_VALUE;
 
     public TickContext(ContainerContext ctx) {
+        this(ctx, null);
+    }
+
+    TickContext(ContainerContext ctx, ContainerLivingItemHandler.ContainerEntry entry) {
         this.ctx = ctx;
-        // ⚠️ 容器级数据的「首次创建 + 附件回填」（如流体数据）由各领域注册的
-        // ContainerTickHook#onTickStart 负责 —— 它在紧随本构造的 setTickContext 里触发，
-        // 时机与原「在此调 getFluidData」等价（2026-10-08 计划 ⑤ 移出）。
+        this.entry = entry;
+    }
+
+    boolean isRuntimeCacheInvalidated() {
+        return entry != null && entry.invalidated;
     }
 
     public ContainerContext getContainerContext() {

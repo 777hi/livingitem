@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
+import net.neoforged.neoforge.items.ItemStackHandler;
 
 import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.runtime.ContainerRuntimeCache;
@@ -23,15 +24,13 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * 运行时缓存生命周期（方案 A，2026-10-11）单测 —— 槽位追踪与作废登记的判定。
+ * 运行时缓存生命周期单测 —— 槽位追踪与整容器同步清理。
  *
- * <p><b>守的规则</b>：物品离开槽位 / 换成另一种物品 ⇒ 登记作废该槽位的运行时缓存；
- * 同类物品持续存在 ⇒ 不登记。</p>
+ * <p><b>守的规则</b>：物品离开槽位 / 换成另一种物品 ⇒ 标记该槽位失效；
+ * 同类物品持续存在 ⇒ 保留。</p>
  *
  * <p>⚠️ 判据<b>只看物品类型、不看组件</b> —— 燃烧标志等组件会被 tick 改写，
  * 若纳入判据会把正在运行的缓存误清（燃料 / 进度每次状态翻转就丢）。</p>
- *
- * <p>按槽作废在扫槽后同步执行；整容器作废由服务端拍末消费。</p>
  */
 class ContainerRuntimeCacheLifecycleTest {
 
@@ -49,8 +48,6 @@ class ContainerRuntimeCacheLifecycleTest {
         assertTrue(ContainerLivingItemHandler.trackLivingSlots("k", Map.of(3, Items.FURNACE), null).isEmpty(),
             "首次追踪（无历史）不该产生作废");
         assertEquals(Set.of(3), ContainerLivingItemHandler.trackLivingSlots("k", Map.of(), null));
-        assertTrue(ContainerLivingItemHandler.drainRuntimeCacheInvalidations().isEmpty(),
-            "按槽作废不能留到拍末");
     }
 
     @Test
@@ -68,11 +65,25 @@ class ContainerRuntimeCacheLifecycleTest {
     }
 
     @Test
-    void drainIsDestructive_secondCallEmpty() {
-        ContainerLivingItemHandler.removeDataByKey("k");
-        assertEquals(1, ContainerLivingItemHandler.drainRuntimeCacheInvalidations().size());
-        assertTrue(ContainerLivingItemHandler.drainRuntimeCacheInvalidations().isEmpty(),
-            "取走即清空 ⇒ 第二次 drain 应为空");
+    void repeatedRemoval_doesNotTouchAnotherKey() {
+        Level level = mock(Level.class);
+        when(level.dimension()).thenReturn(Level.OVERWORLD);
+        var removed = blockContainer(level, new BlockPos(64, 70, -8));
+        var kept = blockContainer(level, new BlockPos(65, 70, -8));
+        String removedKey = removed.getCacheKey();
+        String keptKey = kept.getCacheKey();
+        ContainerRuntimeCache.update(removed, 3, RuntimeSegments.EMPTY);
+        ContainerRuntimeCache.update(kept, 3, RuntimeSegments.EMPTY);
+        assertTrue(ContainerRuntimeCache.holdsContainer(removedKey));
+        assertTrue(ContainerRuntimeCache.holdsContainer(keptKey));
+
+        ContainerLivingItemHandler.removeDataByKey(removedKey);
+        assertFalse(ContainerRuntimeCache.holdsContainer(removedKey), "首次删除必须立即清除指定键");
+        assertTrue(ContainerRuntimeCache.holdsContainer(keptKey), "首次删除不影响另一键");
+
+        ContainerLivingItemHandler.removeDataByKey(removedKey);
+        assertFalse(ContainerRuntimeCache.holdsContainer(removedKey));
+        assertTrue(ContainerRuntimeCache.holdsContainer(keptKey), "重复删除不影响另一键");
     }
 
     @Test
@@ -80,29 +91,21 @@ class ContainerRuntimeCacheLifecycleTest {
         assertTrue(ContainerLivingItemHandler.trackLivingSlots(null, Map.of(3, Items.FURNACE), null).isEmpty());
     }
 
-    /**
-     * 回归（2026-10-12）：{@code removeDataByPos}（拆箱子 / 区块卸载）登记的作废键
-     * 必须与 {@code ContainerRuntimeCache} 的存储键同构。
-     *
-     * <p>修复前三方键不一致：{@code POS_TO_CACHE_KEY} 取出的是「维度|坐标」缓存键，
-     * 而 {@code trackLivingSlots} 与运行时缓存用的是裸 {@code chest_…} 键 ⇒
-     * {@code LIVING_SLOT_ITEMS.remove} 与 {@code removeContainer} 全部落空
-     * ⇒ 「容器整体卸载 ⇒ 作废整个运行时缓存」登记即打空（拆掉原地放回，旧燃料复活）。</p>
-     */
+    /** 按位置删除必须使用和运行时缓存相同的带维度键。 */
     @Test
-    @DisplayName("整容器作废：removeDataByPos 登记的键 == 运行时缓存存储键（拆箱子清得掉）")
+    @DisplayName("整容器作废：按位置拆箱子立即清除带维度的运行时键")
     void containerRemoval_invalidationKey_matchesRuntimeCacheKey() {
         BlockPos pos = new BlockPos(64, 70, -8);
         Level level = mock(Level.class);
         when(level.dimension()).thenReturn(Level.OVERWORLD);
 
-        var ctx = new SimpleContainerContext(new net.neoforged.neoforge.items.ItemStackHandler(27),
-            null, List.of(pos), List.of(), level);
+        var ctx = blockContainer(level, pos);
         String cacheKey = ctx.getCacheKey();
         assertEquals("minecraft:overworld|chest_64_70_-8", cacheKey);
 
         // 预置一条运行时数据（模拟箱子里有个烧着的活熔炉）
         ContainerRuntimeCache.update(ctx, 3, RuntimeSegments.EMPTY);
+        assertTrue(ContainerRuntimeCache.holdsContainer(cacheKey), "预置数据必须写到预期缓存键");
 
         // 建位置索引（与 tick 路径同源：容器级数据首次创建时 indexPositions）
         ContainerLivingItemHandler.getOrCreateContainerData(ctx, ContainerFluidData.KEY);
@@ -110,14 +113,11 @@ class ContainerRuntimeCacheLifecycleTest {
         // 拆箱子
         ContainerLivingItemHandler.removeDataByPos(level, pos);
 
-        // 与 LivingItem.onServerTick 一样消费整容器作废。
-        for (var invalidation : ContainerLivingItemHandler.drainRuntimeCacheInvalidations()) {
-            assertEquals(cacheKey, invalidation.cacheKey(),
-                "作废键必须与运行时缓存存储键同构，否则 removeContainer 打空");
-            ContainerRuntimeCache.removeContainer(invalidation.cacheKey());
-        }
+        assertFalse(ContainerRuntimeCache.holdsContainer(cacheKey),
+            "按位置删除返回前必须清掉整键，不能保留旧燃料或进度");
+    }
 
-        assertEquals(RuntimeSegments.EMPTY, ContainerRuntimeCache.get(cacheKey, 3),
-            "作废生效后该槽位应回到 EMPTY（旧燃料/进度不复活）");
+    private static SimpleContainerContext blockContainer(Level level, BlockPos pos) {
+        return new SimpleContainerContext(new ItemStackHandler(27), null, List.of(pos), List.of(), level);
     }
 }

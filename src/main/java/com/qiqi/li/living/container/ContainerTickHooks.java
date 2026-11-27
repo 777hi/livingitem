@@ -26,6 +26,7 @@ public final class ContainerTickHooks {
     /** 触发 tick 开始阶段（由 {@code SimpleContainerContext#setTickContext} 调用）。 */
     public static void fireTickStart(ContainerContext ctx, TickContext tick) {
         for (ContainerTickHook h : HOOKS) {
+            if (tick.isRuntimeCacheInvalidated()) return;
             h.onTickStart(ctx, tick);
         }
     }
@@ -33,6 +34,7 @@ public final class ContainerTickHooks {
     /** 触发写回阶段（由 {@code ContainerLivingItemHandler} 调用）。 */
     public static void fireWriteback(TickableContainerContext ctx, TickContext tick) {
         for (ContainerTickHook h : HOOKS) {
+            if (tick.isRuntimeCacheInvalidated()) return;
             h.onWriteback(ctx, tick);
         }
     }

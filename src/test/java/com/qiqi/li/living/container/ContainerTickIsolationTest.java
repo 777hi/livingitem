@@ -1,5 +1,6 @@
 package com.qiqi.li.living.container;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -7,28 +8,40 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.CALLS_REAL_METHODS;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.domain.brewing.BrewingStandSegment;
+import com.qiqi.li.living.domain.brewing.BrewingStandSegment.BrewingRuntime;
+import com.qiqi.li.living.runtime.ContainerRuntimeCache;
+import com.qiqi.li.living.runtime.RuntimeSegments;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.players.PlayerList;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.items.ItemStackHandler;
 
@@ -96,6 +109,295 @@ class ContainerTickIsolationTest {
 
         assertThrows(AssertionError.class, () ->
             ContainerLivingItemHandler.processIsolated(ctx, Mockito.mock(Level.class)));
+    }
+
+    @Test
+    @DisplayName("执行中整键作废：旧上下文不得复活缓存或覆盖同键新容器")
+    void invalidatedTick_cannotReadOrOverwriteReplacementRuntime() {
+        BlockPos pos = new BlockPos(40, 64, 1);
+        var old = new SimpleContainerContext(new ItemStackHandler(27), null, List.of(pos), List.of(), level);
+        var replacement = new SimpleContainerContext(new ItemStackHandler(27), null, List.of(pos), List.of(), level);
+        String key = old.getCacheKey();
+        assertEquals(key, replacement.getCacheKey());
+        var oldData = RuntimeSegments.EMPTY.with(BrewingStandSegment.INSTANCE,
+            new BrewingRuntime(20, java.util.Optional.empty()));
+        var newData = RuntimeSegments.EMPTY.with(BrewingStandSegment.INSTANCE,
+            new BrewingRuntime(400, java.util.Optional.empty()));
+        ContainerTickHooks.register(new ContainerTickHook() {
+            @Override
+            public void onTickStart(ContainerContext context, TickContext tick) {
+                if (context == replacement) {
+                    assertSame(RuntimeSegments.EMPTY, ContainerRuntimeCache.get(replacement, 0));
+                    ContainerRuntimeCache.update(replacement, 0, newData);
+                    return;
+                }
+                ContainerRuntimeCache.update(old, 0, oldData);
+                ContainerLivingItemHandler.removeDataByKey(key);
+                ContainerRuntimeCache.update(old, 0, oldData);
+                assertTrue(ContainerRuntimeCache.getSnapshot(key).isEmpty());
+
+                ContainerLivingItemHandler.processContext(replacement, level);
+                assertSame(RuntimeSegments.EMPTY, ContainerRuntimeCache.get(old, 0));
+                ContainerRuntimeCache.update(old, 0, oldData);
+            }
+        });
+        try {
+            ContainerLivingItemHandler.processContext(old, level);
+            assertSame(newData, ContainerRuntimeCache.get(key, 0));
+        } finally {
+            ContainerRuntimeCache.removeContainer(key);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @DisplayName("槽位映射中整键作废并重建：旧 get 返回空，旧 update 不覆盖同键新值")
+    void invalidatedDuringSlotMapping_cannotAccessReplacementRuntime(boolean update) {
+        BlockPos pos = new BlockPos(43, 64, 1);
+        class MappingContext extends SimpleContainerContext {
+            private Runnable duringMapping;
+
+            MappingContext(Level level) {
+                super(new ItemStackHandler(2), null, List.of(pos), List.of(), level);
+            }
+
+            void activate(Runnable action) {
+                duringMapping = action;
+            }
+
+            @Override
+            public int toPhysicalSlot(int logicalSlot) {
+                Runnable action = duringMapping;
+                duringMapping = null;
+                if (action != null) action.run();
+                return logicalSlot + 1;
+            }
+        }
+        var old = new MappingContext(level);
+        var replacement = new MappingContext(level);
+        String key = old.getCacheKey();
+        assertEquals(key, replacement.getCacheKey());
+        var oldData = RuntimeSegments.EMPTY.with(BrewingStandSegment.INSTANCE,
+            new BrewingRuntime(20, java.util.Optional.empty()));
+        var newData = RuntimeSegments.EMPTY.with(BrewingStandSegment.INSTANCE,
+            new BrewingRuntime(400, java.util.Optional.empty()));
+        ContainerTickHooks.register(new ContainerTickHook() {
+            @Override
+            public void onTickStart(ContainerContext context, TickContext tick) {
+                if (context == replacement) {
+                    assertSame(tick, replacement.getTickContext());
+                    ContainerRuntimeCache.update(replacement, 0, newData);
+                    return;
+                }
+                assertSame(tick, old.getTickContext());
+                // 仅在旧 tick 绑定后启动一次，避免在扫槽时触发作废。
+                old.activate(() -> {
+                    ContainerLivingItemHandler.removeDataByKey(key);
+                    ContainerLivingItemHandler.processContext(replacement, level);
+                });
+                if (update) {
+                    ContainerRuntimeCache.update(old, 0, oldData);
+                } else {
+                    assertSame(RuntimeSegments.EMPTY, ContainerRuntimeCache.get(old, 0),
+                        "旧 get 不得读到映射期间写入的同键新值");
+                }
+            }
+        });
+
+        try {
+            ContainerLivingItemHandler.processContext(old, level);
+            assertSame(newData, ContainerRuntimeCache.get(key, 1), "物理槽应保留同键新容器写入的值");
+        } finally {
+            ContainerRuntimeCache.removeContainer(key);
+        }
+    }
+
+    @Test
+    @DisplayName("首次扫槽中整键作废并重建：旧扫描不能改写新容器或触发旧钩子")
+    void invalidatedScan_cannotCommitToSameKeyReplacement() {
+        BlockPos pos = new BlockPos(41, 64, 1);
+        var handler = spy(new ItemStackHandler(1));
+        var old = new SimpleContainerContext(handler, null, List.of(pos), List.of(), level);
+        var replacementHandler = new ItemStackHandler(1);
+        replacementHandler.setStackInSlot(0, new ItemStack(Items.STONE));
+        var replacement = new SimpleContainerContext(replacementHandler, null, List.of(pos), List.of(), level);
+        String key = old.getCacheKey();
+        assertEquals(key, replacement.getCacheKey());
+        var oldData = RuntimeSegments.EMPTY.with(BrewingStandSegment.INSTANCE,
+            new BrewingRuntime(20, java.util.Optional.empty()));
+        var newData = RuntimeSegments.EMPTY.with(BrewingStandSegment.INSTANCE,
+            new BrewingRuntime(400, java.util.Optional.empty()));
+        var starts = new ArrayList<ContainerContext>();
+        var replacementRevision = new AtomicLong();
+        ContainerTickHooks.register(new ContainerTickHook() {
+            @Override
+            public void onTickStart(ContainerContext context, TickContext tick) {
+                starts.add(context);
+                ContainerRuntimeCache.update(context, 0, context == replacement ? newData : oldData);
+            }
+        });
+        doAnswer(call -> {
+            ContainerLivingItemHandler.removeDataByKey(key);
+            ContainerLivingItemHandler.processContext(replacement, level);
+            replacementRevision.set(ContainerLivingItemHandler.getContainerRevision(replacement));
+            return ItemStack.EMPTY;
+        }).doCallRealMethod().when(handler).getStackInSlot(0);
+
+        try {
+            ContainerLivingItemHandler.processContext(old, level);
+
+            assertAll(
+                () -> assertEquals(List.of(replacement), starts, "只有替代容器进入开始钩子"),
+                () -> assertTrue(replacementRevision.get() > 0, "替代容器正常完成首次扫描"),
+                () -> assertEquals(replacementRevision.get(), ContainerLivingItemHandler.getContainerRevision(replacement),
+                    "旧扫描签名不得推进替代容器的 revision"),
+                () -> assertSame(newData, ContainerRuntimeCache.get(key, 0), "旧容器不得写入替代容器的缓存"));
+        } finally {
+            ContainerRuntimeCache.removeContainer(key);
+        }
+    }
+
+    @Test
+    @DisplayName("扫槽中整键作废且不重建：旧扫描不复活聚合条目，下次处理正常")
+    void invalidatedScan_doesNotRecreateRemovedEntry() {
+        var handler = spy(new ItemStackHandler(1));
+        var ctx = new SimpleContainerContext(handler, null, List.of(new BlockPos(42, 64, 1)), List.of(), level);
+        String emptyLifecycle = ContainerLivingItemHandler.describeLifecycleStats();
+        ContainerLivingItemHandler.bumpContainerRevision(ctx);
+        var hook = Mockito.mock(ContainerTickHook.class);
+        ContainerTickHooks.register(hook);
+        doAnswer(call -> {
+            ContainerLivingItemHandler.removeDataByKey(ctx.getCacheKey());
+            return ItemStack.EMPTY;
+        }).doCallRealMethod().when(handler).getStackInSlot(0);
+
+        ContainerLivingItemHandler.processContext(ctx, level);
+
+        assertAll(
+            () -> assertEquals(0L, ContainerLivingItemHandler.getContainerRevision(ctx)),
+            () -> assertEquals(emptyLifecycle, ContainerLivingItemHandler.describeLifecycleStats()),
+            () -> Mockito.verifyNoInteractions(hook));
+        ContainerLivingItemHandler.processContext(ctx, level);
+        verify(hook).onTickStart(same(ctx), any(TickContext.class));
+        assertTrue(ContainerLivingItemHandler.getContainerRevision(ctx) > 0);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @DisplayName("开始钩子递归同一对象：保留外层 tick，正常或异常退出后均可再处理")
+    void tickStartReentry_preservesOuterTickAndReleasesGuard(boolean failFirstTick) {
+        SimpleContainerContext ctx = context();
+        var starts = new ArrayList<TickContext>();
+        var writebacks = new ArrayList<TickContext>();
+        var failure = new IllegalStateException("outer start");
+        ContainerTickHooks.register(new ContainerTickHook() {
+            @Override
+            public void onTickStart(ContainerContext context, TickContext tick) {
+                starts.add(tick);
+                if (starts.size() != 1) return;
+                context.syncSlotToClients(0, ItemStack.EMPTY);
+                ContainerLivingItemHandler.processContext(ctx, level);
+                assertSame(tick, ctx.getTickContext(), "内层调用不得解绑外层 tick");
+                assertEquals(1, starts.size(), "内层调用不得执行开始钩子");
+                assertTrue(writebacks.isEmpty(), "内层调用不得写回");
+                assertTrue(tick.dirtySlots.contains(0), "外层脏槽留给外层刷新");
+                if (failFirstTick) throw failure;
+            }
+
+            @Override
+            public void onWriteback(TickableContainerContext context, TickContext tick) {
+                assertSame(tick, ctx.getTickContext());
+                writebacks.add(tick);
+            }
+        });
+
+        if (failFirstTick) {
+            assertSame(failure, assertThrows(IllegalStateException.class, () ->
+                ContainerLivingItemHandler.processContext(ctx, level)));
+        } else {
+            ContainerLivingItemHandler.processContext(ctx, level);
+        }
+        assertEquals(1, starts.size());
+        TickContext first = starts.getFirst();
+        assertEquals(failFirstTick ? List.of() : List.of(first), writebacks);
+        assertTrue(first.dirtySlots.isEmpty());
+        assertNull(ctx.getTickContext());
+
+        ContainerLivingItemHandler.processContext(ctx, level);
+
+        assertEquals(2, starts.size());
+        TickContext next = starts.getLast();
+        assertEquals(failFirstTick ? List.of(next) : List.of(first, next), writebacks);
+        verify(ctx, times(2)).flushDirtySlots();
+        assertNull(ctx.getTickContext());
+    }
+
+    @Test
+    @DisplayName("扫槽递归同一对象：在读取槽位之前拦截内层处理")
+    void scanReentry_skipsNestedSlotReadsAndHooks() {
+        var handler = spy(new ItemStackHandler(1));
+        var ctx = new SimpleContainerContext(handler, level);
+        var hook = Mockito.mock(ContainerTickHook.class);
+        ContainerTickHooks.register(hook);
+        doAnswer(call -> {
+            ContainerLivingItemHandler.processContext(ctx, level);
+            return ItemStack.EMPTY;
+        }).doCallRealMethod().when(handler).getStackInSlot(0);
+
+        ContainerLivingItemHandler.processContext(ctx, level);
+
+        assertAll(
+            () -> verify(handler).getStackInSlot(0),
+            () -> verify(hook).onTickStart(same(ctx), any(TickContext.class)),
+            () -> verify(hook).onWriteback(same(ctx), any(TickContext.class)));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @DisplayName("首个开始或写回钩子作废容器：停止后续钩子，不刷新旧脏槽但仍解绑")
+    void invalidatedHook_stopsPipelineAndSkipsDirtyFlush(boolean invalidateOnWriteback) {
+        SimpleContainerContext ctx = context();
+        var phases = new ArrayList<String>();
+        ContainerTickHooks.register(new ContainerTickHook() {
+            @Override
+            public void onTickStart(ContainerContext context, TickContext tick) {
+                phases.add("first start");
+                context.syncSlotToClients(0, ItemStack.EMPTY);
+                if (!invalidateOnWriteback) invalidate(tick);
+            }
+
+            @Override
+            public void onWriteback(TickableContainerContext context, TickContext tick) {
+                phases.add("first writeback");
+                if (invalidateOnWriteback) invalidate(tick);
+            }
+
+            private void invalidate(TickContext tick) {
+                assertSame(tick, ctx.getTickContext());
+                assertTrue(tick.dirtySlots.contains(0), "作废前已有待刷新的脏槽");
+                ContainerLivingItemHandler.removeDataByKey(ctx.getCacheKey());
+            }
+        });
+        ContainerTickHooks.register(new ContainerTickHook() {
+            @Override
+            public void onTickStart(ContainerContext context, TickContext tick) {
+                phases.add("second start");
+            }
+
+            @Override
+            public void onWriteback(TickableContainerContext context, TickContext tick) {
+                phases.add("second writeback");
+            }
+        });
+
+        ContainerLivingItemHandler.processContext(ctx, level);
+
+        assertAll(
+            () -> assertEquals(invalidateOnWriteback
+                ? List.of("first start", "second start", "first writeback")
+                : List.of("first start"), phases),
+            () -> verify(ctx, Mockito.never()).flushDirtySlots(),
+            () -> assertNull(ctx.getTickContext()));
     }
 
     @Test

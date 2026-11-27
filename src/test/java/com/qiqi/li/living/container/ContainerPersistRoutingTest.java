@@ -127,9 +127,6 @@ class ContainerPersistRoutingTest {
                 "有身份的数据必须能从 SavedData 回填 —— 否则 persist 写了却永远读不回来");
         } finally {
             ContainerLivingItemHandler.removeDataByKey(ctx.getCacheKey());
-            // ⚠️ removeDataByKey 会往**全局**作废队列里登记一条；不消费掉会污染
-            // ContainerRuntimeCacheLifecycleTest#nullContainerKey_isIgnored（断言队列为空）。
-            ContainerLivingItemHandler.drainRuntimeCacheInvalidations();
         }
     }
 }

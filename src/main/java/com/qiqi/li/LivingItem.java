@@ -249,9 +249,9 @@ public class LivingItem {
     private static java.lang.reflect.Field HORSE_FIELD;
 
     private void commonSetup(FMLCommonSetupEvent event) {
-        ContainerLivingItemHandler.setRuntimeSlotInvalidator((key, slots) -> {
+        ContainerLivingItemHandler.setRuntimeInvalidators((key, slots) -> {
             for (int slot : slots) ContainerRuntimeCache.removeSlot(key, slot);
-        });
+        }, ContainerRuntimeCache::removeContainer);
 
         // 初始化容器规则配置目录
         ContainerRuleConfig.init(net.neoforged.fml.loading.FMLPaths.CONFIGDIR.get());
@@ -389,13 +389,7 @@ public class LivingItem {
         // R-06（2026-11-01）：回收「不再被 tick 看到」的容器 —— 区块卸载 / 玩家下线 / 实体消失 /
         // 物品销毁 / 掉落物被拾取 / 非玩家移除，六种成因都收敛为「这个键没再出现」，
         // 一个判据覆盖全部（内部按 5 分钟阈值 + 1 分钟节拍门控，不在热路径上全表扫）。
-        // ⚠️ 必须在下面 drain 之前：让同一 tick 就把整容器运行时数据清掉并下发。
         ContainerLivingItemHandler.sweepUnseenContainers();
-
-        // 槽位换件已在各容器扫槽后同步作废，这里只收整容器删除。
-        for (var invalidation : ContainerLivingItemHandler.drainRuntimeCacheInvalidations()) {
-            ContainerRuntimeCache.removeContainer(invalidation.cacheKey());
-        }
 
         // 运行时数据下发（档 2：缓存在 L2 只攒脏，发包归 L4 本调用）——
         // 必须在【所有】容器处理之后，才能收齐本 tick 各容器的登记。

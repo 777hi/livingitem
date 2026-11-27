@@ -909,7 +909,8 @@ private final Set<String> reusableKeySet = new HashSet<>();
 
 - **槽位变化**：`processContext` 扫槽后对比物品类型，L4 在 common setup 接入的回调立即调用
   `ContainerRuntimeCache.removeSlot`，在静息早退和新设备读取、写入之前清旧缓存。按槽作废不入拍末队列。
-- **整容器删除**：`removeDataByKey` 仍登记整键作废，L4 在 `LivingItem.onServerTick` 拍末消费。
+- **整容器删除**：`removeDataByKey` 立即清除整键运行时缓存。当前 tick 绑定的旧条目随之失效，
+  旧上下文不得再读写运行时缓存；同键重建可在首拍写入新状态。
 - **同步**：`LivingItemRuntimeSync.flush` 仍在整服拍末执行；按槽删除会标脏，最后一槽被清时照常发空快照。
   L1 只传缓存键与物理槽，不直接依赖 L2。
 

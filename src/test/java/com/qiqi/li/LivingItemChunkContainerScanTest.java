@@ -15,6 +15,7 @@ import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
@@ -23,17 +24,26 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
+import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.api.LivingItemRegistrationScope;
 import com.qiqi.li.living.container.ContainerChunkCache;
+import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
 import com.qiqi.li.living.container.TickContext;
+import com.qiqi.li.living.domain.brewing.BrewingStandSegment;
+import com.qiqi.li.living.domain.brewing.BrewingStandSegment.BrewingRuntime;
+import com.qiqi.li.living.domain.brewing.LivingBrewingStandData;
+import com.qiqi.li.living.domain.brewing.LivingBrewingStandFunction;
 import com.qiqi.li.living.domain.tnt.ExplosionData;
+import com.qiqi.li.living.domain.tnt.ExplosionLedger;
 import com.qiqi.li.living.domain.tnt.LivingTntData;
 import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.domain.water.FluidFlowBehavior;
@@ -42,6 +52,7 @@ import com.qiqi.li.living.domain.water.FluidFlowClientCache;
 import com.qiqi.li.living.domain.water.FluidFlowServerSync;
 import com.qiqi.li.living.domain.water.FluidFlowSyncPacket;
 import com.qiqi.li.living.domain.water.WaterComponents;
+import com.qiqi.li.living.runtime.ContainerRuntimeCache;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
@@ -62,12 +73,16 @@ import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.vehicle.ChestBoat;
+import net.minecraft.world.flag.FeatureFlags;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ChestMenu;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.alchemy.PotionBrewing;
+import net.minecraft.world.item.alchemy.PotionContents;
+import net.minecraft.world.item.alchemy.Potions;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
@@ -78,16 +93,21 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.ChestType;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.material.Fluids;
+import net.minecraft.world.level.storage.DimensionDataStorage;
 import net.minecraft.world.level.storage.loot.LootTable;
 import net.neoforged.neoforge.attachment.AttachmentHolder;
 import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.common.util.BlockSnapshot;
+import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.level.ChunkEvent;
+import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import net.neoforged.neoforge.fluids.FluidType;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.items.wrapper.InvWrapper;
 import net.neoforged.neoforge.registries.NeoForgeRegistries;
 
 /** 区块容器扫描回归：战利品容器保留、真实附件重载后的发现与流体渲染恢复、重扫延后到 BE 权威（pending 窗口不误踢条目）。 */
+@Isolated
 class LivingItemChunkContainerScanTest {
 
     private static final ResourceKey<LootTable> LOOT = ResourceKey.create(
@@ -95,6 +115,7 @@ class LivingItemChunkContainerScanTest {
     private static final HolderLookup.Provider REGISTRIES = RegistryAccess.EMPTY;
     private static final BlockPos CHEST_POS = new BlockPos(1, 64, 2);
     private static final int SOURCE_SLOT = 13;
+    private static final int BREWING_STAND_SLOT = 13;
 
     private final Map<FluidType, FluidFlowBehavior> savedBehaviors = new IdentityHashMap<>();
 
@@ -288,6 +309,177 @@ class LivingItemChunkContainerScanTest {
         assertNotNull(restored, "恢复 tick 的首拍必须经附件回填建立流体运行时数据");
         assertEquals(Map.of(SOURCE_SLOT, Fluids.WATER.getFluidType()), restored.getGeneratedSources());
         assertTrue(restored.isSource(SOURCE_SLOT), "恢复后的源必须重新进入自维持驱动");
+    }
+
+    @Test
+    @DisplayName("同拍拆除并原地重建箱子：旧酿造批次立即清除，新批次首拍扣燃料且保留到拍末")
+    void rebuiltChest_startsFreshBrewingBatchOnFirstServerTick() throws ReflectiveOperationException {
+        ChestWorld world = new ChestWorld();
+        Mockito.when(world.server.getAllLevels()).thenReturn(List.of(world.level));
+        Mockito.when(world.level.getAllEntities()).thenReturn(List.of());
+        Mockito.when(world.players.getPlayers()).thenReturn(List.of());
+        DimensionDataStorage storage = Mockito.mock(DimensionDataStorage.class);
+        Mockito.when(world.level.getDataStorage()).thenReturn(storage);
+        Mockito.when(storage.computeIfAbsent(Mockito.any(), Mockito.eq("living_item_pending_explosions")))
+            .thenReturn(new ExplosionLedger());
+        PotionBrewing.Builder recipes = new PotionBrewing.Builder(FeatureFlags.VANILLA_SET);
+        recipes.addContainer(Items.POTION);
+        recipes.addMix(Potions.WATER, Items.NETHER_WART, Potions.AWKWARD);
+        Mockito.when(world.level.potionBrewing()).thenReturn(recipes.build());
+
+        LivingItem mod = mockTickingMod();
+        ContainerChunkCache cache = ContainerChunkCache.getInstance();
+        ChestBlockEntity oldChest = world.chest;
+        BlockState chestState = oldChest.getBlockState();
+        var context = ContainerLivingItemHandler.resolveContextAt(world.level, CHEST_POS, world.handler);
+        assertNotNull(context);
+        String key = context.getCacheKey();
+        var freshBatch = new BrewingRuntime(400, Optional.of(Items.NETHER_WART));
+        ContainerRuntimeCache.removeContainer(key);
+
+        try (var functions = LivingItemRegistrationScope.isolated(List.of(new LivingBrewingStandFunction()))) {
+            stockBrewingChest(oldChest);
+            world.makeChunkAvailable();
+            cache.onChunkLoad(new ChunkEvent.Load(world.chunk, true));
+            world.serverTick(mod);
+            assertEquals(freshBatch, brewingRuntime(key), "旧箱必须由区块 tick 开启 400 拍批次");
+
+            cache.onBlockBreak(new BlockEvent.BreakEvent(world.level, CHEST_POS, chestState, world.viewer));
+            world.blockEntities.remove(CHEST_POS);
+            world.blockStates.remove(CHEST_POS);
+            world.handler = null;
+            boolean clearedOnBreak = ContainerRuntimeCache.getSnapshot(key).isEmpty();
+
+            BlockSnapshot beforePlacement = BlockSnapshot.create(world.level.dimension(), world.level, CHEST_POS);
+            ChestBlockEntity newChest = new ChestBlockEntity(CHEST_POS, chestState);
+            world.installChest(newChest);
+            stockBrewingChest(newChest);
+            cache.onBlockPlace(new BlockEvent.EntityPlaceEvent(beforePlacement,
+                world.level.getBlockState(CHEST_POS.below()), world.viewer));
+
+            world.serverTick(mod);
+            int firstTickFuel = LivingBrewingStandData.of(newChest.getItem(BREWING_STAND_SLOT)).fuel();
+            BrewingRuntime firstTickBatch = brewingRuntime(key);
+            world.serverTick(mod);
+            BrewingRuntime secondTickBatch = brewingRuntime(key);
+            int secondTickFuel = LivingBrewingStandData.of(newChest.getItem(BREWING_STAND_SLOT)).fuel();
+
+            assertAll(
+                () -> assertTrue(clearedOnBreak, "拆除后、重建前必须立即清空旧箱运行时数据"),
+                () -> assertEquals(9, firstTickFuel, "新酿造台首拍必须扣一次燃料（10 → 9）"),
+                () -> assertEquals(freshBatch, firstTickBatch, "新箱首拍结束时必须保有 400 拍新批次"),
+                () -> assertEquals(new BrewingRuntime(399, freshBatch.batchIngredient()), secondTickBatch,
+                    "下一拍必须继续新批次而非重启"),
+                () -> assertEquals(9, secondTickFuel, "继续批次不再次扣燃料"));
+        } finally {
+            ContainerRuntimeCache.removeContainer(key);
+        }
+    }
+
+    @Test
+    @DisplayName("双箱 tick 中拆半：旧上下文不再扣酿造燃料，存活单箱下一拍开启新批次")
+    void doubleChestSplitDuringTick_doesNotRestartBrewingInOldContext() {
+        ChestWorld world = new ChestWorld();
+        ChestBlockEntity right = world.installDoubleChest();
+        ChestBlockEntity survivor = world.chest;
+        BlockPos rightPos = right.getBlockPos();
+        IItemHandler mergedHandler = world.handler;
+        var doubleContext = ContainerLivingItemHandler.resolveContextAt(world.level, CHEST_POS, mergedHandler);
+        assertNotNull(doubleContext);
+        assertEquals(List.of(CHEST_POS, rightPos), doubleContext.getAssociatedBlockPositions());
+        String doubleKey = doubleContext.getCacheKey();
+        int mergedStandSlot = right.getContainerSize() + BREWING_STAND_SLOT;
+        var freshBatch = new BrewingRuntime(400, Optional.of(Items.NETHER_WART));
+
+        PotionBrewing.Builder recipes = new PotionBrewing.Builder(FeatureFlags.VANILLA_SET);
+        recipes.addContainer(Items.POTION);
+        recipes.addMix(Potions.WATER, Items.NETHER_WART, Potions.AWKWARD);
+        Mockito.when(world.level.potionBrewing()).thenReturn(recipes.build());
+
+        LivingItemFunction splitChest = new LivingItemFunction() {
+            @Override public boolean canApply(ItemStack stack) { return stack.is(Items.CRAFTING_TABLE); }
+            @Override public String getFunctionId() { return "test_split_double_chest"; }
+
+            @Override
+            public void tick(List<SlotEntry> entries, ContainerContext context, TickContext tick, Level level) {
+                ContainerChunkCache.getInstance().onBlockBreak(
+                    new BlockEvent.BreakEvent(world.level, rightPos, right.getBlockState(), world.viewer));
+                world.blockEntities.remove(rightPos);
+                world.blockStates.remove(rightPos);
+                right.setRemoved();
+                Mockito.when(world.level.getCapability(Capabilities.ItemHandler.BLOCK, rightPos, null))
+                    .thenReturn(null);
+                survivor.setBlockState(survivor.getBlockState().setValue(ChestBlock.TYPE, ChestType.SINGLE));
+                world.installChest(survivor);
+            }
+        };
+
+        ContainerRuntimeCache.removeContainer(doubleKey);
+        try (var functions = LivingItemRegistrationScope.isolated(List.of(splitChest, new LivingBrewingStandFunction()))) {
+            stockBrewingChest(survivor);
+            world.gameTime.incrementAndGet();
+            ContainerLivingItemHandler.processContext(doubleContext, world.level);
+            assertEquals(freshBatch, ContainerRuntimeCache.get(doubleKey, mergedStandSlot)
+                .get(BrewingStandSegment.INSTANCE), "拆半前双箱必须已开启真实酿造批次");
+            assertEquals(9, LivingBrewingStandData.of(survivor.getItem(BREWING_STAND_SLOT)).fuel());
+
+            // 原版合并槽序 RIGHT 在前；一次性设备先于酿造，并随被拆半箱离场。
+            ItemStack trigger = new ItemStack(Items.CRAFTING_TABLE);
+            LivingItemManager.setLiving(trigger, true);
+            right.setItem(0, trigger);
+            world.gameTime.incrementAndGet();
+            // 拆半这拍只推进已解析的双箱，不能顺带推进新单箱。
+            ContainerLivingItemHandler.processContext(doubleContext, world.level);
+            assertNull(world.level.getBlockEntity(rightPos));
+            ItemStack stand = survivor.getItem(BREWING_STAND_SLOT);
+            assertSame(stand, mergedHandler.getStackInSlot(mergedStandSlot), "旧合并 handler 仍可读存活半箱的槽");
+            int fuelAfterSplit = LivingBrewingStandData.of(stand).fuel();
+
+            var singleContext = ContainerLivingItemHandler.resolveContextAt(world.level, CHEST_POS, null);
+            assertNotNull(singleContext);
+            assertEquals(27, singleContext.getSize());
+            String singleKey = singleContext.getCacheKey();
+            assertFalse(doubleKey.equals(singleKey), "单箱必须使用独立于旧双箱的缓存键");
+            try {
+                world.gameTime.incrementAndGet();
+                ContainerLivingItemHandler.processContext(singleContext, world.level);
+                assertAll(
+                    () -> assertEquals(9, fuelAfterSplit, "失效的双箱不能重新开批、多扣一次燃料"),
+                    () -> assertEquals(freshBatch, brewingRuntime(singleKey), "合法单箱首拍开启 400 拍批次"),
+                    () -> assertEquals(8, LivingBrewingStandData.of(survivor.getItem(BREWING_STAND_SLOT)).fuel(),
+                        "只有合法单箱首拍扣一次燃料（9 → 8）"));
+            } finally {
+                ContainerRuntimeCache.removeContainer(singleKey);
+            }
+        } finally {
+            ContainerRuntimeCache.removeContainer(doubleKey);
+        }
+    }
+
+    private static LivingItem mockTickingMod() throws ReflectiveOperationException {
+        LivingItem mod = Mockito.mock(LivingItem.class);
+        // Mock 不执行模组构造器，只补齐真实 tick 所需的两张去重表。
+        var handlerMap = LivingItem.class.getDeclaredField("reusableHandlerMap");
+        handlerMap.setAccessible(true);
+        handlerMap.set(mod, new IdentityHashMap<>());
+        var keySet = LivingItem.class.getDeclaredField("reusableKeySet");
+        keySet.setAccessible(true);
+        keySet.set(mod, new HashSet<>());
+        Mockito.doCallRealMethod().when(mod).onServerTick(Mockito.any(ServerTickEvent.Pre.class));
+        return mod;
+    }
+
+    private static void stockBrewingChest(ChestBlockEntity chest) {
+        ItemStack stand = new ItemStack(Items.BREWING_STAND);
+        LivingItemManager.setLiving(stand, true);
+        LivingBrewingStandData.set(stand, LivingBrewingStandData.DEFAULT.withFuel(10));
+        chest.setItem(BREWING_STAND_SLOT, stand);
+        chest.setItem(4, PotionContents.createItemStack(Items.POTION, Potions.WATER));
+        chest.setItem(14, new ItemStack(Items.NETHER_WART));
+    }
+
+    private static BrewingRuntime brewingRuntime(String key) {
+        return ContainerRuntimeCache.get(key, BREWING_STAND_SLOT).get(BrewingStandSegment.INSTANCE);
     }
 
     @Test
@@ -651,6 +843,11 @@ class LivingItemChunkContainerScanTest {
 
         int processChest() {
             return LivingItem.processChunkContainers(level, chunk, new IdentityHashMap<>(), new HashSet<>());
+        }
+
+        void serverTick(LivingItem mod) {
+            gameTime.incrementAndGet();
+            mod.onServerTick(new ServerTickEvent.Pre(() -> true, server));
         }
 
         int tickDiscoveredChunks() {

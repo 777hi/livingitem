@@ -129,6 +129,11 @@ public class ContainerMonitor {
         BEFORE_STATES.put(containerKey, state);
     }
 
+    /** 丢弃被作废的扫描快照，不再读取旧容器。 */
+    public static void discardProcess(String containerKey) {
+        if (containerKey != null) BEFORE_STATES.remove(containerKey);
+    }
+
     public static void afterProcess(String containerKey, ContainerContext ctx) {
         if (!isEnabled(containerKey)) return;
 

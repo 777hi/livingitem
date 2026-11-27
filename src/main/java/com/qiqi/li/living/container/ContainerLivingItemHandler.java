@@ -2,6 +2,7 @@ package com.qiqi.li.living.container;
 import com.qiqi.li.living.components.LivingComponents;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -12,6 +13,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 import com.qiqi.li.living.api.HasContainerData;
 import com.qiqi.li.living.util.DoubleChestPositions;
@@ -77,8 +79,9 @@ public class ContainerLivingItemHandler {
      * （2026-10-03，1a-4）：新增一种数据只需定义一个 {@link ContainerDataKey} 常量，
      * 本类与 store 零改动。
      */
-    private static final class ContainerEntry {
+    static final class ContainerEntry {
         final ContainerDataStore store = new ContainerDataStore();
+        boolean invalidated;
         long revision;
         int contentSig = Integer.MIN_VALUE;   // 未算过签名时的哨兵
         long cachedSnapshotRevision = -1;      // 与下方快照配对的修订计数
@@ -127,16 +130,18 @@ public class ContainerLivingItemHandler {
 
     private static long lastSweepMs;
 
-    /** 槽位作废在扫槽后同步执行，整容器作废由 L4 在拍末消费。 */
+    /** 只拒绝同一上下文对象递归；同键替代实例可独立处理。 */
+    private static final ThreadLocal<Set<TickableContainerContext>> ACTIVE_CONTEXTS =
+        ThreadLocal.withInitial(() -> Collections.newSetFromMap(new IdentityHashMap<>()));
+
     private static BiConsumer<String, Set<Integer>> runtimeSlotInvalidator = (key, slots) -> {};
-    private static final List<RuntimeCacheInvalidation> PENDING_RUNTIME_INVALIDATIONS = new ArrayList<>();
+    private static Consumer<String> runtimeContainerInvalidator = key -> {};
 
-    /** 整容器作废；键与运行时缓存同口径。 */
-    public record RuntimeCacheInvalidation(String cacheKey) {}
-
-    /** common setup 接线；回调必须立即作废给定物理槽，不能延后到设备执行之后。 */
-    public static void setRuntimeSlotInvalidator(BiConsumer<String, Set<Integer>> invalidator) {
-        runtimeSlotInvalidator = java.util.Objects.requireNonNull(invalidator);
+    /** common setup 接线；两个回调都必须同步作废缓存，不发送网络包。 */
+    public static void setRuntimeInvalidators(BiConsumer<String, Set<Integer>> slots,
+                                              Consumer<String> container) {
+        runtimeSlotInvalidator = java.util.Objects.requireNonNull(slots);
+        runtimeContainerInvalidator = java.util.Objects.requireNonNull(container);
     }
 
     /** 维度 + 坐标，作为位置索引的键（含维度，避免跨维度同坐标冲突） */
@@ -173,7 +178,10 @@ public class ContainerLivingItemHandler {
      * 首次创建时登记回收起点与位置反向索引，后续查询不续期；无 containerKey 时返回 null。
      */
     private static ContainerEntry entry(ContainerContext ctx) {
-        String key = cacheKey(ctx);
+        return entry(ctx, cacheKey(ctx));
+    }
+
+    private static ContainerEntry entry(ContainerContext ctx, String key) {
         if (key == null) return null;
         ContainerEntry e = CONTAINER_DATA.get(key);
         if (e == null) {
@@ -185,10 +193,14 @@ public class ContainerLivingItemHandler {
         return e;
     }
 
-    /** 非创建读取聚合条目（区别于 {@link #entry}）；供静息闩锁判断，不登记回收起点。 */
-    private static ContainerEntry existingEntry(ContainerContext ctx) {
-        String key = cacheKey(ctx);
-        return key == null ? null : CONTAINER_DATA.get(key);
+    private static boolean isInvalidated(ContainerEntry entry) {
+        return entry != null && entry.invalidated;
+    }
+
+    private static boolean discardInvalidatedScan(ContainerEntry entry, String monitorKey) {
+        if (!isInvalidated(entry)) return false;
+        com.qiqi.li.living.debug.ContainerMonitor.discardProcess(monitorKey);
+        return true;
     }
 
     /**
@@ -221,23 +233,18 @@ public class ContainerLivingItemHandler {
      */
     public static void removeDataByKey(String cacheKey) {
         if (cacheKey == null) return;
-        CONTAINER_DATA.remove(cacheKey);
+        ContainerEntry removed = CONTAINER_DATA.remove(cacheKey);
+        if (removed != null) removed.invalidated = true;
         LAST_SEEN.remove(cacheKey);
         POS_TO_CACHE_KEY.values().removeIf(cacheKey::equals);
-        // 容器卸载 ⇒ 运行时缓存与追踪一并作废（方案 A，2026-10-11）。
-        // ⚠️ key 与下方两行必须是<b>同一把缓存键</b>（ContainerIdentity.getCacheKey）：
-        // 2026-10-12 修复前这里用 POS 索引取出的「维度前缀键」去删 LIVING_SLOT_ITEMS /
-        // 登记作废，而 trackLivingSlots 与 ContainerRuntimeCache 用的是裸容器键
-        // ⇒ 两条 remove 全部落空，「拆箱子 ⇒ 运行时缓存作废」从未真正生效
-        // （拆掉原地放回 ⇒ 旧燃料/进度复活）。
         LIVING_SLOT_ITEMS.remove(cacheKey);
-        PENDING_RUNTIME_INVALIDATIONS.add(new RuntimeCacheInvalidation(cacheKey));
+        runtimeContainerInvalidator.accept(cacheKey);
     }
 
     // ==================== 运行时缓存生命周期（方案 A，2026-10-11） ====================
 
     /**
-     * 对比「本 tick 的活物品槽位」与「上次记录」，把<b>已失效</b>的槽位登记进待清队列。
+     * 对比「本 tick 的活物品槽位」与「上次记录」，返回已失效的物理槽位。
      *
      * <p>失效判据（任一成立）：① 该槽位本 tick 不再是活物品（拿走 / 换成普通物品 / 取消活化）；
      * ② 该槽位换成了<b>另一种</b>活物品（{@code Item} 变了）。</p>
@@ -343,9 +350,8 @@ public class ContainerLivingItemHandler {
      * （整改计划 §6.3 实机第 3 条）。
      */
     public static String describeLifecycleStats() {
-        return String.format("追踪容器=%d 盖章键=%d 位置索引=%d 待作废=%d",
-            LIVING_SLOT_ITEMS.size(), LAST_SEEN.size(),
-            POS_TO_CACHE_KEY.size(), PENDING_RUNTIME_INVALIDATIONS.size());
+        return String.format("追踪容器=%d 盖章键=%d 位置索引=%d",
+            LIVING_SLOT_ITEMS.size(), LAST_SEEN.size(), POS_TO_CACHE_KEY.size());
     }
 
     /**
@@ -441,17 +447,6 @@ public class ContainerLivingItemHandler {
             }
         }
         return slots;
-    }
-
-    /**
-     * 取走本 tick 攒下的「待清运行时缓存」项（取走即清空）——
-     * 由 L4 消费并调用 {@code ContainerRuntimeCache}（保持 L1 不依赖 L2）。
-     */
-    public static List<RuntimeCacheInvalidation> drainRuntimeCacheInvalidations() {
-        if (PENDING_RUNTIME_INVALIDATIONS.isEmpty()) return List.of();
-        List<RuntimeCacheInvalidation> out = new ArrayList<>(PENDING_RUNTIME_INVALIDATIONS);
-        PENDING_RUNTIME_INVALIDATIONS.clear();
-        return out;
     }
 
     /** 按位置 O(1) 查询容器级数据（泛化；供 mixin 热路径与领域侧调用）。 */
@@ -570,17 +565,18 @@ public class ContainerLivingItemHandler {
      * identityHashCode，跨会话不稳定。</p>
      */
     public static void syncContentRevision(ContainerContext ctx) {
-        syncContentRevision(ctx, computeContentSignature(ctx));
+        ContainerEntry e = entry(ctx);
+        if (!isInvalidated(e)) {
+            syncContentRevision(e, computeContentSignature(ctx));
+        }
     }
 
-    /** 带 预计算签名 的兜底入口（Q2：签名与槽位扫描合一后由 processContext 传入）。 */
-    static void syncContentRevision(ContainerContext ctx, int signature) {
-        ContainerEntry e = entry(ctx);
-        if (e == null) return;
+    private static void syncContentRevision(ContainerEntry e, int signature) {
+        if (e == null || e.invalidated) return;
         int prev = e.contentSig;
         e.contentSig = signature;
         if (prev == Integer.MIN_VALUE || prev != signature) {
-            bumpContainerRevision(ctx);
+            e.revision++;
         }
     }
 
@@ -632,7 +628,6 @@ public class ContainerLivingItemHandler {
         CONTAINER_DATA.clear();
         POS_TO_CACHE_KEY.clear();
         LIVING_SLOT_ITEMS.clear();
-        PENDING_RUNTIME_INVALIDATIONS.clear();
         LAST_SEEN.clear();
         lastSweepMs = 0;
     }
@@ -737,23 +732,35 @@ public class ContainerLivingItemHandler {
      * @param level 世界
      */
     public static void processContext(TickableContainerContext context, Level level) {
-        long startNanos = System.nanoTime();
-
-        int containerSize = context.getSize();
-        if (containerSize <= 0) {
-            return;
+        Set<TickableContainerContext> active = ACTIVE_CONTEXTS.get();
+        if (!active.add(context)) return;
+        try {
+            processContextOnce(context, level);
+        } finally {
+            active.remove(context);
         }
+    }
+
+    private static void processContextOnce(TickableContainerContext context, Level level) {
+        long startNanos = System.nanoTime();
+        String cacheKey = context.getCacheKey();
+        ContainerEntry tickEntry = entry(context, cacheKey);
+        if (isInvalidated(tickEntry) || context.getSize() <= 0 || isInvalidated(tickEntry)) return;
 
         // monitorKey 用<b>裸稳定键</b>（getContainerKey）而非缓存键 —— 调试开关
         // （/living monitor enable chest_12_64_34）按玩家看得懂的坐标键下达，
         // 与缓存表内部用的「维度|坐标」不同名是故意的。
         String monitorKey = context.getContainerKey();
         com.qiqi.li.living.debug.ContainerMonitor.beforeProcess(monitorKey, context);
+        if (discardInvalidatedScan(tickEntry, monitorKey)) return;
 
-        // 阶段 1：扫描容器全部槽位，将活物品按功能分组，同遍混入内容签名（Q2：两遍全槽降为一遍）
+        // 先完成扫描和槽号映射，再向本轮条目提交结果。
         ScanResult scan = scanAndGroupLivingItems(context);
-        syncContentRevision(context, scan.contentSig());
+        if (discardInvalidatedScan(tickEntry, monitorKey)) return;
         Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped = scan.grouped();
+        Map<Integer, Item> livingSlots = collectLivingSlots(grouped, context);
+        if (discardInvalidatedScan(tickEntry, monitorKey)) return;
+        syncContentRevision(tickEntry, scan.contentSig());
 
         // ★ 运行时缓存生命周期（方案 A，2026-10-11）：物品离开槽位 / 被替换 ⇒ 作废该槽位的运行时数据。
         // ⚠️ 必须在下方早退分支之前 —— 「容器里已无活物品」正是最需要清理的场景。
@@ -761,8 +768,8 @@ public class ContainerLivingItemHandler {
         // removeDataByPos 的作废键三方同构（2026-10-12 修三处键不一致）。
         // ⚠️ 作废键必须与 ContainerRuntimeCache 的存储键同口径 = 【物理槽】
         // （update 内部过 ctx.toPhysicalSlot；这里同样过一遍，否则作废打空）
-        String cacheKey = context.getCacheKey();
-        Set<Integer> staleSlots = trackLivingSlots(cacheKey, collectLivingSlots(grouped, context), context);
+        Set<Integer> staleSlots = trackLivingSlots(cacheKey, livingSlots, context);
+        if (discardInvalidatedScan(tickEntry, monitorKey)) return;
         if (!staleSlots.isEmpty()) {
             runtimeSlotInvalidator.accept(cacheKey, staleSlots);
         }
@@ -774,11 +781,11 @@ public class ContainerLivingItemHandler {
         // 无持续工作 ⇒ 置真。冷数据（附件 / SavedData 流体）靠新 entry 首拍必完整来回填。
         // ⚠️ 判据用 scan.hasAnyLivingItem()（扫描见到的 IS_LIVING），不能用 grouped.isEmpty()
         // —— 活黑曜石等「有标记、无认领」物品不进分组，但静息判定必须看见它们。
-        ContainerEntry idleEntry = existingEntry(context);
         boolean hasLivingItems = scan.hasAnyLivingItem();
         boolean continuousWork = !hasLivingItems && hasContinuousSelfSustainingWork(context);
+        if (discardInvalidatedScan(tickEntry, monitorKey)) return;
         if (!hasLivingItems && !continuousWork
-                && idleEntry != null && idleEntry.suffixSettled) {
+                && tickEntry != null && tickEntry.suffixSettled) {
             long skipEndNanos = System.nanoTime();
             PerfMetrics.recordPhase("scan", skipEndNanos - startNanos);
             PerfMetrics.recordTick(skipEndNanos - startNanos);
@@ -789,8 +796,8 @@ public class ContainerLivingItemHandler {
             }
             return;
         }
-        if (idleEntry != null) {
-            idleEntry.suffixSettled = false;
+        if (tickEntry != null) {
+            tickEntry.suffixSettled = false;
         }
 
         // 自维持功能（如活水源）：即便容器内没有它自己的活物品，也要进入主流程参与 tick。
@@ -810,18 +817,21 @@ public class ContainerLivingItemHandler {
         }
 
         // 准备 TickContext（功能 tick 与环境交互的上下文）
-        TickContext tick = new TickContext(context);
+        TickContext tick = new TickContext(context, tickEntry);
         Throwable failure = null;
         long stressEndNanos;
         try {
             context.setTickContext(tick);
+            if (tick.isRuntimeCacheInvalidated()) return;
             long scanEndNanos = System.nanoTime();
             PerfMetrics.recordPhase("scan", scanEndNanos - startNanos);
 
             // 阶段 2：功能 tick（按扫描分组顺序，非优先级顺序）
             tickFunctionSlots(grouped, tick);
             runFunctionTicks(grouped, context, tick, level);
+            if (tick.isRuntimeCacheInvalidated()) return;
             tick.refreshMovedFunctionSlots(context);
+            if (tick.isRuntimeCacheInvalidated()) return;
 
             long funcTickEndNanos = System.nanoTime();
             PerfMetrics.recordPhase("func_tick", funcTickEndNanos - scanEndNanos);
@@ -834,6 +844,7 @@ public class ContainerLivingItemHandler {
             // 红石领域改为自维持后恒在 grouped 里，该兜底的守卫条件恒真、方法体永不执行；
             // 归零由它的驱动守卫接管（有 REDSTONE 数据 ⇒ 跑 calculate ⇒ hasAny=false 分支归零）。
             runContainerDataTicks(grouped, context, tick);
+            if (tick.isRuntimeCacheInvalidated()) return;
 
             long containerDataEndNanos = System.nanoTime();
             PerfMetrics.recordPhase("container_data", containerDataEndNanos - funcTickEndNanos);
@@ -847,9 +858,9 @@ public class ContainerLivingItemHandler {
             failure = e;
             throw e;
         } finally {
-            // 开始钩子失败也刷新脏槽；刷新失败仍须解绑。Error 不得被异常合并降为可隔离故障。
+            // 仅有效上下文刷新脏槽；异常时仍解绑，Error 不得降为可隔离故障。
             try {
-                context.flushDirtySlots();
+                if (!tick.isRuntimeCacheInvalidated()) context.flushDirtySlots();
             } catch (RuntimeException | Error e) {
                 if (failure == null) throw e;
                 if (e instanceof Error && !(failure instanceof Error)) {
@@ -858,9 +869,13 @@ public class ContainerLivingItemHandler {
                 }
                 if (e != failure) failure.addSuppressed(e);
             } finally {
+                if (tick.isRuntimeCacheInvalidated()) {
+                    com.qiqi.li.living.debug.ContainerMonitor.discardProcess(monitorKey);
+                }
                 context.setTickContext(null);
             }
         }
+        if (tick.isRuntimeCacheInvalidated()) return;
 
         // 阶段 6：脏槽刷新（from finally）后的 perf 收尾
         long flushSlotsEndNanos = System.nanoTime();
@@ -868,8 +883,8 @@ public class ContainerLivingItemHandler {
 
         // 静息闩锁置真（Q4a）：只有无异常走到这里才算「无活物品后缀成功收口」。
         // catch 分支会 rethrow ⇒ 异常拍永远到不了这一行，下拍继续完整清理。
-        if (!hasLivingItems && !continuousWork && idleEntry != null) {
-            idleEntry.suffixSettled = true;
+        if (!hasLivingItems && !continuousWork && tickEntry != null) {
+            tickEntry.suffixSettled = true;
         }
 
         PerfMetrics.recordTick(flushSlotsEndNanos - startNanos);
@@ -917,6 +932,7 @@ public class ContainerLivingItemHandler {
         // 没声明支持的那些在这里被挡住，否则「声明了才准入」就成了空话。
         boolean droppedItem = context instanceof ItemEntityContainerContext;
         for (var entry : grouped.entrySet()) {
+            if (tick.isRuntimeCacheInvalidated()) return;
             if (droppedItem && !entry.getKey().supportsDroppedItem()) continue;
 
             // ⭐ 执行前重验：扫描阶段拿到的「槽 → 物品」映射可能被前序功能改旧。
@@ -927,6 +943,7 @@ public class ContainerLivingItemHandler {
                 entry.getKey(), scanned, context, tick);
             if (!scanned.isEmpty() && entries.isEmpty()
                     && !LivingItemManager.getSelfSustainingFunctions().contains(entry.getKey())) continue;
+            if (tick.isRuntimeCacheInvalidated()) return;
             entry.getKey().tick(entries, context, tick, level);
         }
     }
@@ -1007,11 +1024,13 @@ public class ContainerLivingItemHandler {
         hcdEntries.sort(Comparator.comparingInt(e -> ((HasContainerData) e.getKey()).getPriority()));
 
         for (var entry : hcdEntries) {
+            if (tick.isRuntimeCacheInvalidated()) return;
             List<LivingItemFunction.SlotEntry> scanned = entry.getValue();
             List<LivingItemFunction.SlotEntry> current = refreshEntries(
                 entry.getKey(), scanned, context, tick);
             if (!scanned.isEmpty() && current.isEmpty()
                     && !LivingItemManager.getSelfSustainingFunctions().contains(entry.getKey())) continue;
+            if (tick.isRuntimeCacheInvalidated()) return;
             ((HasContainerData) entry.getKey()).tickContainerData(current, context, tick);
         }
     }

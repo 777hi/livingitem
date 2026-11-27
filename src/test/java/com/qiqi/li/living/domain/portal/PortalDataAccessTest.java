@@ -42,9 +42,7 @@ class PortalDataAccessTest {
     private UUID usedUuid;
     private final Map<String, Map<Object, Object>> cacheMaps = new HashMap<>();
     private final Map<String, Map<Object, Object>> previousCacheMaps = new HashMap<>();
-    private List<Object> pendingInvalidations;
-    private List<Object> previousInvalidations;
-    private long previousSweep;
+    private Long previousSweep;
     private ContainerDataSavedData saved;
     private MockedStatic<ContainerDataSavedData> savedAccess;
 
@@ -56,8 +54,6 @@ class PortalDataAccessTest {
             cacheMaps.put(name, cache);
             previousCacheMaps.put(name, new HashMap<>(cache));
         }
-        pendingInvalidations = (List<Object>) field("PENDING_RUNTIME_INVALIDATIONS").get(null);
-        previousInvalidations = new ArrayList<>(pendingInvalidations);
         previousSweep = field("lastSweepMs").getLong(null);
         ContainerLivingItemHandler.clearAllCaches();
         saved = ContainerDataSavedData.load(new CompoundTag(), null);
@@ -76,9 +72,7 @@ class PortalDataAccessTest {
                 cache.clear();
                 cache.putAll(previousCacheMaps.get(name));
             }
-            if (previousInvalidations != null) {
-                pendingInvalidations.clear();
-                pendingInvalidations.addAll(previousInvalidations);
+            if (previousSweep != null) {
                 field("lastSweepMs").setLong(null, previousSweep);
             }
         }

@@ -24,7 +24,7 @@
 <!-- test-map:begin（本区由 tools/gen_test_map.py 从 src/test 扫描生成；测试类增删 = 改代码后重跑本脚本，勿手改本区） -->
 ```
 src/test/java/com/qiqi/li/
-├── LivingItemChunkContainerScanTest.java  # 区块容器扫描回归：战利品容器保留、真实附件重载后的发现与流体渲染恢复、重扫延后到 BE 权威（pending 窗口不误踢条目）。
+├── LivingItemChunkContainerScanTest.java  # ⚠️ 源码无类注释
 ├── LivingItemMenuRuntimeTest.java  # ⚠️ 源码无类注释
 ├── LivingItemRuntimeContainerPositionsTest.java  # 运行时遥测发包的「容器键 → 位置」反查守卫。
 ├── client/
@@ -127,7 +127,7 @@ src/test/java/com/qiqi/li/
 │   │   ├── ContainerNeighborsTest.java  # 四邻取数的守卫（2026-10-07 性能收尾）—— 新增 ContainerContext#fillNeighbors（写入调用方缓冲，避免内层循环每格分配） 后，必须保证它与原 getNeighb…
 │   │   ├── ContainerPersistRoutingTest.java  # 容器级数据的 持久层二分 （2026-10-29 口径）。
 │   │   ├── ContainerPipelinePerfTest.java  # ⚠️ 源码无类注释
-│   │   ├── ContainerRuntimeCacheLifecycleTest.java  # 运行时缓存生命周期（方案 A，2026-10-11）单测 —— 槽位追踪与作废登记的判定。
+│   │   ├── ContainerRuntimeCacheLifecycleTest.java  # 运行时缓存生命周期单测 —— 槽位追踪与整容器同步清理。
 │   │   ├── ContainerSlotOpsTest.java  # 槽位数量操作原语（move / produce / consume / transform） 的守恒与违约守卫 —— TODO「物品传输」1-②③ 的判据面。
 │   │   ├── ContainerTickHooksTest.java  # ContainerTickHooks 的接缝测试。
 │   │   ├── ContainerTickIsolationTest.java  # ⚠️ 源码无类注释

@@ -39,8 +39,10 @@
    对从未 tick 的条目反复查询、写修订计数或取快照，不能把它永久保活。
 4. **回收入口统一**：`sweepUnseenContainers` 由 L4 每 tick 调、内部 **1 分钟**节拍，
    `nowMs - lastSeen >= 5 分钟` 时走 `removeDataByKey`。
-   该入口删除聚合条目、全部关联位置索引、槽位追踪、**`LAST_SEEN` 自身**，并登记整容器运行时作废；
-   显式破坏 / 取消活化与 sweep 共用它，不依赖调用方补删时间记录。
+   该入口同步删除聚合条目、全部关联位置索引、槽位追踪、**`LAST_SEEN` 自身**和整容器运行时缓存；
+   容器 tick 在读取物品处理器前确定本轮条目，扫描期间作废则丢弃旧扫描。绑定旧条目的 tick 上下文
+   不得再读写运行时缓存，即使同键已重建。回调返回后停止已作废 tick 的后续派发与旧脏槽刷新，仍解绑上下文；
+   同一上下文对象不能递归进入扫描。显式破坏 / 取消活化与 sweep 共用该入口。
 5. **活跃的空 store 保留聚合条目与已有方块索引**：删掉某个 `ContainerDataKey` 的值不等于删容器；
    只装活物品、只有修订 / 快照的方块容器仍须能按位置清理。
 6. **不再有第二套数据 TTL**：旧 `cleanupStaleData` / `cleanupStalePosIndex` 与全局 1200 次处理计数器退役；
@@ -66,8 +68,7 @@
 ## 3. 触发 → 影响
 
 > **线程只说一句**：下列触发**全部在服务器主线程**（含 `ChunkEvent.Unload`，判据见
-> [event-threading.md](event-threading.md) §2）。⇒ 四张表的清理**不存在并发问题**，
-> 不需要为它们设计锁或入队；运行时作废队列是分层接线，不是线程补丁。
+> [event-threading.md](event-threading.md) §2）。缓存清理同步执行；运行时缓存由 L4 接线作废，发包仍在拍末。
 
 | 触发 | 对四张表与时间记录的影响 |
 |---|---|
@@ -75,7 +76,7 @@
 | `ChunkEvent.Unload` | 撤销 pending rescan；清 `EnderChannelRegistry` 路由；**不立即清**四张表，停止 tick 后由 sweep 兜底 |
 | 容器继续 tick 且已无活物品 | 继续盖章；删 `LIVING_SLOT_ITEMS[cacheKey]`，在静息早退前作废运行时槽位；保留聚合条目 / 位置索引 |
 | 槽位活物品类型变化 | 扫槽后立即作废该槽位运行时数据（`removeSlot`），先于设备读写；拍末同步，不删除容器 |
-| 玩家破坏方块（位置索引命中） / 物品形态取消活化 | `removeDataByKey`：聚合条目 + 索引 + 追踪 + 时间记录；登记整容器运行时作废 |
+| 玩家破坏方块（位置索引命中） / 物品形态取消活化 | `removeDataByKey`：同步清除聚合条目、索引、追踪、时间记录与整容器运行时缓存 |
 | 容器停止被看到（下线 / 消失 / 销毁 / 拾取 / 非玩家移除），或条目从未进入 tick | 满阈值后由 sweep 走同一删除入口；查询不能延后它 |
 | `sweepUnseenContainers` | 按 §2 回收过期键；顺带 `ItemFormLiveViews.evictExpired` |
 | 停服 / 切存档 | 各缓存类 `StaticCacheRegistry.onServerStop` → 全清 |

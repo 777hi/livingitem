@@ -396,6 +396,11 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
         return false;
     }
 
+    /** 本拍绑定的容器条目是否已被整键作废；同键重建不恢复旧上下文。 */
+    default boolean isRuntimeCacheInvalidated() {
+        return false;
+    }
+
     /**
      * 预检查：目标槽能否<b>完整接收整栈</b>（准入 + 容量）。<b>不改任何状态</b>。
      *

@@ -1,6 +1,7 @@
 package com.qiqi.li.living.domain.brewing;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -190,8 +191,6 @@ class BrewingBatchLogicTest {
             assertNull(firstTick.get(FurnaceSegment.INSTANCE));
             assertEquals(new BrewingRuntime(FULL, WART_BATCH), firstTick.get(BrewingStandSegment.INSTANCE));
             assertEquals(9, LivingBrewingStandData.of(context.getItem(STAND_SLOT)).fuel());
-            assertEquals(0, ContainerLivingItemHandler.drainRuntimeCacheInvalidations().size(),
-                "换机首拍不能留下会晚删新进度的槽位作废条目");
 
             ContainerLivingItemHandler.processContext(context, level);
             assertEquals(new BrewingRuntime(FULL - 1, WART_BATCH),
@@ -199,11 +198,11 @@ class BrewingBatchLogicTest {
             assertEquals(9, LivingBrewingStandData.of(context.getItem(STAND_SLOT)).fuel());
             var activeSnapshot = ContainerRuntimeCache.getSnapshot(key);
             LivingItemRuntimeSync.flush(List.of(viewer), positions::get);
+            assertEquals(activeSnapshot, ContainerRuntimeCache.getSnapshot(key), "同步后不能丢失新设备进度");
 
             context.setItem(STAND_SLOT, ItemStack.EMPTY);
             ContainerLivingItemHandler.processContext(context, level);
-            assertTrue(ContainerRuntimeCache.getSnapshot(key).isEmpty(), "最后一台设备离槽后必须立即清除运行时状态");
-            assertEquals(0, ContainerLivingItemHandler.drainRuntimeCacheInvalidations().size());
+            assertFalse(ContainerRuntimeCache.holdsContainer(key), "最后一台设备离槽后必须立即清除运行时状态");
             assertEquals(new PotionContents(Potions.WATER), context.getItem(BOTTLE_SLOT).get(DataComponents.POTION_CONTENTS));
             assertTrue(context.getItem(INGREDIENT_SLOT).is(WART));
             LivingItemRuntimeSync.flush(List.of(viewer), positions::get);

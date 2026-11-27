@@ -72,11 +72,12 @@ public class ContainerRuntimeCache {
      */
     public static void update(com.qiqi.li.living.container.ContainerContext ctx,
                               int logicalSlot, RuntimeSegments data) {
-        if (ctx == null) return;
+        if (ctx == null || ctx.isRuntimeCacheInvalidated()) return;
         // cacheKey 正常 = 稳定键 + 维度前缀；测试替身没有维度 ⇒ 回落到稳定键
         String containerKey = ctx.getCacheKey() != null ? ctx.getCacheKey() : ctx.getContainerKey();
         if (containerKey == null) return;
         int physicalSlot = ctx.toPhysicalSlot(logicalSlot);
+        if (ctx.isRuntimeCacheInvalidated()) return;
         store.computeIfAbsent(containerKey, k -> new ConcurrentHashMap<>()).put(physicalSlot, data);
         dirtyContainers.add(containerKey);
     }
@@ -121,7 +122,7 @@ public class ContainerRuntimeCache {
      * 跨边界点」的另一半：读方向也是跨边界点。</p>
      */
     public static RuntimeSegments get(com.qiqi.li.living.container.ContainerContext ctx, int logicalSlot) {
-        if (ctx == null) return RuntimeSegments.EMPTY;
+        if (ctx == null || ctx.isRuntimeCacheInvalidated()) return RuntimeSegments.EMPTY;
 
         // ⭐ 作废在「消费之前」生效（2026-11-03，TickContext#movedSlots）：
         // 原先作废只在 tick 末尾由 trackLivingSlots 比对槽位变化得出 ⇒ 活塞把设备从 A 移到 B
@@ -132,7 +133,9 @@ public class ContainerRuntimeCache {
 
         String containerKey = ctx.getCacheKey() != null ? ctx.getCacheKey() : ctx.getContainerKey();
         if (containerKey == null) return RuntimeSegments.EMPTY;
-        return get(containerKey, ctx.toPhysicalSlot(logicalSlot));
+        int physicalSlot = ctx.toPhysicalSlot(logicalSlot);
+        if (ctx.isRuntimeCacheInvalidated()) return RuntimeSegments.EMPTY;
+        return get(containerKey, physicalSlot);
     }
 
     public static RuntimeSegments get(String containerKey, int slot) {

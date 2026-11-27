@@ -65,6 +65,11 @@ public class SimpleContainerContext implements TickableContainerContext {
         return currentTickContext;
     }
 
+    @Override
+    public boolean isRuntimeCacheInvalidated() {
+        return currentTickContext != null && currentTickContext.isRuntimeCacheInvalidated();
+    }
+
     /**
      * <b>测试专用</b>：自动生成唯一 containerKey。
      *
@@ -599,11 +604,15 @@ public class SimpleContainerContext implements TickableContainerContext {
 
     @Override
     public void flushDirtySlots() {
-        if (currentTickContext == null) return;
-        for (int slot : currentTickContext.dirtySlots) {
-            flushSlotSync(slot, getItem(slot));
+        TickContext tick = currentTickContext;
+        if (tick == null) return;
+        for (int slot : tick.dirtySlots) {
+            if (tick.isRuntimeCacheInvalidated()) break;
+            ItemStack stack = getItem(slot);
+            if (tick.isRuntimeCacheInvalidated()) break;
+            flushSlotSync(slot, stack);
         }
-        currentTickContext.dirtySlots.clear();
+        tick.dirtySlots.clear();
     }
 
     private void flushSlotSync(int logicalSlot, ItemStack stack) {
