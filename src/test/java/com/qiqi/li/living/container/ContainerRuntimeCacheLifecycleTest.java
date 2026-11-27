@@ -2,13 +2,13 @@ package com.qiqi.li.living.container;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import net.minecraft.core.BlockPos;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 
@@ -31,8 +31,7 @@ import static org.mockito.Mockito.when;
  * <p>⚠️ 判据<b>只看物品类型、不看组件</b> —— 燃烧标志等组件会被 tick 改写，
  * 若纳入判据会把正在运行的缓存误清（燃料 / 进度每次状态翻转就丢）。</p>
  *
- * <p>L4 侧「取走登记 → 调 {@code ContainerRuntimeCache} 清理」的循环是直译的 3 行，
- * 由游戏内验证覆盖（见 living-brewing-stand-tech / living-furnace-tech 的验证清单）。</p>
+ * <p>按槽作废在扫槽后同步执行；整容器作废由服务端拍末消费。</p>
  */
 class ContainerRuntimeCacheLifecycleTest {
 
@@ -47,45 +46,30 @@ class ContainerRuntimeCacheLifecycleTest {
 
     @Test
     void itemLeavingSlot_isInvalidated() {
-        ContainerLivingItemHandler.trackLivingSlots("k", Map.of(3, Items.FURNACE), null);
-        assertTrue(ContainerLivingItemHandler.drainRuntimeCacheInvalidations().isEmpty(),
+        assertTrue(ContainerLivingItemHandler.trackLivingSlots("k", Map.of(3, Items.FURNACE), null).isEmpty(),
             "首次追踪（无历史）不该产生作废");
-
-        ContainerLivingItemHandler.trackLivingSlots("k", Map.<Integer, Item>of(), null);
-        List<ContainerLivingItemHandler.RuntimeCacheInvalidation> inv =
-            ContainerLivingItemHandler.drainRuntimeCacheInvalidations();
-        assertEquals(1, inv.size(), "槽位空了 ⇒ 应登记 1 条作废");
-        assertEquals("k", inv.get(0).cacheKey());
-        assertTrue(inv.get(0).slots().contains(3));
-        assertFalse(inv.get(0).wholeContainer());
+        assertEquals(Set.of(3), ContainerLivingItemHandler.trackLivingSlots("k", Map.of(), null));
+        assertTrue(ContainerLivingItemHandler.drainRuntimeCacheInvalidations().isEmpty(),
+            "按槽作废不能留到拍末");
     }
 
     @Test
     void swappingItemType_isInvalidated() {
-        ContainerLivingItemHandler.trackLivingSlots("k", Map.of(3, Items.FURNACE), null);
-        ContainerLivingItemHandler.drainRuntimeCacheInvalidations();
-
-        ContainerLivingItemHandler.trackLivingSlots("k", Map.of(3, Items.HOPPER), null);
-        List<ContainerLivingItemHandler.RuntimeCacheInvalidation> inv =
-            ContainerLivingItemHandler.drainRuntimeCacheInvalidations();
-        assertEquals(1, inv.size(), "换成另一种活物品 ⇒ 应登记作废");
-        assertTrue(inv.get(0).slots().contains(3));
+        ContainerLivingItemHandler.trackLivingSlots("k", Map.of(3, Items.FURNACE, 4, Items.HOPPER), null);
+        assertEquals(Set.of(3), ContainerLivingItemHandler.trackLivingSlots(
+            "k", Map.of(3, Items.HOPPER, 4, Items.HOPPER), null));
     }
 
     @Test
     void sameItemPersisting_isNotInvalidated() {
         ContainerLivingItemHandler.trackLivingSlots("k", Map.of(3, Items.FURNACE), null);
-        ContainerLivingItemHandler.drainRuntimeCacheInvalidations();
-
-        ContainerLivingItemHandler.trackLivingSlots("k", Map.of(3, Items.FURNACE), null);
-        assertTrue(ContainerLivingItemHandler.drainRuntimeCacheInvalidations().isEmpty(),
+        assertTrue(ContainerLivingItemHandler.trackLivingSlots("k", Map.of(3, Items.FURNACE), null).isEmpty(),
             "同类物品持续存在 ⇒ 不该作废（否则燃料/进度会被反复清零）");
     }
 
     @Test
     void drainIsDestructive_secondCallEmpty() {
-        ContainerLivingItemHandler.trackLivingSlots("k", Map.of(3, Items.FURNACE), null);
-        ContainerLivingItemHandler.trackLivingSlots("k", Map.<Integer, Item>of(), null);
+        ContainerLivingItemHandler.removeDataByKey("k");
         assertEquals(1, ContainerLivingItemHandler.drainRuntimeCacheInvalidations().size());
         assertTrue(ContainerLivingItemHandler.drainRuntimeCacheInvalidations().isEmpty(),
             "取走即清空 ⇒ 第二次 drain 应为空");
@@ -93,8 +77,7 @@ class ContainerRuntimeCacheLifecycleTest {
 
     @Test
     void nullContainerKey_isIgnored() {
-        ContainerLivingItemHandler.trackLivingSlots(null, Map.of(3, Items.FURNACE), null);
-        assertTrue(ContainerLivingItemHandler.drainRuntimeCacheInvalidations().isEmpty());
+        assertTrue(ContainerLivingItemHandler.trackLivingSlots(null, Map.of(3, Items.FURNACE), null).isEmpty());
     }
 
     /**
@@ -127,9 +110,8 @@ class ContainerRuntimeCacheLifecycleTest {
         // 拆箱子
         ContainerLivingItemHandler.removeDataByPos(level, pos);
 
-        // L4 侧的消费循环（直译 LivingItem.onServerTick 的三行）
+        // 与 LivingItem.onServerTick 一样消费整容器作废。
         for (var invalidation : ContainerLivingItemHandler.drainRuntimeCacheInvalidations()) {
-            assertTrue(invalidation.wholeContainer(), "拆箱子 ⇒ 整容器作废");
             assertEquals(cacheKey, invalidation.cacheKey(),
                 "作废键必须与运行时缓存存储键同构，否则 removeContainer 打空");
             ContainerRuntimeCache.removeContainer(invalidation.cacheKey());

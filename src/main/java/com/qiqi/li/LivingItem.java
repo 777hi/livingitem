@@ -249,6 +249,10 @@ public class LivingItem {
     private static java.lang.reflect.Field HORSE_FIELD;
 
     private void commonSetup(FMLCommonSetupEvent event) {
+        ContainerLivingItemHandler.setRuntimeSlotInvalidator((key, slots) -> {
+            for (int slot : slots) ContainerRuntimeCache.removeSlot(key, slot);
+        });
+
         // 初始化容器规则配置目录
         ContainerRuleConfig.init(net.neoforged.fml.loading.FMLPaths.CONFIGDIR.get());
 
@@ -388,19 +392,9 @@ public class LivingItem {
         // ⚠️ 必须在下面 drain 之前：让同一 tick 就把整容器运行时数据清掉并下发。
         ContainerLivingItemHandler.sweepUnseenContainers();
 
-        // 运行时缓存生命周期（方案 A，2026-10-11）：物品离开槽位 / 换物品 / 容器卸载
-        // ⇒ 作废该槽位（或整容器）的运行时数据。必须在下方 flush 之前 ——
-        // 让「作废」也在本 tick 下发（removeSlot 会标脏），客户端 tooltip 随即回退到组件值。
-        // ⚠️ invalidation.cacheKey() 是缓存键（世界容器带维度前缀），与 ContainerRuntimeCache
-        // 的存储键同构（2026-10-12 前三方键不一致 ⇒ 整容器作废登记打空）。
+        // 槽位换件已在各容器扫槽后同步作废，这里只收整容器删除。
         for (var invalidation : ContainerLivingItemHandler.drainRuntimeCacheInvalidations()) {
-            if (invalidation.wholeContainer()) {
-                ContainerRuntimeCache.removeContainer(invalidation.cacheKey());
-            } else {
-                for (int slot : invalidation.slots()) {
-                    ContainerRuntimeCache.removeSlot(invalidation.cacheKey(), slot);
-                }
-            }
+            ContainerRuntimeCache.removeContainer(invalidation.cacheKey());
         }
 
         // 运行时数据下发（档 2：缓存在 L2 只攒脏，发包归 L4 本调用）——

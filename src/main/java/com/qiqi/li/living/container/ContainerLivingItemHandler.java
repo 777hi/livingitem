@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 
 import com.qiqi.li.living.api.HasContainerData;
 import com.qiqi.li.living.util.DoubleChestPositions;
@@ -126,17 +127,17 @@ public class ContainerLivingItemHandler {
 
     private static long lastSweepMs;
 
-    /**
-     * 本 tick 攒下的「待清运行时缓存」项，由 L4（{@code LivingItem.onServerTick}）取走并执行
-     * —— 让 L1 不直接依赖 L2 的 {@code ContainerRuntimeCache}（避免 R1 分层违规）。
-     */
+    /** 槽位作废在扫槽后同步执行，整容器作废由 L4 在拍末消费。 */
+    private static BiConsumer<String, Set<Integer>> runtimeSlotInvalidator = (key, slots) -> {};
     private static final List<RuntimeCacheInvalidation> PENDING_RUNTIME_INVALIDATIONS = new ArrayList<>();
 
-    /** 一条待作废的运行时缓存记录（{@code wholeContainer} = 容器整体卸载）。
-     * <p>{@code cacheKey} 存的是<b>缓存键</b>（{@link ContainerIdentity#getCacheKey()}，
-     * 世界容器带维度前缀）—— 与 {@code ContainerRuntimeCache} 的存储键同构，
-     * L4 直接拿去 removeSlot / removeContainer。</p> */
-    public record RuntimeCacheInvalidation(String cacheKey, Set<Integer> slots, boolean wholeContainer) {}
+    /** 整容器作废；键与运行时缓存同口径。 */
+    public record RuntimeCacheInvalidation(String cacheKey) {}
+
+    /** common setup 接线；回调必须立即作废给定物理槽，不能延后到设备执行之后。 */
+    public static void setRuntimeSlotInvalidator(BiConsumer<String, Set<Integer>> invalidator) {
+        runtimeSlotInvalidator = java.util.Objects.requireNonNull(invalidator);
+    }
 
     /** 维度 + 坐标，作为位置索引的键（含维度，避免跨维度同坐标冲突） */
     private record PosKey(ResourceKey<Level> dim, BlockPos pos) {}
@@ -155,8 +156,9 @@ public class ContainerLivingItemHandler {
         return ctx.getCacheKey();
     }
 
-    /** 为容器关联的所有方块位置建立反向索引 */
+    /** 登记方块宿主的所有关联位置；实体位置快照不参与反查。 */
     private static void indexPositions(ContainerContext ctx, String cacheKey) {
+        if (ctx.getBlockPos() == null) return;
         Level level = ctx.getLevel();
         if (level == null) return;
         ResourceKey<Level> dim = level.dimension();
@@ -229,7 +231,7 @@ public class ContainerLivingItemHandler {
         // ⇒ 两条 remove 全部落空，「拆箱子 ⇒ 运行时缓存作废」从未真正生效
         // （拆掉原地放回 ⇒ 旧燃料/进度复活）。
         LIVING_SLOT_ITEMS.remove(cacheKey);
-        PENDING_RUNTIME_INVALIDATIONS.add(new RuntimeCacheInvalidation(cacheKey, Set.of(), true));
+        PENDING_RUNTIME_INVALIDATIONS.add(new RuntimeCacheInvalidation(cacheKey));
     }
 
     // ==================== 运行时缓存生命周期（方案 A，2026-10-11） ====================
@@ -255,21 +257,18 @@ public class ContainerLivingItemHandler {
      *
      * @param ctx 容器上下文，仅用于首次出现时补位置反向索引；null（测试替身 / 无世界）时跳过索引
      */
-    static void trackLivingSlots(String cacheKey, Map<Integer, Item> currentSlots,
-                                 @javax.annotation.Nullable ContainerContext ctx) {
-        if (cacheKey == null) return;
+    static Set<Integer> trackLivingSlots(String cacheKey, Map<Integer, Item> currentSlots,
+                                         @javax.annotation.Nullable ContainerContext ctx) {
+        if (cacheKey == null) return Set.of();
         LAST_SEEN.put(cacheKey, System.currentTimeMillis());
         Map<Integer, Item> previous = LIVING_SLOT_ITEMS.get(cacheKey);
+        Set<Integer> stale = null;
         if (previous != null) {
-            Set<Integer> stale = null;
             for (Map.Entry<Integer, Item> e : previous.entrySet()) {
                 if (currentSlots.get(e.getKey()) != e.getValue()) {
                     if (stale == null) stale = new HashSet<>();
                     stale.add(e.getKey());
                 }
-            }
-            if (stale != null) {
-                PENDING_RUNTIME_INVALIDATIONS.add(new RuntimeCacheInvalidation(cacheKey, stale, false));
             }
         }
         if (currentSlots.isEmpty()) {
@@ -284,6 +283,7 @@ public class ContainerLivingItemHandler {
                 indexPositions(ctx, cacheKey);
             }
         }
+        return stale == null ? Set.of() : stale;
     }
 
     /**
@@ -761,7 +761,11 @@ public class ContainerLivingItemHandler {
         // removeDataByPos 的作废键三方同构（2026-10-12 修三处键不一致）。
         // ⚠️ 作废键必须与 ContainerRuntimeCache 的存储键同口径 = 【物理槽】
         // （update 内部过 ctx.toPhysicalSlot；这里同样过一遍，否则作废打空）
-        trackLivingSlots(context.getCacheKey(), collectLivingSlots(grouped, context), context);
+        String cacheKey = context.getCacheKey();
+        Set<Integer> staleSlots = trackLivingSlots(cacheKey, collectLivingSlots(grouped, context), context);
+        if (!staleSlots.isEmpty()) {
+            runtimeSlotInvalidator.accept(cacheKey, staleSlots);
+        }
 
         // 静息快路径（Q4a）：扫描未见活物品 + 闩锁已结算 + 无自维持候选报告持续工作
         // ⇒ 跳过后缀（TickContext / 开始钩子 / 自维持注入 / 容器级数据 / 写回 / 脏槽收尾）。

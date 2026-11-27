@@ -907,15 +907,11 @@ private final Set<String> reusableKeySet = new HashSet<>();
 
 **运行时作废接线（`ContainerLivingItemHandler` 登记 + `LivingItem` 执行）**：
 
-- **L1 追踪**：`processContext` 每 tick 把「本容器活物品槽位 → 物品类型」与上次记录对比，
-  失效的槽位登记进待清队列（`RuntimeCacheInvalidation`，放在**早退分支之前** ——
-  「容器里已无活物品」正是要清理的场景）；整键删除（`removeDataByKey`，含破坏位置反查）登记**整容器**作废。
-- **L4 执行**：`LivingItem.onServerTick` 取走队列，调 `ContainerRuntimeCache.removeSlot` /
-  `removeContainer` —— 位置在 `LivingItemRuntimeSync.flush` **之前** ⇒ 作废也在本 tick 下发
-  （`removeSlot` 会标脏），客户端 tooltip 随即回退到组件值。
-- ⚠️ **为什么拆成两步（L1 登记 / L4 执行）**：`ContainerLivingItemHandler` 在 **L1**、
-  `ContainerRuntimeCache` 在 **L2** ⇒ L1 直接调用会新增 **R1 分层违规**。
-  拆开后 L1 只碰自己的队列、L4（接线层）执行跨层调用 ⇒ **零新增违规**。
+- **槽位变化**：`processContext` 扫槽后对比物品类型，L4 在 common setup 接入的回调立即调用
+  `ContainerRuntimeCache.removeSlot`，在静息早退和新设备读取、写入之前清旧缓存。按槽作废不入拍末队列。
+- **整容器删除**：`removeDataByKey` 仍登记整键作废，L4 在 `LivingItem.onServerTick` 拍末消费。
+- **同步**：`LivingItemRuntimeSync.flush` 仍在整服拍末执行；按槽删除会标脏，最后一槽被清时照常发空快照。
+  L1 只传缓存键与物理槽，不直接依赖 L2。
 
 **两条判据红线**：
 

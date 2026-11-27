@@ -16,7 +16,7 @@
 | 表 | 键 | 为什么不换一种存法 | 谁写 | 谁读 |
 |---|---|---|---|---|
 | `ContainerLivingItemHandler#CONTAINER_DATA` | `cacheKey` | 容器级数据不属于物品；跨 tick 聚合，还承载修订计数 / 内容签名 / 快照，不要求 store 有子数据 | 领域读写、`entry(ctx)`、修订与快照入口 | 容器 tick、领域查询、mixin 热路径 |
-| `ContainerLivingItemHandler#POS_TO_CACHE_KEY` | `(dim, pos)` | 方块被破坏时只有坐标，需要 O(1) 反查 cacheKey；mixin 热路径也用它 | `indexPositions(ctx, key)` | `removeDataByPos`、`peekContainerDataByPos` |
+| `ContainerLivingItemHandler#POS_TO_CACHE_KEY` | `(dim, pos)` | 只索引方块宿主；世界查询与方块破坏需要按坐标 O(1) 反查 cacheKey | `indexPositions(ctx, key)` | `removeDataByPos`、`peekContainerDataByPos` |
 | `ContainerLivingItemHandler#LIVING_SLOT_ITEMS` | `cacheKey` | 运行数据键里没有物品身份；要判断「槽位里的机器换没换」只能记住上一 tick 的物品类型 | `trackLivingSlots` | `trackLivingSlots` 自己（下一 tick 对比） |
 | `ContainerRuntimeCache#store` | `cacheKey` + 物理槽 | 进度/冷却每 tick 变，不能放 DataComponent（破坏堆叠 + 每 tick 组件同步）；也不能放上下文（每 tick 新建） | 运行状态所属领域 | 同域 tick、`LivingItemRuntimeSync`（tooltip） |
 
@@ -41,8 +41,8 @@
    `nowMs - lastSeen >= 5 分钟` 时走 `removeDataByKey`。
    该入口删除聚合条目、全部关联位置索引、槽位追踪、**`LAST_SEEN` 自身**，并登记整容器运行时作废；
    显式破坏 / 取消活化与 sweep 共用它，不依赖调用方补删时间记录。
-5. **活跃的空 store 保留索引与聚合条目**：删掉某个 `ContainerDataKey` 的值不等于删容器；
-   只装活物品、只有修订 / 快照的容器仍须能按位置清理。
+5. **活跃的空 store 保留聚合条目与已有方块索引**：删掉某个 `ContainerDataKey` 的值不等于删容器；
+   只装活物品、只有修订 / 快照的方块容器仍须能按位置清理。
 6. **不再有第二套数据 TTL**：旧 `cleanupStaleData` / `cleanupStalePosIndex` 与全局 1200 次处理计数器退役；
    旧 `ContainerDataLifecycle` 与水 / 红石 / 电力仅为它服务的墙钟 `lastTickTime` 一并删除。
    **游戏时钟不受影响**：流体节拍、红石延迟、红电相位与领域内部计时仍按各自契约运行。
@@ -56,7 +56,7 @@
 | **方块容器**（`SimpleContainerContext`） | `chest_x_y_z`（双箱两段坐标） | 区块缓存发现 + `isPositionTicking`；区块卸载/不 tick 即停止 | 有 UUID 且 key 声明 saved → SavedData；否则按 key 声明写关联 BE attachment（双箱两半都写） | `entry(ctx)` 建；追踪首次出现也补位置索引；统一回收 / 停服 | 空 tick 清槽位状态，不删活跃聚合条目与索引 | `BlockEvent.BreakEvent` → `removeDataByPos` | sweep 回收 |
 | **玩家背包**（`SimpleContainerContext`） | `player_<uuid>` | 玩家在线，每 tick | 通用 `getDataHosts()` 为空；流体域另按容器键写 Player attachment（`ContainerFluidWriteback`） | `entry(ctx)` 建，无位置索引；统一回收 / 停服 | 空 tick 清槽位状态；下线后靠 sweep | 无（没有方块可破坏） | sweep 回收 |
 | **末影箱**（`EnderChestContainerContext`） | `player_<uuid>_ender_chest` | 玩家在线，每 tick | 同玩家背包，流体 attachment 以末影箱键区分 | 同玩家背包 | 空 tick 清槽位状态；下线后靠 sweep | 无 | sweep 回收 |
-| **实体容器**（`EntityContainerContext`） | `entity_<uuid>` | 实体已加载，每 tick；实体卸载/死亡/移除即停止 | 实体 attachment（`getDataHosts()` 覆写为实体） | `entry(ctx)` 建；上下文提供实体位置快照，现行索引入口会登记，非稳定方块位置；统一回收 / 停服 | 空 tick 清槽位状态；实体消失后靠 sweep | 无 | sweep 回收 |
+| **实体容器**（`EntityContainerContext`） | `entity_<uuid>` | 实体已加载，每 tick；实体卸载/死亡/移除即停止 | 实体 attachment（`getDataHosts()` 覆写为实体） | `entry(ctx)` 建；保留实体位置快照，不登记方块索引；统一回收 / 停服 | 空 tick 清槽位状态；实体消失后靠 sweep | 无 | sweep 回收 |
 | **女仆实体背包**（`MaidContainerContext`） | `entity_<uuid>` | TLM Provider接入现有实体遍历，仅当前装备开放存储前缀；实体卸载/移除停tick | 复用实体attachment宿主；收存到魂符后的附件交接尚待实机核查 | 同EntityContainerContext，复用统一回收 | 按可用物理存储槽，不含装备/饰品；原准入不变 | 不新建女仆专用删除流程 | sweep回收 |
 | **物品形态**（`ItemFormContainerContext`） | `cuuid_<uuid>` | 物品在可 tick 的宿主里；物品被销毁/丢失即停止 | 无宿主；持久化走 `ContainerDataSavedData`（按容器 UUID，`savedWith`）；活视图另存 `ItemFormLiveViews` | `entry(ctx)` 建，无位置索引；统一回收 / 停服 | 空 tick 清槽位状态；取消活化 / sweep 作废整容器 | `ContainerUuids.discard` → `removeDataByKey` | sweep 回收（活视图同节拍主动淘汰） |
 | **掉落物**（`ItemEntityContainerContext`） | `item_entity_<uuid>`（**每次掉落新键**） | `ItemEntity` 已加载且功能声明 `supportsDroppedItem`（当前活工具 / 活 TNT）；拾取/消失即停止 | 无 | 查询 / 修订可由 `entry(ctx)` 建；统一回收 / 停服 | `trackLivingSlots` 会建；运行时片段当前不写 | 无 | sweep 回收 |
@@ -73,8 +73,8 @@
 |---|---|
 | `ChunkEvent.Load` / 方块放置 / 玩家破坏 | 登记 pending rescan；破坏还会 `removeDataByPos` |
 | `ChunkEvent.Unload` | 撤销 pending rescan；清 `EnderChannelRegistry` 路由；**不立即清**四张表，停止 tick 后由 sweep 兜底 |
-| 容器继续 tick 且已无活物品 | 继续盖章；删 `LIVING_SLOT_ITEMS[cacheKey]`、作废运行时槽位；保留聚合条目 / 位置索引 |
-| 槽位活物品类型变化 | 作废该槽位运行时数据（`removeSlot`），不是删除容器 |
+| 容器继续 tick 且已无活物品 | 继续盖章；删 `LIVING_SLOT_ITEMS[cacheKey]`，在静息早退前作废运行时槽位；保留聚合条目 / 位置索引 |
+| 槽位活物品类型变化 | 扫槽后立即作废该槽位运行时数据（`removeSlot`），先于设备读写；拍末同步，不删除容器 |
 | 玩家破坏方块（位置索引命中） / 物品形态取消活化 | `removeDataByKey`：聚合条目 + 索引 + 追踪 + 时间记录；登记整容器运行时作废 |
 | 容器停止被看到（下线 / 消失 / 销毁 / 拾取 / 非玩家移除），或条目从未进入 tick | 满阈值后由 sweep 走同一删除入口；查询不能延后它 |
 | `sweepUnseenContainers` | 按 §2 回收过期键；顺带 `ItemFormLiveViews.evictExpired` |

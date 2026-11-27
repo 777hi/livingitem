@@ -3,15 +3,18 @@ package com.qiqi.li.living.domain.brewing;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -21,13 +24,18 @@ import org.mockito.ArgumentCaptor;
 
 import com.qiqi.li.living.api.LivingItemFunction.SlotEntry;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.api.LivingItemRegistrationScope;
 import com.qiqi.li.living.container.ContainerContexts;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.container.TickableContainerContext;
 import com.qiqi.li.living.domain.brewing.BrewingStandSegment.BrewingRuntime;
+import com.qiqi.li.living.domain.furnace.FurnaceSegment;
+import com.qiqi.li.living.domain.furnace.LivingFurnaceFunction;
 import com.qiqi.li.living.runtime.ContainerRuntimeCache;
 import com.qiqi.li.living.runtime.RuntimeSegments;
+import com.qiqi.li.network.LivingItemRuntimeSync;
+import com.qiqi.li.network.LivingItemSyncPacket;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
@@ -142,6 +150,74 @@ class BrewingBatchLogicTest {
 
         assertBrewSound(owner, ownerPosition);
         verifyNoInteractions(bystander.connection);
+    }
+
+    @Test
+    @DisplayName("同槽熔炉换酿造台：首拍进度不被晚删，取走最后一台后向箱子查看者发送空快照")
+    void replacesFurnaceWithoutLosingBrewProgress_thenRemovalFlushesEmptySnapshot() {
+        MinecraftServer server = mock(MinecraftServer.class);
+        PlayerList playerList = mock(PlayerList.class);
+        when(server.getPlayerList()).thenReturn(playerList);
+        ServerLevel level = brewingLevel(server, Level.OVERWORLD);
+        ServerPlayer viewer = soundPlayer(level);
+        ChestMenu menu = openChest(viewer, level);
+        when(playerList.getPlayers()).thenReturn(List.of(viewer));
+        var context = ContainerContexts.resolve(viewer, menu.slots.getFirst());
+        assertNotNull(context);
+        String key = context.getCacheKey();
+        var positions = Map.of(key, List.of(CHEST_POS));
+        ContainerLivingItemHandler.clearAllCaches();
+        ContainerRuntimeCache.removeContainer(key);
+
+        try (var functions = LivingItemRegistrationScope.isolated(List.of(
+                new LivingFurnaceFunction(), new LivingBrewingStandFunction()))) {
+            ItemStack furnace = new ItemStack(Items.FURNACE);
+            LivingItemManager.setLiving(furnace, true);
+            context.setItem(STAND_SLOT, furnace);
+            ContainerLivingItemHandler.processContext(context, level);
+            assertNotNull(ContainerRuntimeCache.get(context, STAND_SLOT).get(FurnaceSegment.INSTANCE));
+
+            ItemStack stand = new ItemStack(Items.BREWING_STAND);
+            LivingItemManager.setLiving(stand, true);
+            LivingBrewingStandData.set(stand, LivingBrewingStandData.DEFAULT.withFuel(10));
+            context.setItem(STAND_SLOT, stand);
+            context.setItem(BOTTLE_SLOT, PotionContents.createItemStack(Items.POTION, Potions.WATER));
+            context.setItem(INGREDIENT_SLOT, new ItemStack(WART));
+            assertEquals(10, LivingBrewingStandData.of(context.getItem(STAND_SLOT)).fuel());
+
+            ContainerLivingItemHandler.processContext(context, level);
+            var firstTick = ContainerRuntimeCache.get(context, STAND_SLOT);
+            assertNull(firstTick.get(FurnaceSegment.INSTANCE));
+            assertEquals(new BrewingRuntime(FULL, WART_BATCH), firstTick.get(BrewingStandSegment.INSTANCE));
+            assertEquals(9, LivingBrewingStandData.of(context.getItem(STAND_SLOT)).fuel());
+            assertEquals(0, ContainerLivingItemHandler.drainRuntimeCacheInvalidations().size(),
+                "换机首拍不能留下会晚删新进度的槽位作废条目");
+
+            ContainerLivingItemHandler.processContext(context, level);
+            assertEquals(new BrewingRuntime(FULL - 1, WART_BATCH),
+                ContainerRuntimeCache.get(context, STAND_SLOT).get(BrewingStandSegment.INSTANCE));
+            assertEquals(9, LivingBrewingStandData.of(context.getItem(STAND_SLOT)).fuel());
+            var activeSnapshot = ContainerRuntimeCache.getSnapshot(key);
+            LivingItemRuntimeSync.flush(List.of(viewer), positions::get);
+
+            context.setItem(STAND_SLOT, ItemStack.EMPTY);
+            ContainerLivingItemHandler.processContext(context, level);
+            assertTrue(ContainerRuntimeCache.getSnapshot(key).isEmpty(), "最后一台设备离槽后必须立即清除运行时状态");
+            assertEquals(0, ContainerLivingItemHandler.drainRuntimeCacheInvalidations().size());
+            assertEquals(new PotionContents(Potions.WATER), context.getItem(BOTTLE_SLOT).get(DataComponents.POTION_CONTENTS));
+            assertTrue(context.getItem(INGREDIENT_SLOT).is(WART));
+            LivingItemRuntimeSync.flush(List.of(viewer), positions::get);
+
+            var sent = ArgumentCaptor.forClass(LivingItemSyncPacket.class);
+            verify(viewer.connection, times(2)).send(sent.capture());
+            assertEquals(key, sent.getAllValues().getFirst().containerKey());
+            assertEquals(activeSnapshot, sent.getAllValues().getFirst().slotData());
+            assertEquals(key, sent.getValue().containerKey());
+            assertTrue(sent.getValue().slotData().isEmpty(), "必须发同键空快照以清掉客户端旧进度");
+        } finally {
+            ContainerRuntimeCache.removeContainer(key);
+            ContainerLivingItemHandler.clearAllCaches();
+        }
     }
 
     private static ServerLevel brewingLevel(MinecraftServer server, ResourceKey<Level> dimension) {

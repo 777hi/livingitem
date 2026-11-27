@@ -8,10 +8,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.MockedStatic;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.vehicle.ChestBoat;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
@@ -29,7 +32,9 @@ import com.qiqi.li.living.runtime.RuntimeSegments;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.CALLS_REAL_METHODS;
@@ -104,7 +109,6 @@ class ContainerCacheSweepTest {
 
         var inv = ContainerLivingItemHandler.drainRuntimeCacheInvalidations();
         assertEquals(1, inv.size(), "回收应登记整容器作废");
-        assertTrue(inv.get(0).wholeContainer(), "作废粒度 = 整容器");
         assertEquals(key, inv.get(0).cacheKey(), "作废键必须与运行时缓存存储键同构");
 
         ContainerRuntimeCache.removeContainer(inv.get(0).cacheKey());
@@ -168,6 +172,59 @@ class ContainerCacheSweepTest {
         assertEquals(key, inv.get(0).cacheKey());
     }
 
+    @ParameterizedTest(name = "首次追踪={0}, 实体先登记={1}")
+    @CsvSource({"false, false", "false, true", "true, false", "true, true"})
+    @DisplayName("同格实体不占用方块索引；按坐标清理只作废方块容器")
+    void blockPositionIndex_doesNotConfuseBlockAndEntity(boolean trackSlots, boolean entityFirst) {
+        ServerLevel level = mock(ServerLevel.class);
+        when(level.dimension()).thenReturn(Level.OVERWORLD);
+        BlockPos pos = new BlockPos(7, 70, -3);
+        ChestBoat boat = mock(ChestBoat.class);
+        when(boat.blockPosition()).thenReturn(pos);
+        when(boat.getUUID()).thenReturn(new java.util.UUID(0, 1));
+        var entity = new EntityContainerContext(boat, level, new ItemStackHandler(27));
+        var block = blockContainer(level, pos);
+        assertEquals(List.of(pos), entity.getAssociatedBlockPositions(), "实体仍有位置快照");
+        assertEquals("minecraft:overworld|entity_" + boat.getUUID(), entity.getCacheKey());
+
+        if (entityFirst) {
+            registerForPositionIndex(entity, trackSlots);
+            assertTrue(ContainerLivingItemHandler.describeLifecycleStats().contains("位置索引=0 "),
+                "单独登记实体不能写入方块索引");
+            registerForPositionIndex(block, trackSlots);
+        } else {
+            registerForPositionIndex(block, trackSlots);
+            registerForPositionIndex(entity, trackSlots);
+        }
+        if (!trackSlots) {
+            assertSame(ContainerLivingItemHandler.peekExistingContainerData(block, ContainerRedstoneData.KEY),
+                ContainerLivingItemHandler.peekContainerDataByPos(level, pos, ContainerRedstoneData.KEY),
+                "方块反查不得读到同格实体的数据");
+        }
+
+        ContainerLivingItemHandler.removeDataByPos(level, pos);
+
+        assertNull(ContainerLivingItemHandler.peekContainerDataByPos(level, pos, ContainerRedstoneData.KEY));
+        assertEquals(List.of(new ContainerLivingItemHandler.RuntimeCacheInvalidation(
+            block.getCacheKey())),
+            ContainerLivingItemHandler.drainRuntimeCacheInvalidations());
+        if (trackSlots) {
+            assertEquals(1, ContainerLivingItemHandler.trackedContainerCount(), "保留实体槽位追踪");
+        } else {
+            assertNotNull(ContainerLivingItemHandler.peekExistingContainerData(entity, ContainerRedstoneData.KEY),
+                "按位置破坏不得清除实体数据");
+            assertNull(ContainerLivingItemHandler.peekExistingContainerData(block, ContainerRedstoneData.KEY));
+        }
+    }
+
+    private static void registerForPositionIndex(ContainerContext ctx, boolean trackSlots) {
+        if (trackSlots) {
+            ContainerLivingItemHandler.trackLivingSlots(ctx.getCacheKey(), Map.of(0, Items.FURNACE), ctx);
+        } else {
+            ctx.getOrCreateContainerData(ContainerRedstoneData.KEY);
+        }
+    }
+
     @Test
     @DisplayName("双箱：任一半的位置命中即清整个键（数据可重建，不做「另一半还在」的保留逻辑）")
     void doubleChest_eitherHalfClearsWholeKey() {
@@ -178,8 +235,14 @@ class ContainerCacheSweepTest {
         String key = ctx.getCacheKey();
 
         ContainerLivingItemHandler.trackLivingSlots(key, Map.of(0, Items.FURNACE), ctx);
+        var data = ctx.getOrCreateContainerData(ContainerRedstoneData.KEY);
+        assertSame(data, ContainerLivingItemHandler.peekContainerDataByPos(level, left, ContainerRedstoneData.KEY));
+        assertSame(data, ContainerLivingItemHandler.peekContainerDataByPos(level, right, ContainerRedstoneData.KEY));
+
         ContainerLivingItemHandler.removeDataByPos(level, right);
 
+        assertNull(ContainerLivingItemHandler.peekContainerDataByPos(level, left, ContainerRedstoneData.KEY));
+        assertNull(ContainerLivingItemHandler.peekContainerDataByPos(level, right, ContainerRedstoneData.KEY));
         assertEquals(0, ContainerLivingItemHandler.trackedContainerCount(),
             "按右半坐标破坏也要清掉整条双箱数据（键本身是一个整体）");
         assertFalse(ContainerLivingItemHandler.drainRuntimeCacheInvalidations().isEmpty());
@@ -408,7 +471,7 @@ class ContainerCacheSweepTest {
             () -> assertTrue(activeStats.contains("位置索引=1 "), activeStats),
             () -> assertEquals(0, ContainerLivingItemHandler.trackedContainerCount(), "按位置删除必须命中活容器"),
             () -> assertEquals(List.of(new ContainerLivingItemHandler.RuntimeCacheInvalidation(
-                ctx.getCacheKey(), java.util.Set.of(), true)), invalidations));
+                ctx.getCacheKey())), invalidations));
     }
 
     private enum EntryAccess {
@@ -461,7 +524,7 @@ class ContainerCacheSweepTest {
             "访问已存在的条目不是 tick，不得更新盖章");
         var invalidations = ContainerLivingItemHandler.drainRuntimeCacheInvalidations();
         assertEquals(List.of(new ContainerLivingItemHandler.RuntimeCacheInvalidation(
-            ctx.getCacheKey(), java.util.Set.of(), true)), invalidations);
+            ctx.getCacheKey())), invalidations);
         assertLifecycleSizes(0, 0, 0, 0);
     }
 
@@ -509,7 +572,7 @@ class ContainerCacheSweepTest {
 
         removal.remove(ctx);
         assertEquals(List.of(new ContainerLivingItemHandler.RuntimeCacheInvalidation(
-            ctx.getCacheKey(), java.util.Set.of(), true)),
+            ctx.getCacheKey())),
             ContainerLivingItemHandler.drainRuntimeCacheInvalidations());
         String removedStats = ContainerLivingItemHandler.describeLifecycleStats();
         int swept = ContainerLivingItemHandler.sweepUnseenContainers(cutoff, TTL);
